@@ -128,7 +128,8 @@ android/          Kotlin app (single module)
     work/               WorkManager + exact alarms
     ui/                 theme, design system, motion, Dynamic Island, navigation
     feature/            one package per screen
-server/           Node 22 + TypeScript backend, render.yaml blueprint
+server/           Node 22 + TypeScript backend
+render.yaml       Render Blueprint (root, where Render looks for it)
 docs/             logo, deployment guide
 ```
 

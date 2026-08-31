@@ -1,0 +1,22 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Local configuration and secrets. .env.example is committed; .env is not.
+.env
+.env.*
+!.env.example
+firebase-service-account.json
+*.pem
+
+# Test and tooling output
+coverage/
+.eslintcache
+*.log
+npm-debug.log*
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

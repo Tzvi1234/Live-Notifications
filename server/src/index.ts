@@ -136,8 +136,10 @@ async function gracefulShutdown(
     // Stop producing before closing anything the production depends on.
     await context.poller?.stop();
 
-    // Handing the lock back now lets the replacement instance start polling immediately
-    // instead of waiting out the lock's TTL with nobody watching the live matches.
+    // The poller hands the lock back in stop(); this covers the paths where it never ran
+    // (POLL_ENABLED=false, a failure between acquiring and starting) and is a no-op when
+    // nothing is held. Either way the replacement instance starts polling at once instead
+    // of waiting out the lease with nobody watching the live matches.
     await context.store.releaseLeaderLock();
 
     await closeServer(context.server);
@@ -176,7 +178,8 @@ function describeConfig(active: KickoffConfig): Record<string, unknown> {
     provider: active.providerName,
     apiFootballBaseUrl: active.apiFootballBaseUrl,
     apiFootballKey: describeSecret(active.apiFootballKey),
-    database: active.databaseUrl === undefined ? 'in-memory' : describeDatabaseUrl(active.databaseUrl),
+    database:
+      active.databaseUrl === undefined ? 'in-memory' : describeDatabaseUrl(active.databaseUrl),
     firebase: describeFirebase(active),
     firebaseProjectId: active.firebaseProjectId ?? 'from service account',
     pollEnabled: active.pollEnabled,

@@ -9,7 +9,13 @@ import express, { type Request, type Response, type Router } from 'express';
 import type { ApiDeps } from './deps.js';
 import { normalizePreferences } from '../store/index.js';
 import type { SubscriptionRecord } from '../types.js';
-import { badRequest, requireDeviceToken, requireIdArray, requireObjectBody } from './validation.js';
+import {
+  badRequest,
+  notFound,
+  requireDeviceToken,
+  requireIdArray,
+  requireObjectBody,
+} from './validation.js';
 
 export function createSubscriptionsRouter(deps: ApiDeps): Router {
   const router = express.Router();
@@ -52,6 +58,26 @@ export function createSubscriptionsRouter(deps: ApiDeps): Router {
     });
 
     res.status(204).end();
+  });
+
+  /**
+   * Read-back for support and for the deployment guide's end-to-end check. Addressed by the
+   * registration token, exactly like DELETE /v1/devices/:token: holding the token is what
+   * proves you are the device, and the record is echoed without it.
+   */
+  router.get('/subscriptions/:token', async (req: Request, res: Response) => {
+    const token = requireDeviceToken(req.params.token, 'token');
+    const record = await deps.store.getSubscription(token);
+    if (record === undefined) {
+      throw notFound('No subscription for that token.');
+    }
+
+    res.json({
+      teamIds: record.teamIds,
+      leagueIds: record.leagueIds,
+      matchIds: record.matchIds,
+      preferences: record.preferences,
+    });
   });
 
   return router;

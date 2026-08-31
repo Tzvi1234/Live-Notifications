@@ -42,6 +42,10 @@ const MIN_KEPT_BYTES = 16;
  * the league name go last — they are display data the client cannot invent.
  */
 const SHRINKABLE_KEYS: readonly string[] = [
+  // Both are pure polish: the client hides the league mark and falls back to `headline`
+  // when the detail is absent, so they are the cheapest bytes in the payload to lose.
+  'leagueLogo',
+  'detail',
   'headline',
   'assist',
   'player',
@@ -171,6 +175,7 @@ interface DataInput {
   readonly assist?: string | undefined;
   readonly score: ScoreJson;
   readonly headline: string;
+  readonly detail?: string | undefined;
   readonly nowMs: number;
 }
 
@@ -197,6 +202,8 @@ function buildData(input: DataInput): Record<string, string> {
     awayScore: String(score.away),
     leagueId: String(match.leagueId),
     leagueName: match.leagueName,
+    leagueLogo: str(match.leagueLogoUrl),
+    detail: str(input.detail),
     kickoffAt: String(match.kickoffAt),
     headline: input.headline,
     player: str(input.player),
@@ -282,6 +289,7 @@ export function eventPayload(
     assist: event.assist,
     score: scoreFor(match, event),
     headline: eventHeadline(match, event),
+    detail: event.detail,
     nowMs,
   });
 

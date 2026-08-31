@@ -27,9 +27,18 @@ export interface Logger {
   child(bindings: LogFields): Logger;
 }
 
+/**
+ * Own keys only: `value in LEVEL_RANK` is also true for everything on Object.prototype, so
+ * LOG_LEVEL=constructor would be accepted here and then rank as `undefined` in `write`,
+ * which silently disables the level filter.
+ */
+export function isLogLevel(value: string): value is LogLevel {
+  return Object.hasOwn(LEVEL_RANK, value);
+}
+
 function parseLevel(value: string | undefined, fallback: LogLevel): LogLevel {
   const candidate = value?.trim().toLowerCase();
-  return candidate && candidate in LEVEL_RANK ? (candidate as LogLevel) : fallback;
+  return candidate !== undefined && isLogLevel(candidate) ? candidate : fallback;
 }
 
 let activeLevel: LogLevel = parseLevel(process.env.LOG_LEVEL, 'info');

@@ -1,9 +1,10 @@
 /**
- * Environment parsing. Every knob the server reads lives here, is validated once at
- * startup, and is exposed frozen — nothing else in the process touches `process.env`.
+ * Environment parsing. Every knob the server reads lives here, is validated once at startup
+ * and exposed frozen; the only other `process.env` read in the process is logger.ts's own
+ * LOG_LEVEL bootstrap, which has to work before this module has parsed anything.
  */
 
-import { LOG_LEVELS, type LogLevel } from './logger.js';
+import { isLogLevel, LOG_LEVELS, logger, type LogLevel } from './logger.js';
 
 export type { LogLevel };
 
@@ -94,14 +95,29 @@ function readIdList(env: Env, name: string, fallback: string): readonly number[]
 function readLogLevel(env: Env): LogLevel {
   const value = raw(env, 'LOG_LEVEL')?.toLowerCase();
   if (value === undefined) return 'info';
-  if (!LOG_LEVELS.includes(value as LogLevel)) {
+  if (!isLogLevel(value)) {
     throw configError(`LOG_LEVEL must be one of ${LOG_LEVELS.join(', ')}, got "${value}".`);
   }
-  return value as LogLevel;
+  return value;
 }
 
-function stripTrailingSlash(url: string): string {
-  return url.endsWith('/') ? url.slice(0, -1) : url;
+/**
+ * A base URL is only ever exercised on the first provider call, so a missing scheme would
+ * otherwise surface as a `fetch` TypeError once per poll forever instead of at boot. The
+ * trailing slash goes because callers join paths as `${base}/fixtures`.
+ */
+function readBaseUrl(env: Env, name: string, fallback: string): string {
+  const value = raw(env, name) ?? fallback;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw configError(`${name} must be an absolute URL, got "${value}".`);
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw configError(`${name} must be an http(s) URL, got "${value}".`);
+  }
+  return value.replace(/\/+$/, '');
 }
 
 /**
@@ -148,8 +164,10 @@ export function loadConfig(env: Env = process.env): KickoffConfig {
     providerName: 'api-football',
 
     apiFootballKey,
-    apiFootballBaseUrl: stripTrailingSlash(
-      raw(env, 'API_FOOTBALL_BASE_URL') ?? 'https://v3.football.api-sports.io',
+    apiFootballBaseUrl: readBaseUrl(
+      env,
+      'API_FOOTBALL_BASE_URL',
+      'https://v3.football.api-sports.io',
     ),
 
     databaseUrl,
@@ -175,4 +193,18 @@ export function loadConfig(env: Env = process.env): KickoffConfig {
   });
 }
 
-export const config: KickoffConfig = loadConfig();
+/**
+ * Evaluated while the module graph is still loading, which is before index.ts's
+ * `main().catch` exists — without this line a bad environment leaves nothing but a raw
+ * stack on stderr, in a deploy whose every other line is JSON.
+ */
+function loadConfigOrFail(): KickoffConfig {
+  try {
+    return loadConfig();
+  } catch (error) {
+    logger.error('configuration invalid; refusing to start', { error });
+    throw error;
+  }
+}
+
+export const config: KickoffConfig = loadConfigOrFail();

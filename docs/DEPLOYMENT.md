@@ -67,12 +67,13 @@ arrive in seconds.
 
 ### 3a. Push this repository to GitHub
 
-Render deploys from a Git repository. Make sure `server/render.yaml` is committed.
+Render deploys from a Git repository. Make sure `render.yaml` is committed at the
+repository root — that is where Render looks for a Blueprint by default.
 
 ### 3b. Create the services from the blueprint
 
 1. **<https://dashboard.render.com/>** → **New → Blueprint**.
-2. Connect the repository. Render reads **`server/render.yaml`** and proposes:
+2. Connect the repository. Render reads **`render.yaml`** and proposes:
    - `kickoff-api` — a Node web service
    - `kickoff-db` — a Postgres database
 3. Render will prompt for every secret marked `sync: false`. Fill them in from the table in

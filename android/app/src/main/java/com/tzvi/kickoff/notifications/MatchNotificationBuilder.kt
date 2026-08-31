@@ -64,10 +64,9 @@ class MatchNotificationBuilder @Inject constructor(
         activity: LiveActivity.MatchActivity,
         crests: Crests?,
         style: LiveCardStyle,
-        alerting: Boolean = false,
     ): Result {
         val rendering = chooseRendering(style, crests)
-        val builder = baseBuilder(activity, alerting)
+        val builder = baseBuilder(activity)
 
         when (rendering) {
             Rendering.PROMOTED -> applyPromoted(builder, activity, crests)
@@ -76,6 +75,44 @@ class MatchNotificationBuilder @Inject constructor(
         }
         return Result(builder.build(), rendering)
     }
+
+    /**
+     * The interrupting half of a goal or a red card.
+     *
+     * This is a separate notification rather than a louder repost of the live card,
+     * because a notification's channel is fixed per post: pushing the ongoing card onto
+     * the high-importance channel for one goal would move it between channels on every
+     * event, and re-alert the scoreboard every time it moved back.
+     */
+    fun buildEventAlert(
+        activity: LiveActivity.MatchActivity,
+        event: MatchEvent,
+        crests: Crests?,
+    ): Notification {
+        val match = activity.match
+        val score = match.score?.let { " ${it.home}-${it.away}" }.orEmpty()
+        return NotificationCompat.Builder(context, NotificationChannels.MATCH_EVENTS)
+            .setSmallIcon(R.drawable.ic_stat_kickoff)
+            .setContentTitle("${match.home.code}$score ${match.away.code}")
+            .setContentText("${event.minuteLabel}  ${event.headline()}")
+            .setSubText(match.leagueName.takeIf { it.isNotBlank() })
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("${event.minuteLabel}  ${event.headline()}")
+                    .setSummaryText("${match.home.name} v ${match.away.name}"),
+            )
+            .setLargeIcon(if (event.side == MatchSide.AWAY) crests?.away else crests?.home)
+            .setContentIntent(openMatchIntent(match.id))
+            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_EVENT)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setColor(color(R.color.brand_green))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+    }
+
+    /** Alerts get their own ids so several can stack, and dismissing one keeps the card. */
+    fun alertNotificationId(event: MatchEvent): Int = event.id.hashCode() and 0x7FFFFFFF
 
     private fun chooseRendering(style: LiveCardStyle, crests: Crests?): Rendering = when (style) {
         LiveCardStyle.PLAIN -> Rendering.PLAIN
@@ -91,23 +128,20 @@ class MatchNotificationBuilder @Inject constructor(
 
     // ---- shared scaffolding --------------------------------------------------
 
-    private fun baseBuilder(
-        activity: LiveActivity.MatchActivity,
-        alerting: Boolean,
-    ): NotificationCompat.Builder {
+    private fun baseBuilder(activity: LiveActivity.MatchActivity): NotificationCompat.Builder {
         val match = activity.match
-        val channel = if (alerting) NotificationChannels.MATCH_EVENTS else NotificationChannels.LIVE_MATCH
-
-        return NotificationCompat.Builder(context, channel)
+        return NotificationCompat.Builder(context, NotificationChannels.LIVE_MATCH)
             .setSmallIcon(R.drawable.ic_stat_kickoff)
             .setContentTitle(contentTitle(activity))
             .setContentText(contentText(activity))
             .setSubText(match.leagueName.takeIf { it.isNotBlank() })
             .setContentIntent(openMatchIntent(match.id))
             .setDeleteIntent(dismissIntent(activity.key))
+            // The scoreboard updates every few seconds for ninety minutes: it must never
+            // make a sound. Goals interrupt through buildEventAlert instead.
             .setOngoing(activity.stage != LiveActivity.MatchActivity.Stage.FULL_TIME)
-            .setOnlyAlertOnce(!alerting)
-            .setSilent(!alerting)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
             .setColor(ContextCompat.getColor(context, R.color.brand_green))

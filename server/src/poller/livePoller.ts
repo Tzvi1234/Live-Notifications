@@ -275,7 +275,9 @@ export class LivePoller {
       running: this.#running,
       leader: this.#leader,
       trackedMatches: this.#tracked.size,
-      quotaBlocked: this.#quotaBlocked(),
+      // Read without the rollover check `#quotaBlocked` performs: reporting status must not
+      // clear the flag, that belongs to the tick.
+      quotaBlocked: this.#quotaBlockedDay === Math.floor(this.#now() / DAY_MS),
       lastTickAt: this.#lastTickAt,
       lastTickDurationMs: this.#lastTickDurationMs,
       lastError: this.#lastError,

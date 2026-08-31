@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+
+    "rootDir": "src",
+    "outDir": "dist",
+
+    "strict": true,
+    // Every `arr[i]` and `record[key]` is `T | undefined`. The provider payloads are full of
+    // optional arrays (events, lineups, statistics), so this is the rule that forces the
+    // mappers to admit a missing element instead of trusting the shape.
+    "noUncheckedIndexedAccess": true,
+
+    // With NodeNext output, an `import { X }` that only ever names a type must be written
+    // `import type` or it survives into the emitted JS as a real, possibly circular, require.
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    "sourceMap": true,
+    "declaration": false,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts"],
+  // This is the *build* project, so tests are excluded: dist/ is what ships to the instance
+  // and it should carry no fixtures and no devDependency imports. `npm run typecheck` uses
+  // tsconfig.test.json, which adds them back.
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/__tests__/**"]
+}

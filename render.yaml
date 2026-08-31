@@ -1,0 +1,121 @@
+# Kickoff — Render Blueprint
+# =============================================================================
+# Apply with: Render Dashboard -> New -> Blueprint -> pick this repository.
+#
+# Why there is no free tier in this file
+# -------------------------------------
+# Kickoff needs a process that is awake whenever a tracked match is in play. Render's free
+# offering cannot provide one:
+#
+#   * A free **web service spins down after 15 minutes without inbound traffic** and takes
+#     about a minute to boot again. The poll loop lives inside this process, so a spun-down
+#     instance stops polling: goals go unnoticed and the first request after the idle window
+#     pays a cold start.
+#   * Free instance types are **not offered for background workers or cron jobs at all** —
+#     only web services, static sites, Postgres and Key Value. So "move the poller to a
+#     worker and keep the web service free" is not an option; there is no free worker.
+#   * A **free Postgres database expires 30 days after creation** (then a 14-day grace period
+#     before Render deletes it and its data). Subscriptions and device tokens must outlive
+#     that.
+#
+# The shape below follows from those three facts: ONE always-on paid web service that serves
+# the REST API *and* runs the poller in-process. That co-location is deliberate — it is the
+# cheapest arrangement that keeps a process resident. It is safe because the poller takes a
+# leader lock before each tick, so when the service is scaled past one instance (or during
+# the overlap of a zero-downtime deploy, when old and new instances run at once) exactly one
+# of them polls and only that one spends API-Football quota.
+#
+# `PORT` is injected by Render and is deliberately absent below; the server binds 0.0.0.0:$PORT.
+# =============================================================================
+
+databases:
+  - name: kickoff-db
+    databaseName: kickoff
+    user: kickoff
+    # Cheapest paid Postgres. Unlike `free` it does not expire after 30 days.
+    plan: 0.1c-256mb
+    postgresMajorVersion: "17"
+    region: oregon
+    # Empty list = no public inbound connections. kickoff-api reaches it over Render's
+    # internal network using the connection string wired in below.
+    ipAllowList: []
+
+services:
+  - type: web
+    name: kickoff-api
+    runtime: node
+    # Render's Starter instance type (0.5 CPU / 512 MB): the cheapest plan that never spins
+    # down. Move to 1c-2g if the fixture cache and firebase-admin crowd 512 MB.
+    plan: 0.5c-512mb
+    region: oregon
+    branch: main
+    # Paths are relative to the repository root, wherever this blueprint file itself sits.
+    rootDir: server
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /v1/health
+    # Replaces the deprecated `autoDeploy: true`.
+    autoDeployTrigger: commit
+    # Render sends SIGTERM and SIGKILLs 30s later by default; index.ts finishes its shutdown
+    # well inside that, so the default is left alone.
+    numInstances: 1
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+
+      # --- API-Football ---------------------------------------------------------------
+      # sync: false => not stored in git; Render prompts for it when the blueprint is applied.
+      - key: API_FOOTBALL_KEY
+        sync: false
+      - key: API_FOOTBALL_BASE_URL
+        value: https://v3.football.api-sports.io
+
+      # --- Postgres -------------------------------------------------------------------
+      # Wired from the database above. Never set this by hand.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kickoff-db
+          property: connectionString
+
+      # --- Firebase / FCM -------------------------------------------------------------
+      # A Blueprint cannot carry Secret File *contents* (they would be committed), so the
+      # file is uploaded once in the dashboard: kickoff-api -> Environment -> Secret Files ->
+      # filename `firebase-service-account.json`, contents = the service-account JSON.
+      # Render mounts it at the path below.
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/firebase-service-account.json
+      # Alternative to the Secret File: base64 of the same JSON. The file path WINS when both
+      # are set, so delete the variable above if you go the base64 route.
+      - key: FIREBASE_SERVICE_ACCOUNT_B64
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+
+      # --- Poller ---------------------------------------------------------------------
+      - key: POLL_ENABLED
+        value: "true"
+      - key: POLL_INTERVAL_SECONDS
+        value: "30"
+      - key: POLL_IDLE_INTERVAL_SECONDS
+        value: "300"
+      - key: PREMATCH_LEAD_MINUTES
+        value: "60"
+      # Must not exceed the daily quota of your API-Football plan; the poller backs off at
+      # this number rather than being cut off mid-match. One /fixtures?live=all call per tick
+      # is 2880 requests/day at the 30s cadence, and per-match detail calls are charged on
+      # top — hence the headroom under a 7500/day plan. Free keys are 100/day: set 100.
+      - key: DAILY_REQUEST_BUDGET
+        value: "7500"
+      - key: FEATURED_LEAGUE_IDS
+        value: 39,140,135,78,61,2,3,88,94,203,383,253,71,128
+
+      # --- API ------------------------------------------------------------------------
+      - key: CACHE_TTL_SECONDS
+        value: "60"
+      # Guards /v1/admin/*. Render generates a random value; read it back under
+      # kickoff-api -> Environment. Remove this entry to leave the admin routes disabled.
+      - key: ADMIN_TOKEN
+        generateValue: true

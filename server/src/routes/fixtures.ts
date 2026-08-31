@@ -102,7 +102,9 @@ export function createFixturesRouter(deps: ApiDeps): Router {
     const started = !abandoned && match.phase !== 'SCHEDULED';
 
     const [rawEvents, rawLineups, rawStats] = await Promise.all([
-      started ? optionalSection(logger, matchId, 'events', () => deps.provider.events(matchId)) : [],
+      started
+        ? optionalSection(logger, matchId, 'events', () => deps.provider.events(matchId))
+        : [],
       abandoned
         ? []
         : optionalSection(logger, matchId, 'lineups', () => deps.provider.lineups(matchId)),
@@ -178,7 +180,11 @@ async function fetchRange(
   return flatten(enumerateDays(from, to).map((day) => provider.fixtures({ date: day })));
 }
 
-function rangeQuery(base: { team?: number; league?: number; season: number }, from: string, to: string): FixtureQuery {
+function rangeQuery(
+  base: { team?: number; league?: number; season: number },
+  from: string,
+  to: string,
+): FixtureQuery {
   const query: FixtureQuery = { from, to, season: base.season };
   if (base.team !== undefined) query.team = base.team;
   if (base.league !== undefined) query.league = base.league;

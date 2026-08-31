@@ -44,11 +44,12 @@ class LiveActivityNotifier @Inject constructor(
     fun lastRenderingFor(key: String): MatchNotificationBuilder.Rendering? = lastRendering[key]
 
     /**
-     * Post or update a match card.
+     * Post or update the ongoing match card.
      *
-     * @param alertingEvent set when a goal, red card or full-time whistle should
-     *   actually interrupt: it routes the post to the high-importance channel instead
-     *   of the silent scoreboard channel.
+     * @param alertingEvent when set, an additional interrupting notification is posted
+     *   alongside the card. It is deliberately a *separate* notification: a
+     *   notification's channel is fixed at post time, so making the card itself loud
+     *   would shuttle it between channels on every goal.
      * @return true when something was posted.
      */
     suspend fun postMatch(
@@ -60,19 +61,35 @@ class LiveActivityNotifier @Inject constructor(
         if (isDismissed(activity.key)) return false
 
         val id = activity.notificationId
-        val alerting = alertingEvent != null
-        if (!alerting && isRateLimited(id)) return false
+        // A genuine event always gets through; only silent refreshes are throttled.
+        if (alertingEvent == null && isRateLimited(id)) return false
 
-        // Crests are only decoded when the renderer can actually use them; the promoted
-        // path shows them as the progress bar's start/end icons, the rich path in the
+        // Crests are only decoded when the renderer can actually use them: the promoted
+        // path shows them as the progress bar's start and end icons, the rich path in the
         // scoreboard, and the plain path not at all.
         val crests = loadCrests(activity, style)
-        val result = matchBuilder.build(activity, crests, style, alerting)
+        val result = matchBuilder.build(activity, crests, style)
 
         notify(id, result)
         lastRendering[activity.key] = result.rendering
+
+        if (alertingEvent != null) {
+            postEventAlert(activity, alertingEvent, crests)
+        }
         track(activity)
         true
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun postEventAlert(
+        activity: LiveActivity.MatchActivity,
+        event: MatchEvent,
+        crests: MatchNotificationBuilder.Crests?,
+    ) {
+        manager.notify(
+            matchBuilder.alertNotificationId(event),
+            matchBuilder.buildEventAlert(activity, event, crests),
+        )
     }
 
     suspend fun postCalendar(activity: LiveActivity.CalendarActivity): Boolean =

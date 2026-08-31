@@ -75,7 +75,8 @@ const PHASE_BY_PROVIDER_CODE: Readonly<Record<string, MatchPhase>> = Object.free
   WO: 'OFF',
 });
 
-export function phaseFromProviderCode(code?: string): MatchPhase {
+/** Takes null as well as undefined: the provider omits `status.short` on abandoned fixtures. */
+export function phaseFromProviderCode(code?: string | null): MatchPhase {
   if (!code) return 'UNKNOWN';
   return PHASE_BY_PROVIDER_CODE[code.trim().toUpperCase()] ?? 'UNKNOWN';
 }

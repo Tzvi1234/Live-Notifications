@@ -42,16 +42,18 @@ export function createCatalogueRouter(deps: ApiDeps): Router {
     const season = parsePositiveInt(req.query.season, 'season');
     const search = queryValue(req.query.q);
 
-    // The app searches as the user types; one and two letter prefixes are answered with an
-    // empty list instead of a 400, because the provider rejects them outright and a red
-    // error toast on every second keystroke is worse than no results.
-    if (search !== undefined && search.length < MIN_SEARCH_LENGTH) {
-      const empty: TeamListJson = { teams: [] };
-      res.json(empty);
-      return;
-    }
+    // The app searches as the user types and the provider rejects prefixes shorter than
+    // three characters, so a short term is dropped instead of failing the request: with a
+    // league alongside it the browse list still comes back, and without one an empty list
+    // beats an error toast on every second keystroke.
+    const term = search !== undefined && search.length >= MIN_SEARCH_LENGTH ? search : undefined;
 
-    if (league === undefined && search === undefined) {
+    if (term === undefined && league === undefined) {
+      if (search !== undefined) {
+        const empty: TeamListJson = { teams: [] };
+        res.json(empty);
+        return;
+      }
       throw badRequest('Provide "league" (with an optional "season") or a "q" search term.');
     }
 
@@ -66,7 +68,7 @@ export function createCatalogueRouter(deps: ApiDeps): Router {
     } else if (season !== undefined) {
       query.season = season;
     }
-    if (search !== undefined) query.search = search;
+    if (term !== undefined) query.search = term;
 
     const raw = await deps.provider.teams(query);
     const teams: TeamJson[] = raw.map((entry) => toTeam(entry)).filter((team) => team.id > 0);
