@@ -58,6 +58,8 @@ data class MatchDetailUiState(
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
     val sourceMissing: Boolean = false,
+    /** True while a live card for this match is being kept up to date. */
+    val following: Boolean = false,
 ) {
     /** A failed refresh with a cached match underneath it is a banner, not a whole page. */
     val staleMessage: String? get() = errorMessage?.takeIf { match != null }

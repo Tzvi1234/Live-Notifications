@@ -22,8 +22,6 @@ data class SearchState(
     val query: String = "",
     val isSearching: Boolean = false,
     val results: List<Team> = emptyList(),
-    /** True once a query long enough to be worth a request has actually run. */
-    val hasRun: Boolean = false,
     val failure: TeamsFailure? = null,
 ) {
     val isTooShort: Boolean get() = query.length < MIN_SEARCH_LENGTH

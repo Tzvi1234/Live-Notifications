@@ -70,6 +70,8 @@ fun SettingsScreen(onBack: () -> Unit) {
                 runCatching { context.startActivity(intent) }
             }
         },
+        onPreviewCard = viewModel::previewLiveCard,
+        onDismissPreview = viewModel::dismissLiveCardPreview,
         onSetGoals = viewModel::setNotifyGoals,
         onSetCards = viewModel::setNotifyCards,
         onSetSubstitutions = viewModel::setNotifySubstitutions,
@@ -109,6 +111,8 @@ internal fun SettingsContent(
     onBack: () -> Unit,
     onSelectLiveCardStyle: (LiveCardStyle) -> Unit,
     onOpenPromotionSettings: () -> Unit,
+    onPreviewCard: () -> Unit,
+    onDismissPreview: () -> Unit,
     onSetGoals: (Boolean) -> Unit,
     onSetCards: (Boolean) -> Unit,
     onSetSubstitutions: (Boolean) -> Unit,
@@ -191,6 +195,8 @@ internal fun SettingsContent(
                     status = state.liveUpdate,
                     onSelectStyle = onSelectLiveCardStyle,
                     onOpenPromotionSettings = onOpenPromotionSettings,
+                    onPreviewCard = onPreviewCard,
+                    onDismissPreview = onDismissPreview,
                 )
                 AlertsSection(
                     settings = state.settings,
@@ -243,6 +249,8 @@ private fun SettingsPreview(state: SettingsUiState) {
             onBack = {},
             onSelectLiveCardStyle = {},
             onOpenPromotionSettings = {},
+            onPreviewCard = {},
+            onDismissPreview = {},
             onSetGoals = {},
             onSetCards = {},
             onSetSubstitutions = {},

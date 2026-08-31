@@ -79,6 +79,8 @@ internal fun LiveCardSection(
     status: LiveUpdateStatus,
     onSelectStyle: (LiveCardStyle) -> Unit,
     onOpenPromotionSettings: () -> Unit,
+    onPreviewCard: () -> Unit,
+    onDismissPreview: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     SettingsGroup(title = "Live card", modifier = modifier) {
@@ -149,6 +151,21 @@ internal fun LiveCardSection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            Text(
+                text = "Posts a sample match card through the same builder and the same " +
+                    "eligibility rules a real match uses, then tells you which of the three " +
+                    "the system actually chose.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(RowGap)) {
+                FilledTonalButton(onClick = onPreviewCard) { Text("Preview the live card") }
+                TextButton(onClick = onDismissPreview) { Text("Clear") }
             }
         }
     }

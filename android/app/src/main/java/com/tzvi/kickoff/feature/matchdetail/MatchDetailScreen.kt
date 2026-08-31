@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.SportsSoccer
@@ -62,6 +64,7 @@ fun MatchDetailScreen(onBack: () -> Unit) {
         onBack = onBack,
         onSelectTab = viewModel::selectTab,
         onRefresh = viewModel::refresh,
+        onToggleFollowing = viewModel::toggleFollowing,
     )
 }
 
@@ -72,6 +75,7 @@ internal fun MatchDetailContent(
     onBack: () -> Unit,
     onSelectTab: (MatchDetailTab) -> Unit,
     onRefresh: () -> Unit,
+    onToggleFollowing: () -> Unit = {},
 ) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -89,6 +93,27 @@ internal fun MatchDetailContent(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onToggleFollowing) {
+                        Icon(
+                            imageVector = if (state.following) {
+                                Icons.Filled.NotificationsActive
+                            } else {
+                                Icons.Outlined.NotificationsNone
+                            },
+                            contentDescription = if (state.following) {
+                                "Stop the live card for this match"
+                            } else {
+                                "Show a live card for this match"
+                            },
+                            tint = if (state.following) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     }
                 },

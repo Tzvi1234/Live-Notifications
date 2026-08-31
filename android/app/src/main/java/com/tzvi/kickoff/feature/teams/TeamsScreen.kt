@@ -269,8 +269,13 @@ private val BottomPadding = 40.dp
 private val ItemGap = 10.dp
 private val SectionGap = 14.dp
 
-/** A collapsed SearchBar: a 56dp input field, 8dp of padding each side, then a gap. */
-private val SearchBarSlot = 80.dp
+/**
+ * How much of the top of the list the floating search bar covers: its input field, the
+ * 8dp of padding the bar puts either side of it, and a gap before the first card. Taken
+ * from the component rather than measured, so it cannot drift out of step with it.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+private val SearchBarSlot = SearchBarDefaults.InputFieldHeight + 24.dp
 
 // ---- previews ---------------------------------------------------------------------
 
@@ -322,7 +327,6 @@ private fun TeamsSearchPreview() = PreviewTeams(
         search = SearchState(
             query = "tot",
             results = listOf(TeamsSamples.spurs, TeamsSamples.chelsea),
-            hasRun = true,
         ),
     ),
     initiallySearching = true,

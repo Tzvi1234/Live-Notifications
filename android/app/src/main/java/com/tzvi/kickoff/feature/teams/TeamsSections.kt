@@ -39,6 +39,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -235,13 +236,15 @@ internal fun LeagueCard(
                         )
 
                         else -> section.teams.forEach { team ->
-                            TeamRow(
-                                team = team,
-                                isFavourite = team.id in favouriteIds,
-                                subtitle = team.venueName ?: team.countryName,
-                                onOpen = { onOpenTeam(team) },
-                                onToggleFavourite = { onToggleFavourite(team) },
-                            )
+                            key(team.id) {
+                                TeamRow(
+                                    team = team,
+                                    isFavourite = team.id in favouriteIds,
+                                    subtitle = team.venueName ?: team.countryName,
+                                    onOpen = { onOpenTeam(team) },
+                                    onToggleFavourite = { onToggleFavourite(team) },
+                                )
+                            }
                         }
                     }
                 }
@@ -334,16 +337,20 @@ internal fun SearchResults(
                 emptyIcon = Icons.Outlined.SearchOff,
             )
 
+            // Keyed: the star's bounce lives in the row's own state, and without a key a
+            // new set of results would inherit the previous row's and pop for no reason.
             else -> search.results.forEach { team ->
-                TeamRow(
-                    team = team,
-                    isFavourite = team.id in favouriteIds,
-                    subtitle = listOfNotNull(team.countryName, team.venueName)
-                        .joinToString(" · ")
-                        .takeIf { it.isNotBlank() },
-                    onOpen = { onOpenTeam(team) },
-                    onToggleFavourite = { onToggleFavourite(team) },
-                )
+                key(team.id) {
+                    TeamRow(
+                        team = team,
+                        isFavourite = team.id in favouriteIds,
+                        subtitle = listOfNotNull(team.countryName, team.venueName)
+                            .joinToString(" · ")
+                            .takeIf { it.isNotBlank() },
+                        onOpen = { onOpenTeam(team) },
+                        onToggleFavourite = { onToggleFavourite(team) },
+                    )
+                }
             }
         }
     }

@@ -10,6 +10,7 @@ import com.tzvi.kickoff.core.model.MatchSide
 import com.tzvi.kickoff.core.model.MatchStatistics
 import com.tzvi.kickoff.core.model.Score
 import com.tzvi.kickoff.data.repository.FootballRepository
+import com.tzvi.kickoff.notifications.MatchTracker
 import com.tzvi.kickoff.data.repository.NoFootballSourceException
 import com.tzvi.kickoff.ui.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.update
 import java.io.IOException
 import javax.inject.Inject
@@ -31,6 +33,7 @@ import javax.inject.Inject
 @HiltViewModel
 class MatchDetailViewModel @Inject constructor(
     private val footballRepository: FootballRepository,
+    private val matchTracker: MatchTracker,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -54,7 +57,8 @@ class MatchDetailViewModel @Inject constructor(
         footballRepository.observeEvents(matchId),
         details,
         selectedTab,
-    ) { match, events, detail, tab ->
+        matchTracker.isTracking(matchId),
+    ) { match, events, detail, tab, following ->
         MatchDetailUiState(
             matchId = matchId,
             match = match,
@@ -68,12 +72,28 @@ class MatchDetailViewModel @Inject constructor(
             isRefreshing = detail.isRefreshing,
             errorMessage = detail.errorMessage,
             sourceMissing = detail.sourceMissing,
+            following = following,
         )
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
         MatchDetailUiState(matchId = matchId),
     )
+
+    /**
+     * Starts or stops the live card for this match by hand.
+     *
+     * The card normally arrives on its own an hour before kick-off. This is the way in
+     * for a match nobody was following when that alarm would have been set, and the way
+     * back for one the user swiped away - a dismissal is sticky by design, so re-following
+     * has to lift it explicitly.
+     */
+    fun toggleFollowing() {
+        viewModelScope.launch {
+            if (uiState.value.following) matchTracker.unfollow(matchId)
+            else matchTracker.follow(matchId)
+        }
+    }
 
     fun selectTab(tab: MatchDetailTab) {
         selectedTab.value = tab

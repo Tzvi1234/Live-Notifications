@@ -14,7 +14,9 @@ import com.tzvi.kickoff.core.model.AppSettings
 import com.tzvi.kickoff.core.model.LiveCardStyle
 import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.repository.SettingsRepository
+import com.tzvi.kickoff.notifications.LiveCardPreview
 import com.tzvi.kickoff.notifications.LiveUpdateCapability
+import com.tzvi.kickoff.notifications.MatchNotificationBuilder
 import com.tzvi.kickoff.ui.island.IslandOverlayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -49,6 +51,7 @@ class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val footballRepository: FootballRepository,
     private val capability: LiveUpdateCapability,
+    private val liveCardPreview: LiveCardPreview,
 ) : ViewModel() {
 
     private val reloads = MutableStateFlow(0)
@@ -205,6 +208,39 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * Posts a fabricated match card so the setting above can be judged on this device
+     * rather than in the abstract.
+     *
+     * Promotion has nine independent conditions and fails silently, so the result is read
+     * back from the posted notification and reported verbatim: whether the system actually
+     * promoted the card is the only honest answer to "will this show on my lock screen".
+     */
+    fun previewLiveCard() {
+        viewModelScope.launch {
+            val style = uiState.value.settings.liveCardStyle
+            val rendering = runCatching { liveCardPreview.show(style) }.getOrNull()
+            editor.update { it.copy(message = previewMessage(rendering)) }
+        }
+    }
+
+    fun dismissLiveCardPreview() {
+        liveCardPreview.hide()
+        editor.update { it.copy(message = null) }
+    }
+
+    private fun previewMessage(rendering: MatchNotificationBuilder.Rendering?): String =
+        when (rendering) {
+            MatchNotificationBuilder.Rendering.PROMOTED ->
+                "Posted as a Live Update - check the status bar and lock screen."
+            MatchNotificationBuilder.Rendering.RICH ->
+                "Posted as the rich scoreboard. It will not appear in the status bar or on the always-on display."
+            MatchNotificationBuilder.Rendering.PLAIN ->
+                "Posted using the plain system template."
+            null ->
+                "Could not post a card. Check that notifications are allowed for Kickoff."
+        }
 
     fun dismissMessage() {
         editor.update { it.copy(message = null) }

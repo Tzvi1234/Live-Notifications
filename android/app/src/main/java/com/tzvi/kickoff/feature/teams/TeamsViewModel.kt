@@ -37,6 +37,7 @@ class TeamsViewModel @Inject constructor(
     private val local = MutableStateFlow(LocalState())
     private val leagueJobs = mutableMapOf<Int, Job>()
     private var fixtureJob: Job? = null
+    private var refreshQueued = false
     private var leagueCatalogueJob: Job? = null
 
     /**
@@ -137,8 +138,14 @@ class TeamsViewModel @Inject constructor(
     fun onLoadCompetitions() {
         if (leagueCatalogueJob?.isActive == true) return
         leagueCatalogueJob = viewModelScope.launch {
-            val result = runCatching { footballRepository.featuredLeagues() }
-            report(result.exceptionOrNull())
+            try {
+                footballRepository.featuredLeagues()
+                report(null)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                report(error)
+            }
         }
     }
 
@@ -205,13 +212,35 @@ class TeamsViewModel @Inject constructor(
         }
     }
 
-    private fun refreshFixtures() {
-        if (fixtureJob?.isActive == true) return
+    /**
+     * One request covers every favourite at once, so a second caller normally just rides
+     * on the refresh already in flight.
+     *
+     * [forNewFavourite] is the exception: that refresh read the favourite list *before*
+     * the new club was written to it, so it cannot contain the club, and one follow-up
+     * run is queued behind it. Starring several clubs in a row still costs a single
+     * follow-up rather than a request each.
+     */
+    private fun refreshFixtures(forNewFavourite: Boolean = false) {
+        if (fixtureJob?.isActive == true) {
+            refreshQueued = refreshQueued || forNewFavourite
+            return
+        }
         fixtureJob = viewModelScope.launch {
             local.update { it.copy(fixturesRefreshing = true) }
-            val result = runCatching { footballRepository.refreshFixtures() }
-            local.update { it.copy(fixturesRefreshing = false) }
-            report(result.exceptionOrNull())
+            try {
+                do {
+                    refreshQueued = false
+                    footballRepository.refreshFixtures()
+                } while (refreshQueued)
+                report(null)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                report(error)
+            } finally {
+                local.update { it.copy(fixturesRefreshing = false) }
+            }
         }
     }
 
@@ -226,13 +255,12 @@ class TeamsViewModel @Inject constructor(
                     SearchState(
                         query = query,
                         results = results,
-                        hasRun = true,
                         failure = if (results.isEmpty()) TeamsFailure.EMPTY else null,
                     )
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    SearchState(query = query, hasRun = true, failure = error.asFailure())
+                    SearchState(query = query, failure = error.asFailure())
                 }
                 emit(outcome)
             }
