@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Launch animation: the ring draws itself round the circle, the panel fades and scales
+  in behind it, and the tracker dot lands last. Same choreography as AnimatedKickoffLogo
+  so the splash and the first in-app frame are the same gesture.
+
+  windowSplashScreenAnimatedIcon plays this for at most 1000ms, so the whole sequence
+  is budgeted to finish inside that.
+-->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/kickoff_splash_vector">
+
+    <target android:name="ring">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:animation">
+            <objectAnimator
+                android:propertyName="trimPathEnd"
+                android:valueFrom="0"
+                android:valueTo="1"
+                android:duration="620"
+                android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+
+    <target android:name="panel_group">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:animation">
+            <set>
+                <objectAnimator
+                    android:propertyName="scaleX"
+                    android:valueFrom="0.2" android:valueTo="1"
+                    android:startOffset="120" android:duration="420"
+                    android:interpolator="@android:interpolator/overshoot" />
+                <objectAnimator
+                    android:propertyName="scaleY"
+                    android:valueFrom="0.2" android:valueTo="1"
+                    android:startOffset="120" android:duration="420"
+                    android:interpolator="@android:interpolator/overshoot" />
+            </set>
+        </aapt:attr>
+    </target>
+
+    <target android:name="panel">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:animation">
+            <objectAnimator
+                android:propertyName="fillAlpha"
+                android:valueFrom="0" android:valueTo="1"
+                android:startOffset="120" android:duration="260" />
+        </aapt:attr>
+    </target>
+
+    <target android:name="dot_group">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:animation">
+            <set>
+                <objectAnimator
+                    android:propertyName="scaleX"
+                    android:valueFrom="0" android:valueTo="1"
+                    android:startOffset="540" android:duration="260"
+                    android:interpolator="@android:interpolator/overshoot" />
+                <objectAnimator
+                    android:propertyName="scaleY"
+                    android:valueFrom="0" android:valueTo="1"
+                    android:startOffset="540" android:duration="260"
+                    android:interpolator="@android:interpolator/overshoot" />
+            </set>
+        </aapt:attr>
+    </target>
+</animated-vector>

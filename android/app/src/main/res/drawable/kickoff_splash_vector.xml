@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:name="ring"
+        android:pathData="M70.73,35.42A25.0,25.0,0,1,1,44.63,30.82"
+        android:strokeColor="#FF00C853"
+        android:strokeWidth="9.0"
+        android:strokeLineCap="round"
+        android:trimPathStart="0"
+        android:trimPathEnd="0" />
+    <group android:name="panel_group" android:pivotX="54" android:pivotY="54"
+           android:scaleX="0.2" android:scaleY="0.2">
+        <path
+            android:name="panel"
+            android:pathData="M54.00,40.50L66.84,49.83L61.94,64.92L46.06,64.92L41.16,49.83Z"
+            android:fillColor="#FFEAFFEF"
+            android:fillAlpha="0" />
+    </group>
+    <group android:name="dot_group" android:pivotX="70.73" android:pivotY="35.42"
+           android:scaleX="0" android:scaleY="0">
+        <path
+            android:name="dot"
+            android:pathData="M64.73,35.42a6.0,6.0,0,1,0,12.00,0a6.0,6.0,0,1,0,-12.00,0Z"
+            android:fillColor="#FFFFFFFF" />
+    </group>
+</vector>

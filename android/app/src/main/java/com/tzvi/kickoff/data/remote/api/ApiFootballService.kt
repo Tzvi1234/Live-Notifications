@@ -1,0 +1,81 @@
+package com.tzvi.kickoff.data.remote.api
+
+import com.tzvi.kickoff.data.remote.dto.ApiEnvelope
+import com.tzvi.kickoff.data.remote.dto.EventResponse
+import com.tzvi.kickoff.data.remote.dto.FixtureResponse
+import com.tzvi.kickoff.data.remote.dto.LeagueCatalogueResponse
+import com.tzvi.kickoff.data.remote.dto.LineupResponse
+import com.tzvi.kickoff.data.remote.dto.StatisticsResponse
+import com.tzvi.kickoff.data.remote.dto.TeamCatalogueResponse
+import retrofit2.http.GET
+import retrofit2.http.Query
+
+/**
+ * API-Football v3, called directly from the device.
+ *
+ * This is the "bring your own key" path: it works with nothing deployed, but a free
+ * key is 100 requests/day, which one live match at a 60s cadence already exceeds.
+ * Production traffic should go through the Kickoff backend instead, which polls once
+ * on behalf of every user and pushes deltas.
+ */
+interface ApiFootballService {
+
+    @GET("leagues")
+    suspend fun leagues(
+        @Query("id") id: Int? = null,
+        @Query("country") country: String? = null,
+        @Query("season") season: Int? = null,
+        @Query("current") current: String? = null,
+        @Query("search") search: String? = null,
+    ): ApiEnvelope<LeagueCatalogueResponse>
+
+    @GET("teams")
+    suspend fun teams(
+        @Query("id") id: Int? = null,
+        @Query("league") league: Int? = null,
+        @Query("season") season: Int? = null,
+        @Query("search") search: String? = null,
+    ): ApiEnvelope<TeamCatalogueResponse>
+
+    @GET("fixtures")
+    suspend fun fixtures(
+        @Query("id") id: Long? = null,
+        @Query("date") date: String? = null,
+        @Query("league") league: Int? = null,
+        @Query("season") season: Int? = null,
+        @Query("team") team: Int? = null,
+        @Query("next") next: Int? = null,
+        @Query("last") last: Int? = null,
+        @Query("from") from: String? = null,
+        @Query("to") to: String? = null,
+        @Query("timezone") timezone: String? = null,
+    ): ApiEnvelope<FixtureResponse>
+
+    /**
+     * Every in-play fixture in one request - the cheapest possible live poll.
+     * Pass `all`, or dash-separated league ids to narrow it ("39-140-135").
+     */
+    @GET("fixtures")
+    suspend fun liveFixtures(
+        @Query("live") live: String = "all",
+    ): ApiEnvelope<FixtureResponse>
+
+    @GET("fixtures/events")
+    suspend fun events(@Query("fixture") fixtureId: Long): ApiEnvelope<EventResponse>
+
+    @GET("fixtures/lineups")
+    suspend fun lineups(@Query("fixture") fixtureId: Long): ApiEnvelope<LineupResponse>
+
+    @GET("fixtures/statistics")
+    suspend fun statistics(@Query("fixture") fixtureId: Long): ApiEnvelope<StatisticsResponse>
+
+    companion object {
+        const val BASE_URL = "https://v3.football.api-sports.io/"
+        const val API_KEY_HEADER = "x-apisports-key"
+
+        /** Public crest CDN - no key, no referer check. */
+        fun teamCrestUrl(teamId: Int) = "https://media.api-sports.io/football/teams/$teamId.png"
+        fun leagueLogoUrl(leagueId: Int) = "https://media.api-sports.io/football/leagues/$leagueId.png"
+        fun playerPhotoUrl(playerId: Int) = "https://media.api-sports.io/football/players/$playerId.png"
+    }
+}
