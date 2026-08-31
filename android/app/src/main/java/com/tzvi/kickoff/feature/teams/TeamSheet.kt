@@ -146,7 +146,11 @@ internal fun TeamSheetBody(
 
         Spacer(Modifier.height(6.dp))
         SectionHeader(title = "Next fixtures")
-        FixtureBlock(state = state, onToggleFavourite = onToggleFavourite, onOpenMatch = onOpenMatch)
+        FixtureBlock(
+            state = state,
+            onToggleFavourite = onToggleFavourite,
+            onOpenMatch = onOpenMatch,
+        )
     }
 }
 

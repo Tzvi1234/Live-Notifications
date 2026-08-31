@@ -138,7 +138,7 @@ class TeamsViewModel @Inject constructor(
         if (leagueCatalogueJob?.isActive == true) return
         leagueCatalogueJob = viewModelScope.launch {
             val result = runCatching { footballRepository.featuredLeagues() }
-            result.exceptionOrNull()?.let { error -> report(error) }
+            report(result.exceptionOrNull())
         }
     }
 
@@ -211,7 +211,7 @@ class TeamsViewModel @Inject constructor(
             local.update { it.copy(fixturesRefreshing = true) }
             val result = runCatching { footballRepository.refreshFixtures() }
             local.update { it.copy(fixturesRefreshing = false) }
-            result.exceptionOrNull()?.let { error -> report(error) }
+            report(result.exceptionOrNull())
         }
     }
 
@@ -238,11 +238,12 @@ class TeamsViewModel @Inject constructor(
             }
         }
 
-    private fun report(error: Throwable) = local.update { state ->
-        if (error is NoFootballSourceException) {
-            state.copy(sourceMissing = true)
-        } else {
-            state.copy(errorMessage = error.userMessage())
+    /** A success clears both banners; a source that is missing is not a passing error. */
+    private fun report(error: Throwable?) = local.update { state ->
+        when {
+            error == null -> state.copy(sourceMissing = false, errorMessage = null)
+            error is NoFootballSourceException -> state.copy(sourceMissing = true)
+            else -> state.copy(errorMessage = error.userMessage())
         }
     }
 

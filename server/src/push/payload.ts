@@ -209,7 +209,7 @@ function requiredData(input: DataInput): Record<string, string> {
     awayScore: String(score.away),
     leagueId: String(match.leagueId),
     leagueName: match.leagueName,
-    /** SECONDS since epoch: the client reads it with Instant.ofEpochSecond. */
+    // SECONDS since epoch, never millis: the client reads it with Instant.ofEpochSecond.
     kickoffAt: String(match.kickoffAt),
     ts: String(input.nowMs),
   };

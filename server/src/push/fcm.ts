@@ -87,7 +87,12 @@ function readCredential(): CredentialSource | undefined {
   return undefined;
 }
 
-function toServiceAccount(json: Record<string, unknown>): ServiceAccount {
+/**
+ * The returned `projectId` is narrowed to a required string: `ServiceAccount` declares it
+ * optional, but nothing below this guard can reach the caller without one, and `AppOptions`
+ * will not take `string | undefined`.
+ */
+function toServiceAccount(json: Record<string, unknown>): ServiceAccount & { projectId: string } {
   const projectId = typeof json.project_id === 'string' ? json.project_id : undefined;
   const clientEmail = typeof json.client_email === 'string' ? json.client_email : undefined;
   const privateKey = typeof json.private_key === 'string' ? json.private_key : undefined;

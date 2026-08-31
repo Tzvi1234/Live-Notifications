@@ -102,6 +102,9 @@ class LiveActivityNotifier @Inject constructor(
         )
     }
 
+    // canPost() checks POST_NOTIFICATIONS before anything is built; lint cannot see
+    // through the helper.
+    @SuppressLint("MissingPermission")
     suspend fun postCalendar(activity: LiveActivity.CalendarActivity): Boolean =
         postLock.withLock {
             if (!canPost()) return false
@@ -109,7 +112,6 @@ class LiveActivityNotifier @Inject constructor(
             val id = activity.notificationId
             if (isRateLimited(id)) return false
 
-            @SuppressLint("MissingPermission")
             val notification = calendarBuilder.build(activity)
             manager.notify(id, notification)
             lastPostAt[id] = System.currentTimeMillis()

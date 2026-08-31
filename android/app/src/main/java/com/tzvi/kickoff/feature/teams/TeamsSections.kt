@@ -180,7 +180,11 @@ internal fun LeagueCard(
                     .padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CrestImage(url = section.league.logoUrl, fallback = section.league.name, size = 30.dp)
+                CrestImage(
+                    url = section.league.logoUrl,
+                    fallback = section.league.name,
+                    size = 30.dp,
+                )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(

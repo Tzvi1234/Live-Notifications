@@ -68,6 +68,19 @@ data class OnboardingUiState(
 
     val hasSource: Boolean get() = source != ConfiguredSource.NONE
 
+    /**
+     * True until a fetch has actually answered.
+     *
+     * The pager composes the page after the current one, so these lists are read while
+     * still untouched: an empty list there means "not asked yet", not "nothing to show",
+     * and the two need completely different copy.
+     */
+    val leaguesPending: Boolean
+        get() = leaguesLoading || (leagues.isEmpty() && leaguesFailure == null)
+
+    val teamsPending: Boolean
+        get() = teamsLoading || (teams.isEmpty() && teamsFailure == null)
+
     fun matchingTeams(): List<TeamOption> {
         val query = teamQuery.trim()
         if (query.isEmpty()) return teams

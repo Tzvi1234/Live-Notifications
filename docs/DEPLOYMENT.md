@@ -78,7 +78,10 @@ repository root — that is where Render looks for a Blueprint by default.
    - `kickoff-db` — a Postgres database
 3. Render will prompt for every secret marked `sync: false`. Fill them in from the table in
    §4 below.
-4. **Apply**. The first build runs `npm ci && npm run build`, then `npm start`.
+4. **Apply**. The first build runs `npm ci --include=dev && npm run build`, then `npm start`.
+   (`--include=dev` is not optional: Render exposes `NODE_ENV=production` to the build as
+   well as the runtime, and npm skips devDependencies — typescript among them — when it is
+   set, so a plain `npm ci` fails the build on `tsc: not found`.)
 
 `DATABASE_URL` is wired automatically from `kickoff-db` — you do not set it by hand.
 
@@ -129,6 +132,7 @@ Set these on the **kickoff-api** service (**Environment → Environment Variable
 |---|---|
 | `PORT` | Injected by Render. The server binds `0.0.0.0:$PORT`. |
 | `DATABASE_URL` | Wired from `kickoff-db` by the blueprint's `fromDatabase` block. |
+| `NODE_VERSION` | Set to `22` by the blueprint. It outranks every other source, so pinning it here stops Render resolving `engines: ">=22"` to a newer major than `@types/node` describes. |
 
 ### Push (set these to enable FCM)
 

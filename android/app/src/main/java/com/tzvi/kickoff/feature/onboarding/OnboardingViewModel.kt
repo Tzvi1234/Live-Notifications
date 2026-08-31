@@ -59,9 +59,8 @@ class OnboardingViewModel @Inject constructor(
         if (key.isBlank()) return
         viewModelScope.launch {
             settings.setApiFootballKey(key)
-            mutableState.update {
-                it.copy(apiKeyInput = key, apiKeySaved = true, leaguesFailure = null)
-            }
+            invalidateCatalogue()
+            mutableState.update { it.copy(apiKeyInput = key, apiKeySaved = true) }
         }
     }
 
@@ -76,14 +75,35 @@ class OnboardingViewModel @Inject constructor(
         }
         viewModelScope.launch {
             settings.setBackendUrl(normalised)
+            invalidateCatalogue()
             mutableState.update {
                 it.copy(
                     backendUrlInput = normalised,
                     backendUrlError = null,
                     backendSaved = true,
-                    leaguesFailure = null,
                 )
             }
+        }
+    }
+
+    /**
+     * Whatever is on screen was answered by the source that has just been replaced, so
+     * it is thrown away rather than left to look current: the next page refetches.
+     */
+    private fun invalidateCatalogue() {
+        leaguesJob?.cancel()
+        teamsJob?.cancel()
+        mutableState.update {
+            it.copy(
+                // The cancelled jobs will never clear their own loading flags.
+                leaguesLoading = false,
+                leagues = emptyList(),
+                leaguesFailure = null,
+                teamsLoading = false,
+                teams = emptyList(),
+                teamsFailure = null,
+                teamsLoadedFor = null,
+            )
         }
     }
 
@@ -100,6 +120,10 @@ class OnboardingViewModel @Inject constructor(
                     it.copy(
                         leaguesLoading = false,
                         leagues = leagues,
+                        // A pick made against an earlier catalogue that this one does not
+                        // list would enable Next and then fetch no squads at all.
+                        selectedLeagueIds = it.selectedLeagueIds
+                            .intersect(leagues.mapTo(mutableSetOf()) { league -> league.id }),
                         leaguesFailure = if (leagues.isEmpty()) CatalogueFailure.EMPTY else null,
                     )
                 }
@@ -126,6 +150,9 @@ class OnboardingViewModel @Inject constructor(
 
     fun loadTeams(force: Boolean = false) {
         val leagueIds = mutableState.value.selectedLeagueIds
+        // A fast swipe can settle here before the leagues step has been answered; there
+        // is nothing to ask for yet, and "no squads" would be the wrong thing to say.
+        if (leagueIds.isEmpty()) return
         if (!force && mutableState.value.teamsLoadedFor == leagueIds) return
         teamsJob?.cancel()
         teamsJob = viewModelScope.launch {

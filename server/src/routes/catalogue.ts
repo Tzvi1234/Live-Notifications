@@ -65,9 +65,10 @@ export function createCatalogueRouter(deps: ApiDeps): Router {
       // The provider returns nothing for a league without a season, so the current one is
       // the only sane default; European seasons are labelled by the year they start in.
       query.season = season ?? currentSeason();
-    } else if (season !== undefined) {
-      query.season = season;
     }
+    // A `season` with no `league` beside it is refused by /teams, and the refusal arrives as
+    // an HTTP 200 the client turns into a 502. A squad is not season-scoped anyway, so the
+    // parameter is dropped and the search runs unqualified rather than failing the request.
     if (term !== undefined) query.search = term;
 
     const raw = await deps.provider.teams(query);

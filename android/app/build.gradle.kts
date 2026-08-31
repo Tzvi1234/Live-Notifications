@@ -57,10 +57,13 @@ android {
     }
 
     lint {
-        // The Live Update APIs live at API 36/36.1; every call site is guarded at
-        // runtime, and NotificationCompat no-ops below its platform level.
+        // The app ships one language for now; a missing translation is not a finding.
         disable += setOf("MissingTranslation")
-        abortOnError = false
+        // targetSdk deliberately trails compileSdk: 37 is compiled against for the newest
+        // APIs, but opting the app into Android 17's behaviour changes is a separate,
+        // reviewed decision.
+        disable += setOf("OldTargetApi")
+        abortOnError = true
     }
 }
 
@@ -82,7 +85,6 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material3.adaptive)
     implementation(libs.androidx.compose.material.icons.extended)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
@@ -116,7 +118,6 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.turbine)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

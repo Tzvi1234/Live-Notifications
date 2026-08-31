@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Same reasoning as backup_rules.xml: settings travel, cached football data does not. -->
 <data-extraction-rules>
     <cloud-backup>
-        <include domain="file" path="." />
-        <exclude domain="database" path="kickoff.db" />
+        <include domain="sharedpref" path="." />
     </cloud-backup>
     <device-transfer>
-        <include domain="file" path="." />
-        <exclude domain="database" path="kickoff.db" />
+        <include domain="sharedpref" path="." />
     </device-transfer>
 </data-extraction-rules>

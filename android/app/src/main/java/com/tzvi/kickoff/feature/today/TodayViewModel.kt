@@ -22,10 +22,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.IOException
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -83,12 +85,16 @@ class TodayViewModel @Inject constructor(
         // Read the grant here rather than caching it: it can change in system Settings
         // while the app is backgrounded, with no callback of any kind.
         CalendarState(syncEnabled = enabled, permissionGranted = calendarRepository.hasPermission())
-    }.flatMapLatest { gate ->
+    }.distinctUntilChanged().flatMapLatest { gate ->
         if (!gate.syncEnabled || !gate.permissionGranted) {
             flowOf(gate)
         } else {
             calendarRepository.observeUpcoming(CALENDAR_WINDOW_DAYS)
                 .map { events -> gate.copy(events = events.nextFew()) }
+                // The provider observer is debounced, so its first list is seconds away.
+                // combine() below cannot emit until every source has, and the football
+                // sections must not wait on the calendar to draw.
+                .onStart { emit(gate) }
                 .catch { emit(gate) }
         }
     }
@@ -132,9 +138,12 @@ class TodayViewModel @Inject constructor(
      * fresher scores, so running it second is what keeps a goal from being rolled back.
      */
     private fun sync(userInitiated: Boolean) {
+        // Marked before the de-duplication guard: a pull that lands on top of the silent
+        // startup sync still has to move the indicator, and whichever job is in flight
+        // clears the flag when it finishes.
+        if (userInitiated) syncState.update { it.copy(isRefreshing = true) }
         if (syncJob?.isActive == true) return
         syncJob = viewModelScope.launch {
-            if (userInitiated) syncState.update { it.copy(isRefreshing = true) }
             val outcome = runCatching {
                 footballRepository.refreshFixtures()
                 footballRepository.refreshLive()
@@ -155,9 +164,13 @@ class TodayViewModel @Inject constructor(
     private fun List<Match>.toUpcomingDays(now: Instant): List<UpcomingDay> {
         val zone = ZoneId.systemDefault()
         val today = now.atZone(zone).toLocalDate()
+        // Anything in play has its own section above and a result is not "next up", but
+        // the cut-off reaches back past kick-off: a fixture the provider has not yet
+        // flipped to in-play is still the thing the user opened the app to look at, and
+        // dropping it at kick-off time would make it vanish from the screen entirely.
+        val earliest = now.minus(KICKOFF_GRACE)
         return asSequence()
-            // Anything in play has its own section above, and a result is not "next up".
-            .filter { !it.isLive && !it.phase.isFinished && it.kickoffAt.isAfter(now) }
+            .filter { !it.isLive && !it.phase.isFinished && it.kickoffAt.isAfter(earliest) }
             .sortedBy { it.kickoffAt }
             .groupBy { it.kickoffAt.atZone(zone).toLocalDate() }
             .map { (date, matches) -> UpcomingDay(date, dayLabel(date, today), matches) }
@@ -190,6 +203,7 @@ class TodayViewModel @Inject constructor(
     private companion object {
         const val CALENDAR_WINDOW_DAYS = 7L
         const val CALENDAR_EVENT_LIMIT = 3
+        val KICKOFF_GRACE: Duration = Duration.ofHours(2)
         val DAY_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE d MMM")
     }
 }

@@ -24,8 +24,10 @@ export function createAdminRouter(deps: ApiDeps): Router {
   router.use('/admin', (req: Request, _res: Response, next: NextFunction) => {
     const expected = deps.config.adminToken;
     if (expected === undefined) {
-      // 404, not 403: an unconfigured admin surface should look like it was never deployed.
-      next(notFound(`No route for ${req.method} ${req.originalUrl}.`));
+      // 404, not 403: an unconfigured admin surface should look like it was never deployed,
+      // which means the same body the app's catch-all writes — path only, no query string.
+      const path = req.originalUrl.split('?', 1)[0] ?? req.path;
+      next(notFound(`No route for ${req.method} ${path}.`));
       return;
     }
 

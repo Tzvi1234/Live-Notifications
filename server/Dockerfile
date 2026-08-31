@@ -17,7 +17,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 FROM node:22-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# `--include=dev` because npm omits devDependencies whenever NODE_ENV=production, and
+# typescript is one: an inherited NODE_ENV would otherwise fail this stage on `tsc: not found`.
+RUN npm ci --include=dev
 COPY tsconfig.json ./
 COPY src ./src
 # `npm run build` also copies src/store/schema.sql into dist/ — it is data, so tsc ignores it
@@ -41,6 +43,7 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-# No npm in the entrypoint: npm swallows SIGTERM, and the server's graceful shutdown depends
-# on receiving it as PID 1.
+# `node`, not `npm start`: as PID 1 the server receives SIGTERM directly and runs its own
+# shutdown. npm does forward the signal, but only after ~1s and via a second process that
+# earns nothing in an image whose only job is to run this one command.
 CMD ["node", "dist/index.js"]

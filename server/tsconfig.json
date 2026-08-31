@@ -13,6 +13,12 @@
     // optional arrays (events, lineups, statistics), so this is the rule that forces the
     // mappers to admit a missing element instead of trusting the shape.
     "noUncheckedIndexedAccess": true,
+    // `{ crestUrl: undefined }` is not the same value as an absent `crestUrl`, and the wire
+    // contract in types.ts spells every optional as `?: T | undefined` precisely so that the
+    // difference is expressible. Without this flag those unions are decoration and the
+    // "built key by key" construction in routes/catalogue.ts and routes/devices.ts — which
+    // both cite this option by name — guards against nothing.
+    "exactOptionalPropertyTypes": true,
 
     // With NodeNext output, an `import { X }` that only ever names a type must be written
     // `import type` or it survives into the emitted JS as a real, possibly circular, require.

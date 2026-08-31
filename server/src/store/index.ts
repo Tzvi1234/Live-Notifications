@@ -88,9 +88,13 @@ export interface Store {
   removeTokens(tokens: string[]): Promise<number>;
 
   /**
-   * Only the holder may poll and push. Render overlaps the old and new instance during a
-   * deploy, and two pollers on one dataset means two notifications per goal for anyone
-   * whose event lands in the window before the loser's `markEventSent` fails.
+   * Only the holder may poll. `markEventSent` is what keeps a goal to one notification even
+   * when two instances race; this lock is what stops the second one spending the day's
+   * provider budget a second time and fighting over `match_state` while Render runs the old
+   * and the new instance side by side through a deploy.
+   *
+   * `ttlMs` is a client-side lease on the answer, not a server-side expiry: the lock lives
+   * on a connection and dies with it. Keep it a small multiple of the poll interval.
    */
   acquireLeaderLock(ttlMs: number): Promise<boolean>;
   releaseLeaderLock(): Promise<void>;
@@ -108,21 +112,54 @@ export interface StoreConfig {
  */
 export const MAX_IDS_PER_LIST = 500;
 
-/** Positive integers only, de-duplicated, order preserved, length capped. */
-export function normalizeIds(values: readonly unknown[] | undefined): number[] {
+/**
+ * `team_ids` and `league_ids` are INTEGER[]; a wider value does not round-trip, it makes
+ * Postgres reject the whole INSERT ("out of range for type integer"), which would lose every
+ * other id in the same request. Dropping the impossible one is the lesser failure.
+ */
+const MAX_INT4 = 2_147_483_647;
+
+/** Positive integers only, de-duplicated, order preserved, length capped, range capped. */
+export function normalizeIds(
+  values: readonly unknown[] | undefined,
+  max: number = MAX_INT4,
+): number[] {
   if (!values) return [];
   const seen = new Set<number>();
   for (const value of values) {
     const id = typeof value === 'string' ? Number(value) : value;
-    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) continue;
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 || id > max) continue;
     seen.add(id);
     if (seen.size >= MAX_IDS_PER_LIST) break;
   }
   return [...seen];
 }
 
+/**
+ * The app sends JSON booleans; the strings are accepted because every default here except
+ * `substitutions` is `true`, so treating a literal "false" as junk would switch a category
+ * back ON for someone who turned it off.
+ */
 function bool(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
+  if (typeof value === 'boolean') return value;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return fallback;
+}
+
+/**
+ * Only a number or a non-blank numeric string counts. `Number()` alone would turn `null`,
+ * `""`, `[]` and `false` into 0, and 0 is not "no opinion" here — it is a valid setting that
+ * silently switches a device's pre-match notifications off.
+ */
+function minutes(value: unknown, fallback: number): number {
+  const parsed =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim().length > 0
+        ? Number(value)
+        : Number.NaN;
+  return Number.isFinite(parsed) ? Math.min(1440, Math.max(0, Math.trunc(parsed))) : fallback;
 }
 
 /**
@@ -131,7 +168,6 @@ function bool(value: unknown, fallback: boolean): boolean {
  */
 export function normalizePreferences(value: unknown): SubscriptionPreferences {
   const input = (value ?? {}) as Partial<Record<keyof SubscriptionPreferences, unknown>>;
-  const lead = Number(input.preMatchLeadMinutes);
   return {
     goals: bool(input.goals, DEFAULT_SUBSCRIPTION_PREFERENCES.goals),
     cards: bool(input.cards, DEFAULT_SUBSCRIPTION_PREFERENCES.cards),
@@ -141,9 +177,10 @@ export function normalizePreferences(value: unknown): SubscriptionPreferences {
       DEFAULT_SUBSCRIPTION_PREFERENCES.kickoffAndFullTime,
     ),
     lineups: bool(input.lineups, DEFAULT_SUBSCRIPTION_PREFERENCES.lineups),
-    preMatchLeadMinutes: Number.isFinite(lead)
-      ? Math.min(1440, Math.max(0, Math.trunc(lead)))
-      : DEFAULT_SUBSCRIPTION_PREFERENCES.preMatchLeadMinutes,
+    preMatchLeadMinutes: minutes(
+      input.preMatchLeadMinutes,
+      DEFAULT_SUBSCRIPTION_PREFERENCES.preMatchLeadMinutes,
+    ),
   };
 }
 
@@ -152,7 +189,9 @@ export function normalizeSubscription(subscription: SubscriptionRecord): Subscri
     token: subscription.token,
     teamIds: normalizeIds(subscription.teamIds),
     leagueIds: normalizeIds(subscription.leagueIds),
-    matchIds: normalizeIds(subscription.matchIds),
+    // match_ids is BIGINT[], matching the client's `long`, so only JS's own integer ceiling
+    // applies here.
+    matchIds: normalizeIds(subscription.matchIds, Number.MAX_SAFE_INTEGER),
     preferences: normalizePreferences(subscription.preferences),
   };
 }

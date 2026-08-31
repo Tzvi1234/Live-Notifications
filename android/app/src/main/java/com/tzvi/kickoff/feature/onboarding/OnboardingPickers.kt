@@ -98,7 +98,7 @@ internal fun LeaguesPage(
         Spacer(Modifier.height(OnboardingSpacing.tight))
 
         when {
-            state.leaguesLoading -> LoadingState(
+            state.leaguesPending -> LoadingState(
                 modifier = Modifier.weight(1f),
                 label = "Loading competitions",
             )
@@ -261,7 +261,7 @@ internal fun TeamsPage(
         Spacer(Modifier.height(OnboardingSpacing.tight))
 
         when {
-            state.teamsLoading -> LoadingState(
+            state.teamsPending -> LoadingState(
                 modifier = Modifier.weight(1f),
                 label = "Loading squads",
             )

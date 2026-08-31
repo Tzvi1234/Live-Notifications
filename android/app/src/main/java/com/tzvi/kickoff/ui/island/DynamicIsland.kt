@@ -31,7 +31,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,6 +75,12 @@ fun DynamicIsland(
     modifier: Modifier = Modifier,
     onDismiss: (() -> Unit)? = null,
 ) {
+    // AnimatedVisibility keeps composing its content through the exit animation, by which
+    // time `activity` is already null. Holding the last non-null value lets the island
+    // animate away still showing the score instead of collapsing into an empty pill.
+    var retained by remember { mutableStateOf(activity) }
+    if (activity != null && activity != retained) retained = activity
+
     AnimatedVisibility(
         visible = activity != null,
         enter = slideInVertically(
@@ -85,8 +93,7 @@ fun DynamicIsland(
         ) + fadeOut(tween(Motion.Duration.SHORT)),
         modifier = modifier,
     ) {
-        // Held so the card does not blank out mid-exit when `activity` goes null.
-        val shown = remember(activity) { activity } ?: return@AnimatedVisibility
+        val shown = retained ?: return@AnimatedVisibility
 
         val corner by animateDpAsState(
             targetValue = if (expanded) 30.dp else 24.dp,

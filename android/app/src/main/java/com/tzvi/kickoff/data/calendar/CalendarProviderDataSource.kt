@@ -11,9 +11,9 @@ import androidx.core.content.ContextCompat
 import com.tzvi.kickoff.core.model.CalendarAvailability
 import com.tzvi.kickoff.core.model.CalendarEvent
 import com.tzvi.kickoff.core.model.DeviceCalendar
+import com.tzvi.kickoff.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -36,7 +36,7 @@ import kotlin.time.Duration.Companion.seconds
 @Singleton
 class CalendarProviderDataSource @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val io: CoroutineDispatcher = Dispatchers.IO,
+    @param:IoDispatcher private val io: CoroutineDispatcher,
 ) {
     private val resolver: ContentResolver get() = context.contentResolver
 

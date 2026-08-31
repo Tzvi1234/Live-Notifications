@@ -83,7 +83,8 @@ export function parsePositiveInt(raw: unknown, field: string): number | undefine
   if (value === undefined) return undefined;
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw badRequest(`Query parameter "${field}" must be a positive whole number; got "${value}".`);
+    // Not "query parameter": this also validates the :id path segment of /v1/matches/:id.
+    throw badRequest(`"${field}" must be a positive whole number; got "${value}".`);
   }
   return parsed;
 }

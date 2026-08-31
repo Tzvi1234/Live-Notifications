@@ -52,7 +52,10 @@ class LiveUpdateCapability @Inject constructor(
      * with no runtime request flow to build.
      */
     fun canPostPromoted(): Boolean {
-        if (!supportsPromotion) return false
+        // The SDK_INT comparison is repeated rather than delegated to supportsPromotion:
+        // lint cannot follow the property into its version check, and an unguarded call
+        // here would be a NoSuchMethodError on Android 15.
+        if (Build.VERSION.SDK_INT < 36 || !supportsPromotion) return false
         val manager = notificationManager ?: return false
         return runCatching { Api36Impl.canPostPromotedNotifications(manager) }.getOrDefault(false)
     }

@@ -51,7 +51,12 @@ services:
     branch: main
     # Paths are relative to the repository root, wherever this blueprint file itself sits.
     rootDir: server
-    buildCommand: npm ci && npm run build
+    # `--include=dev` is load-bearing, not decorative. Render exposes this service's env
+    # vars to the BUILD as well as the runtime, and npm's `omit` config defaults to `dev`
+    # whenever NODE_ENV=production — which is set below. A plain `npm ci` here therefore
+    # installs no typescript and the build dies on `tsc: not found`, on the very first
+    # deploy. The runtime still runs with NODE_ENV=production; only the install is widened.
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /v1/health
     # Replaces the deprecated `autoDeploy: true`.
@@ -61,6 +66,13 @@ services:
     numInstances: 1
 
     envVars:
+      # Pinned, and pinned HERE because NODE_VERSION outranks every other source. Render's
+      # default is whatever Node was current when the service was created, and package.json's
+      # `engines: >=22` is an unbounded range that Render resolves to the newest release —
+      # either would silently run this on a major that @types/node (pinned to 22.x to match
+      # the runtime) and the Dockerfile's node:22-slim do not describe.
+      - key: NODE_VERSION
+        value: "22"
       - key: NODE_ENV
         value: production
       - key: LOG_LEVEL

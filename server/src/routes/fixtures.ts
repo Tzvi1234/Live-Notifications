@@ -31,11 +31,15 @@ import {
   todayIso,
 } from './validation.js';
 
-/** One provider request per team; the Android client caps its own fan-out identically. */
-const MAX_TEAM_QUERIES = 10;
+/**
+ * Ceilings on the *requests* a range costs, not on the ids in it: a window straddling a
+ * season rollover needs one call per season per id, so counting teams would let a single
+ * refresh quietly spend double. Ids that no longer fit are dropped from the end of the list.
+ */
+const MAX_RANGE_REQUESTS_BY_TEAM = 10;
 
 /** Leagues carry far more fixtures per request, so fewer calls cover the same range. */
-const MAX_LEAGUE_QUERIES = 5;
+const MAX_RANGE_REQUESTS_BY_LEAGUE = 5;
 
 /**
  * A range with neither teams nor leagues has to be walked one day at a time, one request
@@ -157,38 +161,72 @@ async function fetchRange(
   teamIds: number[],
   leagueIds: number[],
 ): Promise<ApiFixture[]> {
-  // `from`/`to` need a season alongside them; the range spans days, not years, so the
-  // season the range *starts* in is the right label for all of it.
-  const season = currentSeason(new Date(`${from}T00:00:00Z`));
+  const seasons = seasonsInRange(from, to);
 
   if (teamIds.length > 0) {
     return flatten(
-      teamIds
-        .slice(0, MAX_TEAM_QUERIES)
-        .map((team) => provider.fixtures(rangeQuery({ team, season }, from, to))),
+      fanOut(teamIds, seasons, MAX_RANGE_REQUESTS_BY_TEAM, (team, season) => ({
+        from,
+        to,
+        season,
+        team,
+      })).map((query) => provider.fixtures(query)),
     );
   }
 
   if (leagueIds.length > 0) {
     return flatten(
-      leagueIds
-        .slice(0, MAX_LEAGUE_QUERIES)
-        .map((league) => provider.fixtures(rangeQuery({ league, season }, from, to))),
+      fanOut(leagueIds, seasons, MAX_RANGE_REQUESTS_BY_LEAGUE, (league, season) => ({
+        from,
+        to,
+        season,
+        league,
+      })).map((query) => provider.fixtures(query)),
     );
   }
 
   return flatten(enumerateDays(from, to).map((day) => provider.fixtures({ date: day })));
 }
 
-function rangeQuery(
-  base: { team?: number; league?: number; season: number },
-  from: string,
-  to: string,
-): FixtureQuery {
-  const query: FixtureQuery = { from, to, season: base.season };
-  if (base.team !== undefined) query.team = base.team;
-  if (base.league !== undefined) query.league = base.league;
-  return query;
+/**
+ * The season labels a [from, to] window touches. `from`/`to` are only accepted alongside a
+ * season, and a label turns over on 1 July — so the app's default fortnight-ahead window
+ * spans two of them for a fortnight each summer, and asking for only the earlier one loses
+ * every fixture of the season about to start.
+ */
+function seasonsInRange(from: string, to: string): number[] {
+  const first = currentSeason(new Date(`${from}T00:00:00Z`));
+  const last = currentSeason(new Date(`${to}T00:00:00Z`));
+  const seasons: number[] = [];
+  for (let season = first; season <= last; season += 1) seasons.push(season);
+  return seasons;
+}
+
+/**
+ * id x season, stopped at `maxRequests` so a straddling range cannot quietly double what it
+ * spends. An id is either queried for every season the range touches or left out entirely:
+ * half a team's window is indistinguishable from a team with no fixtures, and the client
+ * would cache the gap.
+ */
+function fanOut(
+  ids: number[],
+  seasons: number[],
+  maxRequests: number,
+  build: (id: number, season: number) => FixtureQuery,
+): FixtureQuery[] {
+  if (seasons.length > maxRequests) {
+    throw badRequest(
+      `A range spanning ${seasons.length} seasons is too wide to answer; ` +
+        'request one season at a time.',
+    );
+  }
+
+  const queries: FixtureQuery[] = [];
+  for (const id of ids) {
+    if (queries.length + seasons.length > maxRequests) break;
+    for (const season of seasons) queries.push(build(id, season));
+  }
+  return queries;
 }
 
 async function flatten(requests: Array<Promise<ApiFixture[]>>): Promise<ApiFixture[]> {

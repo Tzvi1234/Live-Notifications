@@ -68,13 +68,16 @@ async function main(): Promise<void> {
   server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;
   server.headersTimeout = HEADERS_TIMEOUT_MS;
 
+  // Before the poller starts, not after: a SIGTERM landing in that window would otherwise
+  // kill the process with the default handler, and the leader lock would stay held until its
+  // lease ran out — the replacement instance would watch the live matches without polling.
+  installProcessHandlers({ server, store, poller });
+
   if (poller) {
     await poller.start();
   } else {
     logger.warn('polling disabled (POLL_ENABLED=false); no notifications will be sent');
   }
-
-  installProcessHandlers({ server, store, poller });
 }
 
 function listen(app: Express, port: number): Promise<Server> {

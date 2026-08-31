@@ -61,6 +61,13 @@ const LINEUP_ATTEMPT_RETENTION_MS = 6 * 60 * MINUTE_MS;
 /** Lag beyond which an incident is recorded silently instead of notified. See `isStaleEvent`. */
 const STALE_EVENT_MINUTES = 10;
 
+/**
+ * A team sheet is pre-match news. Past this minute — and once the fixture is over — the
+ * lineups slot closes unpushed rather than announcing a sheet that has been public for an
+ * hour to a device that has only just started following the match.
+ */
+const LINEUPS_LATEST_MINUTE = 10;
+
 /** A fixture that has left the live list is chased this many ticks for its final status. */
 const MAX_RESOLVE_ATTEMPTS = 3;
 
@@ -310,21 +317,35 @@ export class LivePoller {
       return summary;
     }
 
-    try {
-      await this.#pollLive(context);
-      await this.#resolveDeparted(context);
-      await this.#preMatchSweep(context);
-      this.#lastError = undefined;
-    } catch (error) {
-      if (error instanceof QuotaExhaustedError) {
-        this.#blockForToday(error);
-        summary.quotaBlocked = true;
-      } else {
+    // The three stages are isolated from one another deliberately. `live=all` timing out is
+    // the ordinary provider hiccup, and letting it end the tick would cost the two stages
+    // that do not depend on it: resolving departed fixtures is the only source of FULL_TIME,
+    // and the pre-match sweep the only writer of the SCHEDULED row that makes KICK_OFF
+    // derivable at all. A spent budget is the one error that does end the tick, because
+    // every later call would fail the same way without even reaching the network.
+    const stages: ReadonlyArray<readonly [string, () => Promise<void>]> = [
+      ['live poll', () => this.#pollLive(context)],
+      ['resolve departed fixtures', () => this.#resolveDeparted(context)],
+      ['pre-match sweep', () => this.#preMatchSweep(context)],
+    ];
+
+    let stageFailed = false;
+    for (const [name, run] of stages) {
+      try {
+        await run();
+      } catch (error) {
+        stageFailed = true;
+        if (error instanceof QuotaExhaustedError) {
+          this.#blockForToday(error);
+          summary.quotaBlocked = true;
+          break;
+        }
         summary.errors += 1;
         this.#lastError = error instanceof Error ? error.message : String(error);
-        this.#logger.error('poll tick aborted', { error });
+        this.#logger.error('poll stage failed', { stage: name, error });
       }
     }
+    if (!stageFailed) this.#lastError = undefined;
 
     await this.#pruneTokens(context);
 
@@ -371,6 +392,13 @@ export class LivePoller {
 
     try {
       const leader = await this.#store.acquireLeaderLock(this.#leaseMs);
+      if (!this.#running) {
+        // stop() ran while the lock was in flight, so it has already finished waiting on a
+        // tick this iteration had not started yet. Hand the lease straight back instead of
+        // polling past shutdown and leaving a dead instance holding it.
+        if (leader) await this.#store.releaseLeaderLock();
+        return;
+      }
       if (!leader) {
         if (this.#leader) {
           this.#leader = false;
@@ -454,8 +482,10 @@ export class LivePoller {
       try {
         const targets = await this.#store.tokensForMatch(match);
         if (targets.length === 0) {
-          // Nobody is listening: no events call, no state row, no cost.
+          // Nobody is listening: no events call, no state row, no cost — and no marker left
+          // behind either, since nothing else ever revisits a fixture dropped here.
           this.#tracked.delete(match.id);
+          this.#lineupAttempts.delete(match.id);
           continue;
         }
         this.#tracked.set(match.id, { match, missedTicks: 0 });
@@ -639,6 +669,10 @@ export class LivePoller {
    * At most one lineups push per match, ever: `lineupsSent` latches in the store and is the
    * durable half of that guarantee, the attempt map only stops an unpublished sheet from
    * being re-fetched on every tick.
+   *
+   * Returns whether the match's lineups slot is now settled — pushed here, pushed by another
+   * instance, or closed unpushed because the moment has gone — which is what the caller
+   * latches into `lineupsSent`.
    */
   async #maybeDeliverLineups(
     match: MatchJson,
@@ -648,6 +682,12 @@ export class LivePoller {
     notified: Set<string>,
   ): Promise<boolean> {
     if (previous?.lineupsSent === true) return false;
+
+    // A poller meeting a fixture for the first time at 70 minutes, or resolving one that has
+    // already finished, must not announce that its lineups are "in". Closing the slot rather
+    // than skipping it also stops every later tick spending a request on a sheet nobody will
+    // ever be told about.
+    if (isTerminalPhase(match.phase) || (match.elapsed ?? 0) > LINEUPS_LATEST_MINUTE) return true;
 
     const recipients = targets.filter((target) => target.preferences.lineups);
     if (recipients.length === 0) return false;

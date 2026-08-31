@@ -73,7 +73,8 @@ internal object TeamsSamples {
         venueName = "Emirates Stadium",
     )
     val chelsea = Team(49, "Chelsea", "CHE", null, "England", 1905, "Stamford Bridge")
-    val spurs = Team(47, "Tottenham Hotspur", "TOT", null, "England", 1882, "Tottenham Hotspur Stadium")
+    val spurs =
+        Team(47, "Tottenham Hotspur", "TOT", null, "England", 1882, "Tottenham Hotspur Stadium")
     val liverpool = Team(40, "Liverpool", "LIV", null, "England", 1892, "Anfield")
     val barcelona = Team(529, "Barcelona", "BAR", null, "Spain", 1899, "Spotify Camp Nou")
 
@@ -92,7 +93,11 @@ internal object TeamsSamples {
         favourites = listOf(arsenal, liverpool, barcelona),
         favouriteIds = setOf(arsenal.id, liverpool.id, barcelona.id),
         leagues = listOf(
-            LeagueSection(premierLeague, expanded = true, teams = listOf(arsenal, chelsea, spurs, liverpool)),
+            LeagueSection(
+                league = premierLeague,
+                expanded = true,
+                teams = listOf(arsenal, chelsea, spurs, liverpool),
+            ),
             LeagueSection(laLiga),
             LeagueSection(serieA, isLoading = true, expanded = true),
         ),

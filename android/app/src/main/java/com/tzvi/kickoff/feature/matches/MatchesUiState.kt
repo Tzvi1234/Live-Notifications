@@ -61,7 +61,12 @@ data class MatchesUiState(
     val followedTeamCount: Int = 0,
     val sourceMissing: Boolean = false,
 ) {
-    /** Null while there is something to show; the cases are ordered most specific last. */
+    /**
+     * Null while there is something to show.
+     *
+     * The first branch that matches wins, so the reasons the day could not load at all are
+     * asked before the ones that only explain why [filter] came back with nothing.
+     */
     val emptyReason: MatchesEmptyReason?
         get() = when {
             groups.isNotEmpty() -> null

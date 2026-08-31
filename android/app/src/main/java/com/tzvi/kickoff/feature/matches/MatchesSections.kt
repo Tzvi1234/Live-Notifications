@@ -272,7 +272,7 @@ internal fun FixturesEmptyState(
 
         MatchesEmptyReason.NOTHING_LIVE -> EmptyState(
             title = "Nothing in play",
-            body = "No match on this date has kicked off yet. Switch to All for the " +
+            body = "No match on this date is being played right now. Switch to All for the " +
                 "${fixtureCount(state.dayMatchCount)} scheduled ${state.dateLabel}.",
             icon = Icons.Outlined.SportsSoccer,
             modifier = modifier,
@@ -289,7 +289,7 @@ internal fun FixturesEmptyState(
         MatchesEmptyReason.NO_TEAM_FIXTURES -> EmptyState(
             title = "None of your teams play ${state.dateLabel}",
             body = "Kickoff is holding ${fixtureCount(state.dayMatchCount)} on this date " +
-                "from other competitions. Switch to All to see what else is on.",
+                "from clubs you don't follow. Switch to All to see what else is on.",
             icon = Icons.Outlined.Groups,
             modifier = modifier,
         )

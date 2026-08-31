@@ -164,9 +164,10 @@ function phaseTransitionEvents(previous: TrackedMatchState, next: MatchJson): Ma
  * together is what keeps a bogus "goal disallowed" alert off the lock screen.
  *
  * The id is minted from the *retracted* incident's minute, team and player, which makes it
- * deterministic across pollers and restarts, and means the provider's own VAR event for the
- * same reversal — same minute, same team, same player — collides with it and dedupes
- * instead of notifying twice.
+ * deterministic across pollers and restarts. It also collides with — and therefore dedupes
+ * against — the provider's own VAR event for the same reversal whenever that event is
+ * timestamped at the minute of the goal. When the provider instead timestamps it at the
+ * minute the review concluded, the two ids differ and the client sees two corrections.
  */
 function retractionEvents(
   previous: TrackedMatchState,
@@ -205,6 +206,18 @@ function retractionEvents(
 }
 
 /**
+ * Types whose `minute` is a label rather than a timestamp, so the lag arithmetic below says
+ * nothing about them. FULL_TIME always carries the canonical 90 while the clock of a fixture
+ * that went to extra time reads 120, and a VAR retraction carries the minute of the goal it
+ * reverses rather than the minute the reversal was spotted. Measuring either against the
+ * clock silences exactly the two events a subscriber most needs.
+ */
+const CLOCK_INDEPENDENT_TYPES: ReadonlySet<MatchEventType> = new Set<MatchEventType>([
+  'FULL_TIME',
+  'VAR',
+]);
+
+/**
  * An incident this far behind the live clock is history rather than news — the poller marks
  * it as sent so it can never fire later, but does not notify anyone about it. That is what
  * stops a restart, a re-subscribe, or a poller that was quota-blocked for twenty minutes
@@ -215,6 +228,7 @@ export function isStaleEvent(
   match: MatchJson,
   maxLagMinutes: number,
 ): boolean {
+  if (CLOCK_INDEPENDENT_TYPES.has(event.type)) return false;
   if (match.elapsed === undefined || event.minute === undefined) return false;
   return match.elapsed - event.minute > maxLagMinutes;
 }
@@ -229,7 +243,7 @@ export function isStaleEvent(
 export function diffMatch(
   previous: TrackedMatchState | undefined,
   next: MatchJson,
-  events: MatchEventJson[],
+  events: readonly MatchEventJson[],
 ): MatchDiff {
   const sent = previous?.sentEventIds ?? NO_IDS;
   const providerEventIds = new Set<string>();

@@ -120,8 +120,10 @@ class MemoryStore implements Store {
   }
 
   async markEventSent(eventId: string, matchId?: number): Promise<boolean> {
-    if (this.sentEvents.has(eventId)) return false;
+    // Resolved before the membership check so a malformed id fails the same way in both
+    // stores, rather than only on the call that happens to be the first for that id.
     const resolvedMatchId = matchId ?? matchIdFromEventId(eventId);
+    if (this.sentEvents.has(eventId)) return false;
     this.sentEvents.set(eventId, { matchId: resolvedMatchId, sentAt: Date.now() });
     let ids = this.sentEventsByMatch.get(resolvedMatchId);
     if (!ids) {

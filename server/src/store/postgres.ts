@@ -126,6 +126,48 @@ async function readSchemaSql(): Promise<string> {
   );
 }
 
+function toError(value: unknown): Error {
+  return value instanceof Error ? value : new Error(String(value));
+}
+
+/** `release()` throws when it is called twice; a double release must not mask the real failure. */
+function releaseQuietly(client: PoolClient, error?: Error): void {
+  try {
+    client.release(error);
+  } catch {
+    // Already back in the pool.
+  }
+}
+
+/**
+ * THE CHECKED-OUT CLIENT TRAP.
+ *
+ * node-pg's pool removes its own 'error' listener from a client while that client is checked
+ * out (pg-pool `_acquireClient`) and only reattaches it on release, so `pool.on('error')`
+ * covers idle connections only. A connection killed server-side — Postgres restart, Render
+ * maintenance, failover — while no query is in flight therefore emits 'error' on an
+ * EventEmitter with no listener, which Node throws as an uncaught exception and which takes
+ * the whole service down. That is exactly the moment a transaction sits between two of its
+ * statements, and it is the permanent condition of the leader-lock connection.
+ *
+ * So every checkout here carries a listener for as long as it is held, and a connection that
+ * reported an error is destroyed rather than returned to the pool.
+ */
+async function withClient<T>(pool: PgPool, run: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  let connectionError: Error | undefined;
+  const onError = (error: Error): void => {
+    connectionError = error;
+  };
+  client.on('error', onError);
+  try {
+    return await run(client);
+  } finally {
+    client.off('error', onError);
+    releaseQuietly(client, connectionError);
+  }
+}
+
 class PostgresStore implements Store {
   readonly kind: StoreKind = 'postgres';
 
@@ -133,6 +175,8 @@ class PostgresStore implements Store {
   private readonly logger: Logger;
   /** The advisory lock lives on a connection, so leadership means holding this client. */
   private leaderClient: PoolClient | undefined;
+  /** Held so it can be detached again; see `withClient` for why it has to exist at all. */
+  private leaderClientErrorListener: ((error: Error) => void) | undefined;
   private leaseExpiresAt = 0;
   private closed = false;
 
@@ -177,40 +221,39 @@ class PostgresStore implements Store {
 
   async putSubscription(subscription: SubscriptionRecord): Promise<void> {
     const normalized = normalizeSubscription(subscription);
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      // A client can PUT /v1/subscriptions before POST /v1/devices lands (retry after a
-      // dropped response, reinstall, cold start). The FK would reject the row and the
-      // device would silently receive nothing, so register a placeholder first.
-      await client.query(
-        'INSERT INTO devices (token, device_id) VALUES ($1, $2) ON CONFLICT (token) DO NOTHING',
-        [normalized.token, randomUUID()],
-      );
-      await client.query(
-        `INSERT INTO subscriptions (token, team_ids, league_ids, match_ids, preferences, updated_at)
-         VALUES ($1, $2::int[], $3::int[], $4::bigint[], $5::jsonb, now())
-         ON CONFLICT (token) DO UPDATE SET
-           team_ids    = EXCLUDED.team_ids,
-           league_ids  = EXCLUDED.league_ids,
-           match_ids   = EXCLUDED.match_ids,
-           preferences = EXCLUDED.preferences,
-           updated_at  = now()`,
-        [
-          normalized.token,
-          normalized.teamIds,
-          normalized.leagueIds,
-          normalized.matchIds,
-          JSON.stringify(normalized.preferences),
-        ],
-      );
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
+    await withClient(this.pool, async (client) => {
+      try {
+        await client.query('BEGIN');
+        // A client can PUT /v1/subscriptions before POST /v1/devices lands (retry after a
+        // dropped response, reinstall, cold start). The FK would reject the row and the
+        // device would silently receive nothing, so register a placeholder first.
+        await client.query(
+          'INSERT INTO devices (token, device_id) VALUES ($1, $2) ON CONFLICT (token) DO NOTHING',
+          [normalized.token, randomUUID()],
+        );
+        await client.query(
+          `INSERT INTO subscriptions (token, team_ids, league_ids, match_ids, preferences, updated_at)
+           VALUES ($1, $2::int[], $3::int[], $4::bigint[], $5::jsonb, now())
+           ON CONFLICT (token) DO UPDATE SET
+             team_ids    = EXCLUDED.team_ids,
+             league_ids  = EXCLUDED.league_ids,
+             match_ids   = EXCLUDED.match_ids,
+             preferences = EXCLUDED.preferences,
+             updated_at  = now()`,
+          [
+            normalized.token,
+            normalized.teamIds,
+            normalized.leagueIds,
+            normalized.matchIds,
+            JSON.stringify(normalized.preferences),
+          ],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw error;
+      }
+    });
   }
 
   async getSubscription(token: string): Promise<SubscriptionRecord | undefined> {
@@ -331,34 +374,33 @@ class PostgresStore implements Store {
   }
 
   async pruneOlderThan(date: Date): Promise<PruneStats> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      const sentEvents = await client.query('DELETE FROM sent_events WHERE sent_at < $1', [date]);
-      const matchStates = await client.query('DELETE FROM match_state WHERE updated_at < $1', [
-        date,
-      ]);
-      // Deleted explicitly rather than by ON DELETE CASCADE so the count is reportable.
-      const subscriptions = await client.query(
-        `DELETE FROM subscriptions s
-          USING devices d
-          WHERE d.token = s.token AND d.last_seen_at < $1`,
-        [date],
-      );
-      const devices = await client.query('DELETE FROM devices WHERE last_seen_at < $1', [date]);
-      await client.query('COMMIT');
-      return {
-        devices: devices.rowCount ?? 0,
-        subscriptions: subscriptions.rowCount ?? 0,
-        sentEvents: sentEvents.rowCount ?? 0,
-        matchStates: matchStates.rowCount ?? 0,
-      };
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
+    return withClient(this.pool, async (client) => {
+      try {
+        await client.query('BEGIN');
+        const sentEvents = await client.query('DELETE FROM sent_events WHERE sent_at < $1', [date]);
+        const matchStates = await client.query('DELETE FROM match_state WHERE updated_at < $1', [
+          date,
+        ]);
+        // Deleted explicitly rather than by ON DELETE CASCADE so the count is reportable.
+        const subscriptions = await client.query(
+          `DELETE FROM subscriptions s
+            USING devices d
+            WHERE d.token = s.token AND d.last_seen_at < $1`,
+          [date],
+        );
+        const devices = await client.query('DELETE FROM devices WHERE last_seen_at < $1', [date]);
+        await client.query('COMMIT');
+        return {
+          devices: devices.rowCount ?? 0,
+          subscriptions: subscriptions.rowCount ?? 0,
+          sentEvents: sentEvents.rowCount ?? 0,
+          matchStates: matchStates.rowCount ?? 0,
+        };
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw error;
+      }
+    });
   }
 
   async removeTokens(tokens: string[]): Promise<number> {
@@ -373,9 +415,10 @@ class PostgresStore implements Store {
     if (this.closed) return false;
 
     if (this.leaderClient) {
-      // Within the lease we trust the last check and skip a round trip per poll tick.
-      // ttlMs is exactly the window in which we may still believe we lead after the
-      // connection died server-side; keep it at a small multiple of the poll interval.
+      // Within the lease we trust the last check and skip a round trip per poll tick. A
+      // connection killed server-side drops leadership immediately through the listener
+      // `adoptLeaderClient` attaches, so ttlMs only ever hides a partition that reported
+      // nothing at all; keep it at a small multiple of the poll interval regardless.
       if (Date.now() < this.leaseExpiresAt) return true;
       try {
         // Postgres frees a session advisory lock when its connection dies, so a dead
@@ -385,7 +428,7 @@ class PostgresStore implements Store {
         return true;
       } catch (error) {
         this.logger.warn('leader lock connection lost, re-acquiring', { error });
-        this.discardLeaderClient(error);
+        this.dropLeaderClient(error);
       }
     }
 
@@ -396,39 +439,66 @@ class PostgresStore implements Store {
         [LEADER_LOCK_KEY],
       );
       if (rows[0]?.locked !== true) {
-        client.release();
+        releaseQuietly(client);
         return false;
       }
-      this.leaderClient = client;
-      this.leaseExpiresAt = Date.now() + ttlMs;
+      this.adoptLeaderClient(client, ttlMs);
       this.logger.info('leader lock acquired', { lockKey: LEADER_LOCK_KEY, ttlMs });
       return true;
     } catch (error) {
-      client.release(error as Error);
+      releaseQuietly(client, toError(error));
       throw error;
     }
   }
 
   async releaseLeaderLock(): Promise<void> {
-    const client = this.leaderClient;
+    // Detached before the round trip: a concurrent acquire must not be handed a live lease
+    // on a connection that is being torn down. Shutdown does call this from two places.
+    const client = this.detachLeaderClient();
     if (!client) return;
-    this.leaderClient = undefined;
-    this.leaseExpiresAt = 0;
     try {
       await client.query('SELECT pg_advisory_unlock($1)', [LEADER_LOCK_KEY]);
-      client.release();
+      releaseQuietly(client);
       this.logger.info('leader lock released', { lockKey: LEADER_LOCK_KEY });
     } catch (error) {
       // Destroy the connection instead of returning it: dropping it releases the lock too.
-      client.release(error as Error);
+      releaseQuietly(client, toError(error));
       this.logger.warn('leader lock release failed; connection discarded', { error });
     }
   }
 
-  private discardLeaderClient(error: unknown): void {
-    this.leaderClient?.release(error instanceof Error ? error : new Error(String(error)));
+  /**
+   * The leader connection is held idle for the life of the process, which makes it the one
+   * most likely to be killed with no query in flight. Without this listener that kill is an
+   * uncaught 'error' event — see `withClient`. Dropping leadership here also means the next
+   * tick re-acquires instead of waiting out the lease.
+   */
+  private adoptLeaderClient(client: PoolClient, ttlMs: number): void {
+    const onError = (error: Error): void => {
+      if (this.leaderClient !== client) return;
+      this.logger.warn('leader lock connection failed; leadership dropped', { error });
+      this.dropLeaderClient(error);
+    };
+    client.on('error', onError);
+    this.leaderClient = client;
+    this.leaderClientErrorListener = onError;
+    this.leaseExpiresAt = Date.now() + ttlMs;
+  }
+
+  /** Gives up leadership and returns the client, still checked out, listener removed. */
+  private detachLeaderClient(): PoolClient | undefined {
+    const client = this.leaderClient;
+    const listener = this.leaderClientErrorListener;
     this.leaderClient = undefined;
+    this.leaderClientErrorListener = undefined;
     this.leaseExpiresAt = 0;
+    if (client && listener) client.off('error', listener);
+    return client;
+  }
+
+  private dropLeaderClient(error: unknown): void {
+    const client = this.detachLeaderClient();
+    if (client) releaseQuietly(client, toError(error));
   }
 
   async close(): Promise<void> {
@@ -451,8 +521,9 @@ export async function createPostgresStore(databaseUrl: string, logger: Logger): 
     connectionTimeoutMillis: 10_000,
   });
 
-  // Without this, an error on an idle pooled client (Postgres restart, Render maintenance)
-  // is an unhandled 'error' event and takes the process down.
+  // Without this, an error on an *idle* pooled client (Postgres restart, Render maintenance)
+  // is an unhandled 'error' event and takes the process down. It says nothing about clients
+  // that are checked out at the time; those are guarded individually, see `withClient`.
   pool.on('error', (error) => {
     scoped.error('idle postgres client error', { error });
   });
@@ -463,15 +534,15 @@ export async function createPostgresStore(databaseUrl: string, logger: Logger): 
 
 async function ensureSchema(pool: PgPool, logger: Logger): Promise<void> {
   const sql = await readSchemaSql();
-  const client = await pool.connect();
-  try {
-    // Two instances booting together can both run CREATE INDEX IF NOT EXISTS and collide
-    // in the system catalogue; serialize the whole file behind one advisory lock.
-    await client.query('SELECT pg_advisory_lock($1)', [SCHEMA_LOCK_KEY]);
-    await client.query(sql);
-    logger.info('schema applied');
-  } finally {
-    await client.query('SELECT pg_advisory_unlock($1)', [SCHEMA_LOCK_KEY]).catch(() => undefined);
-    client.release();
-  }
+  await withClient(pool, async (client) => {
+    try {
+      // Two instances booting together can both run CREATE INDEX IF NOT EXISTS and collide
+      // in the system catalogue; serialize the whole file behind one advisory lock.
+      await client.query('SELECT pg_advisory_lock($1)', [SCHEMA_LOCK_KEY]);
+      await client.query(sql);
+      logger.info('schema applied');
+    } finally {
+      await client.query('SELECT pg_advisory_unlock($1)', [SCHEMA_LOCK_KEY]).catch(() => undefined);
+    }
+  });
 }

@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import java.io.IOException
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.inject.Inject
@@ -40,11 +41,17 @@ class MatchesViewModel @Inject constructor(
     private val selectedFilter = MutableStateFlow(MatchFilter.ALL)
 
     /**
-     * Dates already pulled over the network in this session. API-Football bills per call
-     * against a daily allowance, so returning to a date the user already visited is served
-     * from Room until they explicitly pull to refresh.
+     * What the provider returned for each date visited in this session.
+     *
+     * It is not only a quota cache. [FootballRepository.matchesOn] windows its query on a team
+     * filter, so it answers "which of the teams I passed play on this date" rather than "what is
+     * on"; without this map a competition the user follows nobody in never reaches the screen.
+     * Room still wins per fixture in [heldOn], because that is the row the live pipeline updates.
+     *
+     * API-Football also bills per call against a daily allowance, so a date the user has already
+     * visited is served from here until they explicitly pull to refresh.
      */
-    private val fetchedDates = mutableSetOf<LocalDate>()
+    private val fetched = mutableMapOf<LocalDate, List<Match>>()
 
     private val dayStates: Flow<DayState> = request.flatMapLatest { loadDay(it) }
 
@@ -90,27 +97,21 @@ class MatchesViewModel @Inject constructor(
         request.update { DayRequest(it.date, force = true, attempt = it.attempt + 1) }
     }
 
-    /**
-     * Cache first, network second, cache again.
-     *
-     * The final re-read is not redundant: `refreshDay` returns the provider's own calendar
-     * day, whereas the list has to hold exactly the fixtures that fall inside the local
-     * day the user tapped, which is what `matchesOn` windows on.
-     */
+    /** Whatever is already held, then the network, then everything held again. */
     private fun loadDay(dayRequest: DayRequest): Flow<DayState> = flow {
         val date = dayRequest.date
-        val cached = runCatching { footballRepository.matchesOn(date) }.getOrDefault(emptyList())
-        if (!dayRequest.force && date in fetchedDates) {
-            emit(DayState(date, cached))
+        val held = heldOn(date)
+        if (!dayRequest.force && date in fetched) {
+            emit(DayState(date, held))
             return@flow
         }
 
         emit(
             DayState(
                 date = date,
-                matches = cached,
-                isLoading = cached.isEmpty(),
-                isRefreshing = cached.isNotEmpty(),
+                matches = held,
+                isLoading = held.isEmpty(),
+                isRefreshing = held.isNotEmpty(),
             ),
         )
 
@@ -121,15 +122,14 @@ class MatchesViewModel @Inject constructor(
         val outcome = runCatching { footballRepository.refreshDay(date) }
         emit(
             outcome.fold(
-                onSuccess = {
-                    fetchedDates += date
-                    val fresh = runCatching { footballRepository.matchesOn(date) }
-                    DayState(date, fresh.getOrDefault(cached))
+                onSuccess = { provided ->
+                    fetched[date] = provided.startingOn(date)
+                    DayState(date, heldOn(date))
                 },
                 onFailure = { error ->
                     DayState(
                         date = date,
-                        matches = cached,
+                        matches = held,
                         errorMessage = if (error is NoFootballSourceException) null
                         else error.userMessage(),
                         sourceMissing = error is NoFootballSourceException,
@@ -137,6 +137,24 @@ class MatchesViewModel @Inject constructor(
                 },
             ),
         )
+    }
+
+    /** Room's row for a fixture wins over the fetched one: it is the copy that keeps moving. */
+    private suspend fun heldOn(date: LocalDate): List<Match> {
+        val cached = runCatching { footballRepository.matchesOn(date) }.getOrDefault(emptyList())
+        val cachedIds = cached.mapTo(mutableSetOf()) { it.id }
+        return cached + fetched[date].orEmpty().filterNot { it.id in cachedIds }
+    }
+
+    /**
+     * The provider answers on its own calendar day, which is not the device's: a 20:00 kick-off
+     * in Los Angeles belongs to the strip's next chip for a reader in Tel Aviv.
+     */
+    private fun List<Match>.startingOn(date: LocalDate): List<Match> {
+        val zone = ZoneId.systemDefault()
+        val from = date.atStartOfDay(zone).toInstant()
+        val to = date.plusDays(1).atStartOfDay(zone).toInstant()
+        return filter { it.kickoffAt >= from && it.kickoffAt < to }
     }
 
     private fun List<Match>.applyFilter(mode: MatchFilter, favourites: Set<Int>): List<Match> =

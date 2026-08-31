@@ -25,7 +25,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tzvi.kickoff.core.model.CalendarEvent
 import com.tzvi.kickoff.core.model.Match
@@ -57,6 +58,14 @@ fun TodayScreen(
     val calendarPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { viewModel.onCalendarPermissionChanged() }
+
+    // A grant made in system Settings - the only route left once Android has stopped
+    // showing the dialog - arrives with no callback at all, so the state is re-read on
+    // the way back into the app.
+    LifecycleResumeEffect(viewModel) {
+        viewModel.onCalendarPermissionChanged()
+        onPauseOrDispose { }
+    }
 
     TodayContent(
         state = state,
@@ -92,8 +101,10 @@ internal fun TodayContent(
     val reveals = remember(animateIn) {
         List(SECTION_COUNT) { SectionReveal(visible = !animateIn) }
     }
-    LaunchedEffect(reveals) {
-        if (!animateIn) return@LaunchedEffect
+    // Tied to the content arriving rather than to the screen: started while the loader is
+    // still up, the whole stagger would run behind it and the list would simply appear.
+    LaunchedEffect(reveals, state.isLoading) {
+        if (!animateIn || state.isLoading) return@LaunchedEffect
         reveals.forEachIndexed { index, reveal ->
             launch {
                 delay(index * STAGGER_STEP_MILLIS)
