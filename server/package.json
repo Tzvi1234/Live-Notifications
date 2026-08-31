@@ -11,7 +11,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p . && node -e \"import('node:fs').then(({ cpSync }) => cpSync('src/store/schema.sql', 'dist/store/schema.sql'))\"",
+    "clean": "node -e \"import('node:fs').then(({ rmSync }) => rmSync('dist', { recursive: true, force: true }))\"",
+    "build": "npm run clean && tsc -p . && node -e \"import('node:fs').then(({ cpSync }) => cpSync('src/store/schema.sql', 'dist/store/schema.sql'))\"",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",

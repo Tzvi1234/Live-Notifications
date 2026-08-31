@@ -272,8 +272,8 @@ internal fun FixturesEmptyState(
 
         MatchesEmptyReason.NOTHING_LIVE -> EmptyState(
             title = "Nothing in play",
-            body = "None of the ${state.dayMatchCount} fixtures ${state.dateLabel} is " +
-                "under way right now. Switch to All for the full schedule.",
+            body = "No match on this date has kicked off yet. Switch to All for the " +
+                "${fixtureCount(state.dayMatchCount)} scheduled ${state.dateLabel}.",
             icon = Icons.Outlined.SportsSoccer,
             modifier = modifier,
         )
@@ -288,13 +288,15 @@ internal fun FixturesEmptyState(
 
         MatchesEmptyReason.NO_TEAM_FIXTURES -> EmptyState(
             title = "None of your teams play ${state.dateLabel}",
-            body = "There are ${state.dayMatchCount} other fixtures on this date. " +
-                "Switch to All to see them.",
+            body = "Kickoff is holding ${fixtureCount(state.dayMatchCount)} on this date " +
+                "from other competitions. Switch to All to see what else is on.",
             icon = Icons.Outlined.Groups,
             modifier = modifier,
         )
     }
 }
+
+private fun fixtureCount(count: Int): String = if (count == 1) "1 fixture" else "$count fixtures"
 
 internal val ScreenPadding = 16.dp
 internal val ItemGap = 10.dp

@@ -2,7 +2,6 @@
  * Provider payloads -> the JSON the Android app is already written against.
  *
  * Everything here is pure: no clock beyond an injectable `date`, no network, no config.
- * The wire types live here too so the mapper and its consumers cannot drift apart.
  */
 
 import {
@@ -21,125 +20,46 @@ import {
   type ApiTeamRef,
   type ApiTeamStatistics,
 } from './apiFootball.js';
+import {
+  eventId,
+  phaseFromProviderCode,
+  type LeagueJson,
+  type LineupPlayerJson,
+  type MatchEventJson,
+  type MatchEventType,
+  type MatchJson,
+  type MatchSide,
+  type ScoreJson,
+  type TeamJson,
+  type TeamLineupJson,
+} from '../types.js';
 
-export type MatchPhase =
-  | 'SCHEDULED'
-  | 'OFF'
-  | 'FIRST_HALF'
-  | 'HALF_TIME'
-  | 'SECOND_HALF'
-  | 'EXTRA_TIME'
-  | 'PENALTIES'
-  | 'BREAK_TIME'
-  | 'FINISHED'
-  | 'UNKNOWN';
+/**
+ * The wire contract has exactly one definition, in `../types.ts`, because the installed
+ * Android app is compiled against it. Re-exported here so a caller can take the mapper and
+ * the shapes it produces from one import.
+ */
+export type {
+  LeagueJson,
+  LineupPlayerJson,
+  MatchDetailJson,
+  MatchEventJson,
+  MatchEventType,
+  MatchJson,
+  MatchPhase,
+  MatchSide,
+  ScoreJson,
+  TeamJson,
+  TeamLineupJson,
+} from '../types.js';
 
-export type MatchEventType =
-  | 'GOAL'
-  | 'OWN_GOAL'
-  | 'PENALTY_GOAL'
-  | 'PENALTY_MISSED'
-  | 'YELLOW_CARD'
-  | 'SECOND_YELLOW'
-  | 'RED_CARD'
-  | 'SUBSTITUTION'
-  | 'VAR'
-  | 'KICK_OFF'
-  | 'HALF_TIME'
-  | 'FULL_TIME'
-  | 'OTHER';
-
-export type MatchSide = 'HOME' | 'AWAY' | 'NEUTRAL';
-
-export interface TeamJson {
-  id: number;
-  name: string;
-  shortName?: string | undefined;
-  crestUrl?: string | undefined;
-  country?: string | undefined;
-  founded?: number | undefined;
-  venue?: string | undefined;
-}
-
-export interface LeagueJson {
-  id: number;
-  name: string;
-  country?: string | undefined;
-  logoUrl?: string | undefined;
-  season: number;
-  type?: string | undefined;
-}
-
-export interface ScoreJson {
-  home: number;
-  away: number;
-}
-
-export interface MatchJson {
-  id: number;
-  leagueId: number;
-  leagueName: string;
-  leagueLogoUrl?: string | undefined;
-  round?: string | undefined;
-  /** Seconds since epoch, UTC — the client feeds this straight to Instant.ofEpochSecond. */
-  kickoffAt: number;
-  venue?: string | undefined;
-  phase: MatchPhase;
-  elapsed?: number | undefined;
-  extra?: number | undefined;
-  home: TeamJson;
-  away: TeamJson;
-  score?: ScoreJson | undefined;
-  halfTimeScore?: ScoreJson | undefined;
-  penaltyScore?: ScoreJson | undefined;
-  referee?: string | undefined;
-}
-
-export interface MatchEventJson {
-  id: string;
-  type: MatchEventType;
-  side: MatchSide;
-  teamId?: number | undefined;
-  teamName?: string | undefined;
-  minute?: number | undefined;
-  extra?: number | undefined;
-  player?: string | undefined;
-  assist?: string | undefined;
-  detail?: string | undefined;
-  comment?: string | undefined;
-  scoreAfter?: ScoreJson | undefined;
-}
-
-export interface LineupPlayerJson {
-  id?: number | undefined;
-  name: string;
-  number?: number | undefined;
-  position?: string | undefined;
-  row?: number | undefined;
-  column?: number | undefined;
-  photoUrl?: string | undefined;
-}
-
-export interface TeamLineupJson {
-  teamId: number;
-  teamName: string;
-  crestUrl?: string | undefined;
-  formation?: string | undefined;
-  startingXi: LineupPlayerJson[];
-  substitutes: LineupPlayerJson[];
-  coach?: string | undefined;
-  shirtColor?: string | undefined;
-}
-
-export interface MatchDetailJson {
-  match: MatchJson;
-  events: MatchEventJson[];
-  homeLineup?: TeamLineupJson | undefined;
-  awayLineup?: TeamLineupJson | undefined;
-  homeStats: Record<string, string>;
-  awayStats: Record<string, string>;
-  sequence: number;
-}
+/**
+ * `toPhase` and `eventKey` are this module's names for the shared rules, aliased rather
+ * than reimplemented. The poller mints synthetic KICK_OFF/HALF_TIME/FULL_TIME ids with
+ * `eventId` and dedupes them against the ids `toEvents` produces below, so a second copy of
+ * the key rule would push every incident the two copies disagreed on twice.
+ */
+export { eventId as eventKey, phaseFromProviderCode as toPhase } from '../types.js';
 
 /**
  * European seasons are labelled by the year they start in, so anything before July
@@ -148,56 +68,6 @@ export interface MatchDetailJson {
 export function currentSeason(date: Date = new Date()): number {
   const year = date.getUTCFullYear();
   return date.getUTCMonth() >= 6 ? year : year - 1;
-}
-
-/** API-Football `fixture.status.short` -> the phase names the client's enum uses. */
-export function toPhase(short?: string | null): MatchPhase {
-  switch (short) {
-    case 'TBD':
-    case 'NS':
-      return 'SCHEDULED';
-    case '1H':
-      return 'FIRST_HALF';
-    case 'HT':
-      return 'HALF_TIME';
-    case '2H':
-      return 'SECOND_HALF';
-    case 'ET':
-      return 'EXTRA_TIME';
-    case 'P':
-      return 'PENALTIES';
-    case 'BT':
-    case 'SUSP':
-    case 'INT':
-      return 'BREAK_TIME';
-    case 'FT':
-    case 'AET':
-    case 'PEN':
-      return 'FINISHED';
-    case 'PST':
-    case 'CANC':
-    case 'ABD':
-    case 'AWD':
-    case 'WO':
-      return 'OFF';
-    default:
-      return 'UNKNOWN';
-  }
-}
-
-/**
- * Provider events carry no id and get re-reported as minutes are corrected and VAR
- * overturns things. The key is the tuple that identifies the incident; the Android client
- * derives the identical string, so a re-report dedupes on both sides instead of alerting twice.
- */
-export function eventKey(
-  matchId: number,
-  type: MatchEventType,
-  minute: number | undefined,
-  teamId: number | undefined,
-  playerName: string | undefined,
-): string {
-  return `${matchId}:${type}:${minute ?? -1}:${teamId ?? -1}:${playerName ?? ''}`;
 }
 
 export function toTeam(raw: ApiTeamRef | ApiTeamCatalogueEntry | null | undefined): TeamJson {
@@ -292,7 +162,7 @@ export function toMatch(raw: ApiFixture): MatchJson {
     round: raw.league?.round ?? undefined,
     kickoffAt: kickoffSeconds(raw.fixture),
     venue: raw.fixture?.venue?.name ?? undefined,
-    phase: toPhase(status?.short),
+    phase: phaseFromProviderCode(status?.short),
     elapsed: status?.elapsed ?? undefined,
     extra: status?.extra ?? undefined,
     home: toTeam(raw.teams?.home),
@@ -329,7 +199,7 @@ export function toEvents(matchId: number, homeTeamId: number, raw: ApiEvent[]): 
     }
 
     return {
-      id: eventKey(matchId, type, event.time?.elapsed ?? undefined, teamId, player),
+      id: eventId(matchId, type, event.time?.elapsed ?? undefined, teamId, player),
       type,
       side,
       teamId,

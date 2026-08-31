@@ -97,10 +97,10 @@ class MatchesViewModel @Inject constructor(
      * day, whereas the list has to hold exactly the fixtures that fall inside the local
      * day the user tapped, which is what `matchesOn` windows on.
      */
-    private fun loadDay(request: DayRequest): Flow<DayState> = flow {
-        val date = request.date
+    private fun loadDay(dayRequest: DayRequest): Flow<DayState> = flow {
+        val date = dayRequest.date
         val cached = runCatching { footballRepository.matchesOn(date) }.getOrDefault(emptyList())
-        if (!request.force && date in fetchedDates) {
+        if (!dayRequest.force && date in fetchedDates) {
             emit(DayState(date, cached))
             return@flow
         }

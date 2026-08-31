@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Build
 import android.view.View
 import android.widget.RemoteViews
@@ -454,7 +455,7 @@ class MatchNotificationBuilder @Inject constructor(
     private fun openMatchIntent(matchId: Long): PendingIntent {
         val intent = Intent(context, MainActivity::class.java)
             .setAction(Intent.ACTION_VIEW)
-            .setData("kickoff://match/$matchId".toUri())
+            .setData(Uri.parse("kickoff://match/$matchId"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         return PendingIntent.getActivity(
             context,
@@ -479,8 +480,6 @@ class MatchNotificationBuilder @Inject constructor(
         )
 
     private fun color(resId: Int) = ContextCompat.getColor(context, resId)
-
-    private fun String.toUri() = android.net.Uri.parse(this)
 
     private companion object {
         const val SEGMENT_FIRST_HALF = 1

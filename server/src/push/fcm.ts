@@ -164,9 +164,12 @@ export function resetPushForTests(): void {
 }
 
 export function chunkTokens(tokens: string[], size: number = FCM_MULTICAST_LIMIT): string[][] {
+  // Clamped, not trusted: a step of 0 loops forever and a step above 500 builds a batch FCM
+  // rejects outright — both would be a caller's arithmetic taking the poll tick down with it.
+  const step = Math.min(Math.max(Math.trunc(size), 1), FCM_MULTICAST_LIMIT);
   const chunks: string[][] = [];
-  for (let i = 0; i < tokens.length; i += size) {
-    chunks.push(tokens.slice(i, i + size));
+  for (let i = 0; i < tokens.length; i += step) {
+    chunks.push(tokens.slice(i, i + step));
   }
   return chunks;
 }

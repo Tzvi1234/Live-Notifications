@@ -18,7 +18,9 @@ export default tseslint.config(
     files: ['src/**/*.ts'],
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        // tsconfig.test.json, not tsconfig.json: the build project deliberately excludes
+        // test files, and the type-aware rules need every linted file to be in a program.
+        project: ['./tsconfig.test.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -50,6 +52,15 @@ export default tseslint.config(
       eqeqeq: ['error', 'always', { null: 'ignore' }],
       'prefer-const': 'error',
       'no-var': 'error',
+    },
+  },
+
+  {
+    files: ['src/**/*.test.ts', 'src/__tests__/**/*.ts'],
+    rules: {
+      // `test()` from node:test returns a promise that the runner owns; awaiting each call
+      // at the top level of a suite is wrong, so the rule only produces noise here.
+      '@typescript-eslint/no-floating-promises': 'off',
     },
   },
 

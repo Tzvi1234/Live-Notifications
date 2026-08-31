@@ -21,6 +21,8 @@ always-on display where the device supports it.
 It also reads your device calendar, so the same live card can count you into your next
 meeting.
 
+<img src="docs/notification-designs.png" alt="The three live card renderings: status-bar chip and Dynamic Island, the promoted ProgressStyle Live Update, and the rich RemoteViews scoreboard" />
+
 ## What it does
 
 | | |

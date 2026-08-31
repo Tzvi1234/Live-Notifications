@@ -299,7 +299,7 @@ export function describeProviderErrors(errors: unknown): string | null {
   if (errors === null || errors === undefined) return null;
   if (Array.isArray(errors)) {
     if (errors.length === 0) return null;
-    return errors.map((entry) => (typeof entry === 'string' ? entry : JSON.stringify(entry))).join('; ');
+    return errors.map(describeErrorValue).join('; ');
   }
   if (typeof errors === 'string') {
     const trimmed = errors.trim();
@@ -308,9 +308,14 @@ export function describeProviderErrors(errors: unknown): string | null {
   if (typeof errors === 'object') {
     const entries = Object.entries(errors as Record<string, unknown>);
     if (entries.length === 0) return null;
-    return entries.map(([key, value]) => `${key}: ${String(value)}`).join('; ');
+    return entries.map(([key, value]) => `${key}: ${describeErrorValue(value)}`).join('; ');
   }
   return String(errors);
+}
+
+/** Values are serialised, not coerced: `String({...})` would log the message as [object Object]. */
+function describeErrorValue(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value ?? null);
 }
 
 export class ApiFootballClient {
@@ -453,12 +458,24 @@ export class ApiFootballClient {
       });
     }
 
-    let envelope: ApiEnvelope<T>;
+    let payload: unknown;
     try {
-      envelope = (await response.json()) as ApiEnvelope<T>;
+      payload = await response.json();
     } catch (cause) {
       throw new ProviderError(`${path} returned a body that is not JSON`, { path, status: response.status, cause });
     }
+
+    // An edge proxy can answer 200 with `null` or a bare array. Reading `errors` off that
+    // throws a TypeError, which sails past every `instanceof ProviderError` guard upstream
+    // and turns a provider hiccup into a 500 instead of a degraded section.
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new ProviderError(`${path} returned a body that is not an API-Football envelope`, {
+        path,
+        status: response.status,
+        detail: JSON.stringify(payload ?? null).slice(0, 200),
+      });
+    }
+    const envelope = payload as ApiEnvelope<T>;
 
     // The HTTP status is 200 here even for a dead key or a blown plan quota.
     const problem = describeProviderErrors(envelope.errors);
@@ -467,7 +484,9 @@ export class ApiFootballClient {
     }
 
     const items = Array.isArray(envelope.response) ? envelope.response : [];
-    if (cacheable) this.#cacheSet(key, items as unknown[]);
+    // The cached array must not be the one handed to the caller: a consumer that sorts or
+    // truncates its result in place would otherwise rewrite every hit until the TTL expires.
+    if (cacheable) this.#cacheSet(key, [...items] as unknown[]);
     return items;
   }
 

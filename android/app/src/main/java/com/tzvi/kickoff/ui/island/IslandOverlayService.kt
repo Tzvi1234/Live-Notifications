@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
+import android.net.Uri
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
@@ -31,12 +32,7 @@ import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.repository.SettingsRepository
 import com.tzvi.kickoff.ui.theme.KickoffTheme
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -64,7 +60,6 @@ class IslandOverlayService :
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val store = ViewModelStore()
     private val savedStateController = SavedStateRegistryController.create(this)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private var windowManager: WindowManager? = null
     private var overlayView: ComposeView? = null
@@ -152,7 +147,7 @@ class IslandOverlayService :
                             startActivity(
                                 Intent(this@IslandOverlayService, MainActivity::class.java)
                                     .setAction(Intent.ACTION_VIEW)
-                                    .setData(android.net.Uri.parse("kickoff://match/$matchId"))
+                                    .setData(Uri.parse("kickoff://match/$matchId"))
                                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                             )
                             stopSelf()
@@ -201,7 +196,6 @@ class IslandOverlayService :
         overlayView = null
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         store.clear()
-        scope.cancel()
         super.onDestroy()
     }
 
@@ -215,7 +209,7 @@ class IslandOverlayService :
         fun permissionIntent(context: Context): Intent =
             Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                "package:${context.packageName}".toUri(),
+                Uri.parse("package:${context.packageName}"),
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
         fun show(context: Context) {
@@ -228,7 +222,5 @@ class IslandOverlayService :
                 Intent(context, IslandOverlayService::class.java).setAction(ACTION_HIDE),
             )
         }
-
-        private fun String.toUri() = android.net.Uri.parse(this)
     }
 }

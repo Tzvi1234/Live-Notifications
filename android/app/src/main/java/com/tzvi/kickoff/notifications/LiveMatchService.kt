@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.core.model.Match
@@ -46,6 +47,9 @@ class LiveMatchService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
     private val tracked = ConcurrentHashMap<Long, Job>()
 
+    /** The notification currently acting as the foreground-service notification. */
+    @Volatile private var adoptedForegroundId: Int? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -60,7 +64,9 @@ class LiveMatchService : Service() {
             ACTION_UNTRACK -> {
                 val id = intent.getLongExtra(EXTRA_MATCH_ID, -1L)
                 tracked.remove(id)?.cancel()
-                notifier.cancel(LiveActivity.MatchActivity.matchKey(id))
+                val key = LiveActivity.MatchActivity.matchKey(id)
+                releaseCard(key.hashCode() and 0x7FFFFFFF)
+                notifier.cancel(key)
                 stopIfIdle()
             }
 
@@ -72,6 +78,9 @@ class LiveMatchService : Service() {
     /**
      * A placeholder is posted immediately: `startForeground` must be called within a few
      * seconds of the service starting, long before the first network round trip lands.
+     * As soon as a real match card exists, [adoptAsForeground] replaces it, so the user
+     * never ends up with a redundant "Kickoff is running" notification sitting beside
+     * the scoreboard for ninety minutes.
      */
     private fun promoteToForeground() {
         val notification = androidx.core.app.NotificationCompat
@@ -93,6 +102,31 @@ class LiveMatchService : Service() {
                 0
             },
         )
+    }
+
+    /**
+     * Hands the foreground-service role to a real match card.
+     *
+     * Calling `startForeground` again with a different id moves the role rather than
+     * adding a second notification, so the placeholder can then be cancelled.
+     */
+    private fun adoptAsForeground(posted: LiveActivityNotifier.Posted) {
+        if (adoptedForegroundId == posted.notificationId) return
+        runCatching {
+            ServiceCompat.startForeground(
+                this,
+                posted.notificationId,
+                posted.notification,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                } else {
+                    0
+                },
+            )
+        }.onSuccess {
+            adoptedForegroundId = posted.notificationId
+            NotificationManagerCompat.from(this).cancel(FOREGROUND_ID)
+        }
     }
 
     private fun track(matchId: Long) {
@@ -129,19 +163,22 @@ class LiveMatchService : Service() {
                     sequence = refresh.detail.sequence,
                 )
 
-                if (alerting.isEmpty()) {
+                val posted = if (alerting.isEmpty()) {
                     notifier.postMatch(activity, config.liveCardStyle)
                 } else {
-                    // One interrupting post carrying the most significant new event,
-                    // then the silent card keeps updating underneath it.
+                    // The most significant new event interrupts once; the silent card
+                    // keeps updating underneath it.
                     val headline = alerting.maxByOrNull { it.priority() } ?: alerting.first()
-                    notifier.postMatch(activity, config.liveCardStyle, headline)
-                    repository.markEventsNotified(alerting)
+                    notifier.postMatch(activity, config.liveCardStyle, headline).also {
+                        repository.markEventsNotified(alerting)
+                    }
                 }
+                posted?.let(::adoptAsForeground)
 
                 if (match.phase.isFinished) {
                     if (finishedAt == null) finishedAt = Instant.now()
                     if (Duration.between(finishedAt, Instant.now()) > FULL_TIME_LINGER) {
+                        releaseCard(activity.notificationId)
                         notifier.cancel(activity.key)
                         break
                     }
@@ -190,6 +227,20 @@ class LiveMatchService : Service() {
         else -> 10
     }
 
+    /**
+     * Called before a card is cancelled.
+     *
+     * A foreground service must always have a notification. If the card being taken down
+     * is the one currently carrying that role, the placeholder is put back so the service
+     * is never left foreground with nothing attached; the next tick of whichever match is
+     * still running re-adopts its own card.
+     */
+    private fun releaseCard(notificationId: Int) {
+        if (adoptedForegroundId != notificationId) return
+        adoptedForegroundId = null
+        if (tracked.size > 1) promoteToForeground()
+    }
+
     private fun stopIfIdle() {
         if (tracked.isEmpty()) stopEverything()
     }
@@ -197,6 +248,7 @@ class LiveMatchService : Service() {
     private fun stopEverything() {
         tracked.values.forEach(Job::cancel)
         tracked.clear()
+        adoptedForegroundId = null
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

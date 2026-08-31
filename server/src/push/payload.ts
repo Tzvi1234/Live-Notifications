@@ -6,9 +6,11 @@
  * live there), and a `notification` block would make the OS post a second, duplicate
  * notification whenever the app is backgrounded.
  *
- * Every value is a string because FCM rejects a `data` map containing anything else,
- * and the key set is fixed — a key with no value is sent empty rather than omitted, so
- * the client never has to branch on presence.
+ * Every value is a string because FCM rejects a `data` map containing anything else, and an
+ * optional with nothing to say is left out rather than sent as "". The client's fallbacks are
+ * all null checks — `playerName ?: teamName`, `homeShort ?: name.take(3)`, `detail ?: "check"`
+ * — and an empty string satisfies every one of them, so sending "" renders a blank line where
+ * omitting the key renders the fallback.
  */
 
 import { logger } from '../logger.js';
@@ -23,7 +25,8 @@ import {
   type ScoreJson,
 } from '../types.js';
 
-/** Bumped only when a key changes meaning; the client refuses payloads it cannot read. */
+/** Bumped only when a key changes meaning. Nothing reads it yet; it is here so a client that
+ * has to tell an old payload from a new one can, without inferring it from the key set. */
 export const PAYLOAD_VERSION = '1';
 
 /** FCM's hard limit on a data message. Over it, the send fails for every token in the batch. */
@@ -37,16 +40,16 @@ const ELLIPSIS_BYTES = 3;
 const MIN_KEPT_BYTES = 16;
 
 /**
- * Overflow is shed in this order. `headline` first: it is the only field the client can
- * rebuild from the remaining keys, so losing it costs nothing but polish. Crest URLs and
- * the league name go last — they are display data the client cannot invent.
+ * Overflow is shed in this order: decoration first, then the fields the client can rebuild,
+ * then the ones it cannot invent. `headline` outranks `detail` because the client composes an
+ * equivalent line from the remaining keys, whereas a VAR or lineups card is *only* `detail`.
  */
 const SHRINKABLE_KEYS: readonly string[] = [
-  // Both are pure polish: the client hides the league mark and falls back to `headline`
-  // when the detail is absent, so they are the cheapest bytes in the payload to lose.
   'leagueLogo',
-  'detail',
+  'venue',
+  'round',
   'headline',
+  'detail',
   'assist',
   'player',
   'homeCrest',
@@ -179,38 +182,58 @@ interface DataInput {
   readonly nowMs: number;
 }
 
-function buildData(input: DataInput): Record<string, string> {
+/** Always sent: without these the client discards the message or renders an empty card. */
+function requiredData(input: DataInput): Record<string, string> {
   const { match, score } = input;
   return {
     v: PAYLOAD_VERSION,
     type: input.type,
     matchId: String(match.id),
-    eventId: input.eventId,
     seq: String(input.sequence),
     phase: match.phase,
-    minute: str(input.minute),
-    extra: str(input.extra),
+    side: input.side,
     homeId: String(match.home.id),
     homeName: match.home.name,
-    homeShort: str(match.home.shortName),
-    homeCrest: str(match.home.crestUrl),
     awayId: String(match.away.id),
     awayName: match.away.name,
-    awayShort: str(match.away.shortName),
-    awayCrest: str(match.away.crestUrl),
     homeScore: String(score.home),
     awayScore: String(score.away),
     leagueId: String(match.leagueId),
     leagueName: match.leagueName,
-    leagueLogo: str(match.leagueLogoUrl),
-    detail: str(input.detail),
+    /** SECONDS since epoch: the client reads it with Instant.ofEpochSecond. */
     kickoffAt: String(match.kickoffAt),
-    headline: input.headline,
-    player: str(input.player),
-    assist: str(input.assist),
-    side: input.side,
     ts: String(input.nowMs),
   };
+}
+
+function buildData(input: DataInput): Record<string, string> {
+  const { match } = input;
+  const data = requiredData(input);
+
+  // Omitted when empty, never sent as "" — see the note at the top of the file. A numeric 0
+  // still counts as a value: minute 0 is kick-off, not a missing clock.
+  const optional: Record<string, string | number | null | undefined> = {
+    eventId: input.eventId,
+    minute: input.minute,
+    extra: input.extra,
+    homeShort: match.home.shortName,
+    homeCrest: match.home.crestUrl,
+    awayShort: match.away.shortName,
+    awayCrest: match.away.crestUrl,
+    leagueLogo: match.leagueLogoUrl,
+    round: match.round,
+    venue: match.venue,
+    player: input.player,
+    assist: input.assist,
+    detail: input.detail,
+    headline: input.headline,
+  };
+
+  for (const [key, value] of Object.entries(optional)) {
+    const text = str(value);
+    if (text !== '') data[key] = text;
+  }
+  return data;
 }
 
 /** UTF-8 safe: iterates code points, so a truncated name never ends in half a surrogate. */
@@ -318,7 +341,8 @@ export function tickPayload(
   const data = buildData({
     match,
     type: 'TICK',
-    // Ticks carry no event id: the client dedupes them by `seq`, not by identity.
+    // No event id: a tick is not an incident, and the client drops the key's whole branch
+    // because "TICK" is not one of its event types. Ordering is settled by `seq` instead.
     eventId: '',
     sequence,
     side: 'NEUTRAL',

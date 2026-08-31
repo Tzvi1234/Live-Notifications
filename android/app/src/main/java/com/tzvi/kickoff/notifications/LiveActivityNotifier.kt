@@ -44,25 +44,35 @@ class LiveActivityNotifier @Inject constructor(
     fun lastRenderingFor(key: String): MatchNotificationBuilder.Rendering? = lastRendering[key]
 
     /**
+     * What a post produced, so the foreground service can adopt the card as its own
+     * service notification rather than showing a second, redundant one beside it.
+     */
+    data class Posted(
+        val notificationId: Int,
+        val notification: android.app.Notification,
+        val rendering: MatchNotificationBuilder.Rendering,
+    )
+
+    /**
      * Post or update the ongoing match card.
      *
      * @param alertingEvent when set, an additional interrupting notification is posted
      *   alongside the card. It is deliberately a *separate* notification: a
      *   notification's channel is fixed at post time, so making the card itself loud
      *   would shuttle it between channels on every goal.
-     * @return true when something was posted.
+     * @return what was posted, or null when nothing was.
      */
     suspend fun postMatch(
         activity: LiveActivity.MatchActivity,
         style: LiveCardStyle,
         alertingEvent: MatchEvent? = null,
-    ): Boolean = postLock.withLock {
-        if (!canPost()) return false
-        if (isDismissed(activity.key)) return false
+    ): Posted? = postLock.withLock {
+        if (!canPost()) return null
+        if (isDismissed(activity.key)) return null
 
         val id = activity.notificationId
         // A genuine event always gets through; only silent refreshes are throttled.
-        if (alertingEvent == null && isRateLimited(id)) return false
+        if (alertingEvent == null && isRateLimited(id)) return null
 
         // Crests are only decoded when the renderer can actually use them: the promoted
         // path shows them as the progress bar's start and end icons, the rich path in the
@@ -77,7 +87,7 @@ class LiveActivityNotifier @Inject constructor(
             postEventAlert(activity, alertingEvent, crests)
         }
         track(activity)
-        true
+        Posted(id, result.notification, result.rendering)
     }
 
     @SuppressLint("MissingPermission")

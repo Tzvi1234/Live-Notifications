@@ -30,14 +30,15 @@ class LiveUpdateCapability @Inject constructor(
         get() = Build.VERSION.SDK_INT >= 36
 
     /**
-     * `setRequestPromotedOngoing` and `POST_PROMOTED_NOTIFICATIONS` landed in API 36.1,
-     * a *minor* SDK level. `SDK_INT` alone cannot see the minor version, so
-     * `SDK_INT_FULL` is used where it exists and API 37 is the safe floor otherwise.
+     * `setRequestPromotedOngoing` and `POST_PROMOTED_NOTIFICATIONS` landed in API **36.1**,
+     * a minor SDK level that `SDK_INT` cannot see - it reports 36 for both Android 16 and
+     * Android 16 QPR1. `SDK_INT_FULL` carries the minor version, and is itself only
+     * present from API 36, hence the guard.
      */
     val supportsPromotion: Boolean
         get() = when {
             Build.VERSION.SDK_INT >= 37 -> true
-            Build.VERSION.SDK_INT == 36 -> minorSdkAtLeast(1)
+            Build.VERSION.SDK_INT == 36 -> Api36Impl.isAtLeastQpr1()
             else -> false
         }
 
@@ -86,17 +87,20 @@ class LiveUpdateCapability @Inject constructor(
      */
     fun canReachAmbientSurfaces(): Boolean = canPostPromoted()
 
-    private fun minorSdkAtLeast(minor: Int): Boolean = runCatching {
-        // Build.VERSION.SDK_INT_FULL encodes major*100_000 + minor*1_000 (API 36.1+).
-        val field = Build.VERSION::class.java.getField("SDK_INT_FULL")
-        val full = field.getInt(null)
-        (full % 100_000) / 1_000 >= minor
-    }.getOrDefault(false)
-
     @RequiresApi(36)
     private object Api36Impl {
         fun canPostPromotedNotifications(manager: NotificationManager): Boolean =
             manager.canPostPromotedNotifications()
+
+        /**
+         * `SDK_INT_FULL` encodes `major * 100_000 + minor`, so Android 16 is 3_600_000 and
+         * Android 16 QPR1 is 3_600_001 (`VERSION_CODES_FULL.BAKLAVA_1`). Comparing against
+         * the constant avoids re-deriving that arithmetic - dividing the minor out by the
+         * wrong power of ten silently reports every device as pre-QPR1, which disables
+         * promotion everywhere without an error.
+         */
+        fun isAtLeastQpr1(): Boolean =
+            Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1
     }
 
     private companion object {
