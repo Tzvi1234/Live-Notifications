@@ -25,8 +25,10 @@ import {
   type ScoreJson,
 } from '../types.js';
 
-/** Bumped only when a key changes meaning. Nothing reads it yet; it is here so a client that
- * has to tell an old payload from a new one can, without inferring it from the key set. */
+/**
+ * Bumped only when a key changes meaning. Nothing reads it yet; it is here so a client that
+ * has to tell an old payload from a new one can, instead of inferring it from the key set.
+ */
 export const PAYLOAD_VERSION = '1';
 
 /** FCM's hard limit on a data message. Over it, the send fails for every token in the batch. */
@@ -36,7 +38,7 @@ export const FCM_DATA_LIMIT_BYTES = 4096;
 const ELLIPSIS = '...';
 const ELLIPSIS_BYTES = 3;
 
-/** Below this a truncated string is noise; the field is emptied instead. */
+/** Below this a truncated string is noise, so the key is dropped rather than clipped. */
 const MIN_KEPT_BYTES = 16;
 
 /**
@@ -56,6 +58,13 @@ const SHRINKABLE_KEYS: readonly string[] = [
   'awayCrest',
   'leagueName',
 ];
+
+/**
+ * Only reached when the shrinkable fields are gone and the message is still too big. Names
+ * are clipped, never emptied: the client prints `homeName` verbatim, so an empty one is a
+ * blank scoreboard, whereas a clipped one is a readable notification.
+ */
+const LAST_RESORT_KEYS: readonly string[] = ['homeName', 'awayName'];
 
 /**
  * The envelope minus its recipients: builders describe the message, the caller decides who
@@ -265,13 +274,28 @@ function enforceSizeLimit(data: Record<string, string>, context: Record<string, 
     const over = payloadSize(data) - FCM_DATA_LIMIT_BYTES;
     if (over <= 0) break;
     const keep = Buffer.byteLength(current, 'utf8') - over;
-    data[key] = keep >= MIN_KEPT_BYTES ? truncateToBytes(current, keep) : '';
+    if (keep >= MIN_KEPT_BYTES) {
+      data[key] = truncateToBytes(current, keep);
+    } else {
+      // Below the floor the remnant is unreadable, and an empty optional is a key the
+      // client simply does not see.
+      delete data[key];
+    }
+  }
+
+  for (const key of LAST_RESORT_KEYS) {
+    const current = data[key];
+    if (current === undefined) continue;
+    const over = payloadSize(data) - FCM_DATA_LIMIT_BYTES;
+    if (over <= 0) break;
+    data[key] = truncateToBytes(current, Math.max(MIN_KEPT_BYTES, Buffer.byteLength(current, 'utf8') - over));
   }
 
   const finalSize = payloadSize(data);
   if (finalSize > FCM_DATA_LIMIT_BYTES) {
-    // Nothing left to shed: the fixed fields alone blew the budget, which means the provider
-    // handed us something absurd (a team name of several hundred bytes, say).
+    // Nothing left to clip. FCM rejects an oversized message for every token in the batch,
+    // so this is one match's notifications gone until the provider stops sending whatever
+    // absurdity got it here.
     logger.error('push payload exceeds FCM limit after truncation', {
       ...context,
       initialSize,

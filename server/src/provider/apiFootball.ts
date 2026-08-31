@@ -328,6 +328,8 @@ export class ApiFootballClient {
   readonly #fetch: typeof fetch;
   readonly #now: () => number;
   readonly #cache = new Map<string, CacheEntry>();
+  /** Cacheable calls currently over the wire, keyed like the cache. See `#request`. */
+  readonly #inflight = new Map<string, Promise<unknown[]>>();
 
   #quota: ProviderQuota = {
     dailyLimit: undefined,
@@ -425,11 +427,27 @@ export class ApiFootballClient {
 
   async #request<T>(path: string, params: QueryParams, cacheable: boolean): Promise<T[]> {
     const key = cacheKey(path, params);
-    if (cacheable) {
-      const hit = this.#cacheGet(key);
-      if (hit) return [...hit] as T[];
-    }
+    if (!cacheable) return this.#fetchItems<T>(path, params, key, false);
 
+    const hit = this.#cacheGet(key);
+    if (hit) return [...hit] as T[];
+
+    // Everyone who arrives while one call is in flight rides on it. Without this the cache
+    // saves nothing under load: a screenful of users hitting an expired day query at once
+    // would each spend a request from the daily budget for the same list of fixtures.
+    const inflight = this.#inflight.get(key);
+    if (inflight !== undefined) return [...(await inflight)] as T[];
+
+    const call = this.#fetchItems<T>(path, params, key, true);
+    this.#inflight.set(key, call as Promise<unknown[]>);
+    try {
+      return await call;
+    } finally {
+      this.#inflight.delete(key);
+    }
+  }
+
+  async #fetchItems<T>(path: string, params: QueryParams, key: string, cacheable: boolean): Promise<T[]> {
     this.#spendBudget(path);
 
     const url = new URL(this.#baseUrl + path);

@@ -7,11 +7,16 @@ import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.data.repository.DeviceRegistrationRepository
 import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.repository.SettingsRepository
+import com.tzvi.kickoff.work.KickoffWorkScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -26,11 +31,13 @@ data class AppUiState(
     val liveActivity: LiveActivity.MatchActivity? = null,
 )
 
+@OptIn(FlowPreview::class)
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val footballRepository: FootballRepository,
     private val registration: DeviceRegistrationRepository,
+    private val workScheduler: KickoffWorkScheduler,
 ) : ViewModel() {
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -65,5 +72,25 @@ class MainViewModel @Inject constructor(
         // Registration is best-effort on every launch: the FCM token can be rotated by
         // the system at any time, and the backend needs the current one to reach us.
         viewModelScope.launch { runCatching { registration.syncIfPossible() } }
+
+        // A change to the followed teams has to reach two places before it means
+        // anything: the backend, so its fan-out includes the new team, and the fixture
+        // sync, which is what arms the pre-match alarms. `drop(1)` skips the replay of
+        // what is already stored; the debounce collapses the burst that onboarding and
+        // multi-select produce into one round trip.
+        viewModelScope.launch {
+            footballRepository.favouriteTeamIds
+                .distinctUntilChanged()
+                .drop(1)
+                .debounce(FAVOURITE_SYNC_DEBOUNCE_MS)
+                .collect {
+                    runCatching { registration.syncSubscriptions() }
+                    workScheduler.requestImmediateFixtureSync()
+                }
+        }
+    }
+
+    private companion object {
+        const val FAVOURITE_SYNC_DEBOUNCE_MS = 1_500L
     }
 }

@@ -158,7 +158,10 @@ export function isPushEnabled(): boolean {
   return initPush();
 }
 
-/** Test seam: drops the memoised client so the next call re-initialises. */
+/**
+ * Test seam: forgets the enabled/disabled decision so the next call re-derives it. The
+ * firebase app itself is left in place and reused, so this is not a way to swap credentials.
+ */
 export function resetPushForTests(): void {
   state = undefined;
 }
@@ -174,6 +177,11 @@ export function chunkTokens(tokens: string[], size: number = FCM_MULTICAST_LIMIT
   return chunks;
 }
 
+/**
+ * `MulticastMessage.tokens` carries a deprecation marker in favour of Firebase Installation
+ * IDs. It stays: POST /v1/devices registers FCM registration tokens, so tokens are what the
+ * device table holds, and the token path is the one that reports a dead install.
+ */
 function toMulticast(tokens: string[], envelope: PushMessage): MulticastMessage {
   const android: AndroidConfig = {
     priority: 'high',
