@@ -163,6 +163,19 @@ npm run dev
 **Deploying** — see **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for the Render blueprint,
 every environment variable, and exactly where to obtain each secret.
 
+**Checks**
+
+```bash
+cd android && ./gradlew testDebugUnitTest lintRelease assembleRelease
+cd server  && npm run typecheck && npm test && npm run lint
+```
+
+The unit tests cover the parts that fail silently rather than loudly: the scoreline
+accumulator (an own goal is credited to the other side), deterministic event ids derived
+identically on both sides of the wire, `kickoffAt` in seconds rather than milliseconds,
+all-day calendar events read back in UTC, and the diff that has to tell a VAR retraction
+apart from a provider hiccup.
+
 ## Requirements
 
 - Android 8.0 (API 26) and up
