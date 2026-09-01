@@ -10,6 +10,13 @@
  *    is issued instead of burning the last requests on something the poller can retry later.
  */
 
+import {
+  NO_PERSISTENT_CACHE,
+  type CachedResponse,
+  type PersistentCache,
+} from './persistentCache.js';
+import { RateLimiter, type RateLimiterState } from './rateLimiter.js';
+
 const DEFAULT_BASE_URL = 'https://v3.football.api-sports.io';
 const MEDIA_BASE_URL = 'https://media.api-sports.io/football';
 const DEFAULT_BUDGET = 7500;
@@ -592,6 +599,8 @@ export interface ApiFootballClientOptions {
   fetchImpl?: typeof fetch;
   /** Injectable clock, so budget rollover and cache expiry are testable. */
   now?: () => number;
+  /** Swappable so the pacing behaviour can be tested without real timers. */
+  limiter?: RateLimiter | undefined;
 }
 
 export interface FixtureQuery {
@@ -668,6 +677,8 @@ function describeErrorValue(value: unknown): string {
 
 export class ApiFootballClient {
   readonly #apiKey: string;
+  readonly #limiter: RateLimiter;
+  #persistent: PersistentCache = NO_PERSISTENT_CACHE;
   readonly #baseUrl: string;
   readonly #logger: ProviderLogger;
   /** The operator's explicit ceiling, or undefined to follow the plan. */
@@ -707,6 +718,23 @@ export class ApiFootballClient {
     this.#fetch = options.fetchImpl ?? globalThis.fetch;
     this.#now = options.now ?? Date.now;
     this.#budgetDay = Math.floor(this.#now() / DAY_MS);
+    this.#limiter = options.limiter ?? new RateLimiter({ now: options.now });
+  }
+
+  /**
+   * Attaches the database-backed half of the cache.
+   *
+   * Set after construction rather than injected, because the store is created before the
+   * provider and may fail over to memory at any point in the process's life; the client
+   * has to work with or without it, and swapping it is how a recovered database rejoins.
+   */
+  usePersistentCache(cache: PersistentCache): void {
+    this.#persistent = cache;
+  }
+
+  /** What the pacer is doing right now, for /v1/admin/status. */
+  getRateLimiterState(): RateLimiterState {
+    return this.#limiter.getState();
   }
 
   /**
@@ -916,6 +944,21 @@ export class ApiFootballClient {
     const hit = cacheable ? this.#cacheGet(key) : undefined;
     if (hit) return [...hit] as T[];
 
+    // Not in memory, but this process is minutes old and the answer may have been fetched
+    // by the instance it replaced. Asking the database first is the difference between a
+    // deploy costing thirty upstream calls and costing none.
+    if (cacheable) {
+      const stored = await this.#persistent.read(key);
+      if (stored !== undefined && stored.expiresAt > this.#now()) {
+        this.#cache.set(key, {
+          expiresAt: stored.expiresAt,
+          staleUntil: stored.staleUntil,
+          value: stored.value,
+        });
+        return [...stored.value] as T[];
+      }
+    }
+
     // Everyone who arrives while one call is in flight rides on it. Without this the cache
     // saves nothing under load: a screenful of users hitting an expired day query at once
     // would each spend a request from the daily budget for the same list of fixtures.
@@ -941,7 +984,7 @@ export class ApiFootballClient {
       // answer is the difference between a stale league list and an error screen - and for
       // an outage that lasts the afternoon, between an app that works and one that does
       // not. Only cacheable paths get here, so nothing live is served out of date.
-      const stale = cacheable ? this.#cacheGetStale(key) : undefined;
+      const stale = cacheable ? await this.#anyStale(key) : undefined;
       if (stale !== undefined) {
         this.#logger.warn('serving a stale answer; the refresh failed', {
           path,
@@ -993,6 +1036,10 @@ export class ApiFootballClient {
     options: { spendBudget?: boolean } = {},
   ): Promise<unknown> {
     if (options.spendBudget !== false) this.#spendBudget(path);
+    // Paced BEFORE the call rather than backed off after it. `#awaitMinuteHeadroom` only
+    // learns the window is tight from a response that has already been issued, which means
+    // the burst that filled it already happened; the bucket makes the burst impossible.
+    await this.#limiter.acquire();
     await this.#awaitMinuteHeadroom(path);
 
     const url = new URL(this.#baseUrl + path);
@@ -1175,6 +1222,9 @@ export class ApiFootballClient {
     if (quota.dailyLimit !== undefined && quota.dailyLimit > 0) {
       this.#observedDailyLimit = quota.dailyLimit;
     }
+    // The plan's real per-minute allowance, which is the number the pacer should be using
+    // rather than a conservative guess.
+    this.#limiter.observeLimit(quota.minuteLimit);
 
     const { dailyLimit, dailyRemaining } = quota;
     if (dailyLimit === undefined || dailyRemaining === undefined || dailyLimit <= 0) return;
@@ -1211,10 +1261,27 @@ export class ApiFootballClient {
     return entry.value;
   }
 
+  /** Memory first, then the database, so a stale answer outlives the process that got it. */
+  async #anyStale(key: string): Promise<unknown[] | undefined> {
+    const local = this.#cacheGetStale(key);
+    if (local !== undefined) return local;
+    const stored = await this.#persistent.read(key);
+    if (stored === undefined || stored.staleUntil <= this.#now()) return undefined;
+    return stored.value;
+  }
+
   #cacheSet(key: string, value: unknown[], ttlMs: number): void {
     if (ttlMs <= 0) return;
     if (this.#cache.size >= MAX_CACHE_ENTRIES) this.#sweepCache();
     const now = this.#now();
+    const entry: CachedResponse = {
+      value,
+      expiresAt: now + ttlMs,
+      staleUntil: now + ttlMs + STALE_GRACE_MS,
+    };
+    // Fire and forget: the caller is waiting on a response, not on a cache write, and the
+    // persistent layer swallows its own failures.
+    void this.#persistent.write(key, entry);
     this.#cache.set(key, {
       expiresAt: now + ttlMs,
       // The grace is added ON TOP of the TTL, not max'd with it. Taking the larger of the

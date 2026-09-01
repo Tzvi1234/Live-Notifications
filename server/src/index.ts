@@ -12,6 +12,7 @@ import { config, type KickoffConfig } from './config.js';
 import { logger, setLogLevel } from './logger.js';
 import { createLivePoller } from './poller/livePoller.js';
 import { ApiFootballClient, ProviderError } from './provider/apiFootball.js';
+import { createPersistentCache } from './provider/persistentCache.js';
 import { initPush } from './push/fcm.js';
 import { createStore, type Store } from './store/index.js';
 import type { PollerHandle } from './routes/deps.js';
@@ -86,6 +87,19 @@ async function main(): Promise<void> {
     cacheTtlSeconds: config.cacheTtlSeconds,
     logger: logger.child({ component: 'provider' }),
   });
+
+  // The half of the provider cache that survives a restart. Render replaces the instance
+  // on every deploy and spins it down when idle, so the in-memory half is cold several
+  // times a day - and cold costs REQUESTS, not just latency: thirty competitions' team
+  // lists are thirty upstream calls that were already made and answered identically.
+  if (store.cacheQueryable) {
+    provider.usePersistentCache(
+      createPersistentCache(store.cacheQueryable, logger.child({ component: 'cache' })),
+    );
+    logger.info('response cache: persistent (postgres)');
+  } else {
+    logger.info('response cache: in-memory only (no database)');
+  }
 
   // Initialised here rather than on the first goal, so a broken service account is a line in
   // the startup log instead of a notification that silently never arrives.

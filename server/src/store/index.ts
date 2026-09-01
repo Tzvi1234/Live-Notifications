@@ -6,6 +6,7 @@
  * match's detail payload has advanced, and which process is allowed to poll at all.
  */
 
+import type { CacheQueryable } from '../provider/persistentCache.js';
 import {
   DEFAULT_SUBSCRIPTION_PREFERENCES,
   type DeviceRecord,
@@ -58,6 +59,17 @@ export interface PruneStats {
 
 export interface Store {
   readonly kind: StoreKind;
+
+  /**
+   * A raw query handle, present only on a real database.
+   *
+   * Exposed for the provider's response cache and nothing else. That cache is not domain
+   * data - it is a scratch table whose rows are all disposable - so giving it its own
+   * typed Store methods would put six cache operations into an interface about devices,
+   * subscriptions and predictions. Absent on the memory store, which is exactly right:
+   * a cache with nowhere to persist to is a cache that always misses.
+   */
+  readonly cacheQueryable?: CacheQueryable | undefined;
 
   upsertDevice(device: DeviceRegistration): Promise<DeviceRecord>;
   deleteDevice(token: string): Promise<boolean>;
@@ -233,6 +245,8 @@ export interface PostGroupMessageInput {
   userId: string;
   text: string;
 }
+
+export type { CacheQueryable };
 
 export interface StoreConfig {
   readonly databaseUrl?: string | undefined;

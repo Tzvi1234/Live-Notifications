@@ -316,6 +316,11 @@ async function withClient<T>(pool: PgPool, run: (client: PoolClient) => Promise<
 }
 
 class PostgresStore implements Store {
+  /** See `Store.cacheQueryable`: the response cache's handle, and nothing else's. */
+  get cacheQueryable(): { query: PgPool['query'] } {
+    return this.pool;
+  }
+
   readonly kind: StoreKind = 'postgres';
 
   private readonly pool: PgPool;

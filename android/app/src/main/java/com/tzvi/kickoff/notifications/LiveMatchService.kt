@@ -84,9 +84,17 @@ class LiveMatchService : Service() {
 
             ACTION_STOP -> stopEverything()
         }
-        // NOT sticky: a restart with a null intent would run with an empty tracked map and
-        // pin a foreground service to the anchor with nothing driving it. The alarms and
-        // the sweep worker are what bring tracking back after a process death.
+
+        // Unconditionally, on every path. A start command that tracks nothing - a malformed
+        // intent, an id already being followed, a null intent after a process restart - used
+        // to leave the service foreground with an anchor and nothing driving it, which is
+        // what put a context-free "Starting soon" on the shelf at random moments. The anchor
+        // is only ever allowed to exist while something is actually being followed.
+        stopIfIdle()
+
+        // NOT sticky, for the same reason: a restart with a null intent would run with an
+        // empty tracked map. The alarms and the sweep worker are what bring tracking back
+        // after a process death.
         return START_NOT_STICKY
     }
 
@@ -111,8 +119,12 @@ class LiveMatchService : Service() {
         val count = tracked.size
         if (anchoredCount == count) return
 
+        // Count zero is a few hundred milliseconds between startForeground - which Android
+        // requires immediately - and the first match being added. It is never a resting
+        // state: stopIfIdle() ends the service if nothing follows. The wording still has to
+        // mean something for the moment it is visible.
         val text = if (count == 0) {
-            getString(com.tzvi.kickoff.R.string.live_starting_soon)
+            getString(com.tzvi.kickoff.R.string.live_preparing)
         } else {
             resources.getQuantityString(com.tzvi.kickoff.R.plurals.live_following, count, count)
         }
@@ -210,6 +222,16 @@ class LiveMatchService : Service() {
                 } else {
                     finishedAt = null
                 }
+                // A match followed from its T-60 alarm would otherwise hold a visible
+                // foreground notification for the whole hour before kick-off, which reads
+                // as the app nagging for no reason. Stand down and let the alarm bring us
+                // back when there is actually something to watch.
+                val untilKickoff = Duration.between(Instant.now(), match.kickoffAt)
+                if (!match.isLive && !match.phase.isFinished && untilKickoff > STAND_DOWN_BEFORE) {
+                    notifier.cancel(activity.key)
+                    break
+                }
+
                 delay(intervalFor(match))
             } else {
                 delay(ERROR_BACKOFF_MS)
@@ -336,6 +358,15 @@ class LiveMatchService : Service() {
         private const val FULL_TIME_INTERVAL_MS = 60_000L
         private const val ERROR_BACKOFF_MS = 45_000L
         private val FULL_TIME_LINGER: Duration = Duration.ofMinutes(10)
+
+        /**
+         * How close to kick-off the service is willing to stay up.
+         *
+         * Beyond this the alarm is the right mechanism and a running foreground service is
+         * the wrong one: it costs battery and shows a notification about a match that is
+         * still an hour away.
+         */
+        private val STAND_DOWN_BEFORE: Duration = Duration.ofMinutes(12)
 
         fun track(context: Context, matchId: Long) {
             val intent = Intent(context, LiveMatchService::class.java)
