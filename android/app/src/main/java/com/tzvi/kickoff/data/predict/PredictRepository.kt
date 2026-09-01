@@ -31,6 +31,16 @@ class PredictRepository @Inject constructor(
     suspend fun createGroup(name: String, leagueIds: List<Int>, teamIds: List<Int>): PredictGroup =
         io { service.createGroup(CreateGroupRequest(name, leagueIds, teamIds)).toDomain() }
 
+    /** Sends the whole selection: the server replaces its lists with these, never merges. */
+    suspend fun updateGroup(
+        groupId: Long,
+        name: String,
+        leagueIds: List<Int>,
+        teamIds: List<Int>,
+    ): PredictGroup = io {
+        service.updateGroup(groupId, UpdateGroupRequest(name, leagueIds, teamIds)).toDomain()
+    }
+
     /** The code is shouted across a room before it is typed, so case and spaces go. */
     suspend fun joinGroup(code: String): PredictGroup =
         io { service.joinGroup(JoinGroupRequest(code.filterNot { it.isWhitespace() })).toDomain() }

@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -47,6 +48,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tzvi.kickoff.core.model.GroupFixture
+import com.tzvi.kickoff.core.model.League
+import com.tzvi.kickoff.core.model.Team
+import com.tzvi.kickoff.data.predict.PendingInvite
 import com.tzvi.kickoff.feature.auth.AccountRequired
 import com.tzvi.kickoff.ui.component.EmptyState
 import com.tzvi.kickoff.ui.component.LoadingState
@@ -71,9 +75,21 @@ fun PredictScreen(onSignIn: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
         onSelectTab = viewModel::selectTab,
         onAdjust = viewModel::adjust,
         onSubmit = viewModel::submit,
-        onCreate = viewModel::createGroup,
         onJoin = viewModel::joinGroup,
         onSendChat = viewModel::sendChat,
+        onNewGroup = viewModel::newGroup,
+        onEditGroup = viewModel::editGroup,
+        onCloseSetup = viewModel::closeSetup,
+        onName = viewModel::nameGroup,
+        onToggleLeague = viewModel::toggleLeague,
+        onRetryLeagues = viewModel::retryLeagues,
+        onPickTeams = viewModel::pickTeams,
+        onToggleTeam = viewModel::toggleTeam,
+        onRemoveTeam = viewModel::removeTeam,
+        onSearch = viewModel::searchSquad,
+        onRetrySquads = viewModel::retrySquads,
+        onDismissNotice = viewModel::dismissNotice,
+        onSave = viewModel::saveGroup,
         onSignIn = onSignIn,
         onOpenSettings = onOpenSettings,
     )
@@ -88,12 +104,45 @@ internal fun PredictContent(
     onSelectTab: (PredictTab) -> Unit,
     onAdjust: (Long, Int, Int) -> Unit,
     onSubmit: (Long) -> Unit,
-    onCreate: (String, List<Int>, List<Int>) -> Unit,
     onJoin: (String) -> Unit,
     onSendChat: (String) -> Unit,
+    onNewGroup: () -> Unit,
+    onEditGroup: () -> Unit,
+    onCloseSetup: () -> Unit,
+    onName: (String) -> Unit,
+    onToggleLeague: (League) -> Unit,
+    onRetryLeagues: () -> Unit,
+    onPickTeams: (Boolean) -> Unit,
+    onToggleTeam: (Team) -> Unit,
+    onRemoveTeam: (Int) -> Unit,
+    onSearch: (String) -> Unit,
+    onRetrySquads: () -> Unit,
+    onDismissNotice: () -> Unit,
+    onSave: () -> Unit,
     onSignIn: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
+    val setup = state.setup
+    if (setup != null) {
+        // The form takes the whole screen, tabs and all: half of what is behind it - the
+        // fixture list - is about to be decided by what is being filled in here.
+        GroupSetupScreen(
+            setup = setup,
+            onClose = onCloseSetup,
+            onName = onName,
+            onToggleLeague = onToggleLeague,
+            onRetryLeagues = onRetryLeagues,
+            onPickTeams = onPickTeams,
+            onToggleTeam = onToggleTeam,
+            onRemoveTeam = onRemoveTeam,
+            onSearch = onSearch,
+            onRetrySquads = onRetrySquads,
+            onDismissNotice = onDismissNotice,
+            onSave = onSave,
+        )
+        return
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -101,7 +150,17 @@ internal fun PredictContent(
                 title = { Text(state.selected?.name ?: "Predictions") },
                 actions = {
                     val group = state.selected
-                    if (group != null) InviteAction(code = group.inviteCode)
+                    if (group != null) {
+                        if (state.canEditSelected) {
+                            IconButton(onClick = onEditGroup) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Edit,
+                                    contentDescription = "Edit group",
+                                )
+                            }
+                        }
+                        InviteAction(code = group.inviteCode)
+                    }
                 },
             )
         },
@@ -135,10 +194,9 @@ internal fun PredictContent(
                 )
 
                 state.blocker == PredictBlocker.NO_GROUPS -> StartGroup(
-                    creating = state.creating,
                     joining = state.joining,
                     errorMessage = state.errorMessage,
-                    onCreate = { name -> onCreate(name, emptyList(), emptyList()) },
+                    onCreate = onNewGroup,
                     onJoin = onJoin,
                 )
 
@@ -183,7 +241,12 @@ private fun InviteAction(code: String) {
                 type = "text/plain"
                 putExtra(
                     Intent.EXTRA_TEXT,
-                    "Join my matchUP predictions group with the code $code.",
+                    // Both, because the link only works on a phone that has matchUP: a
+                    // friend who has not installed it yet has to be able to type the code
+                    // in after they do.
+                    "Join my matchUP predictions group.\n\n" +
+                        PendingInvite.linkFor(code) +
+                        "\n\nOr open matchUP and enter the code $code.",
                 )
             }
             context.startActivity(Intent.createChooser(share, "Invite a friend"))
@@ -427,13 +490,11 @@ private fun ChatTab(state: PredictUiState, onSend: (String) -> Unit) {
 /** The first thing anyone sees: make one, or join the one a friend already made. */
 @Composable
 private fun StartGroup(
-    creating: Boolean,
     joining: Boolean,
     errorMessage: String?,
-    onCreate: (String) -> Unit,
+    onCreate: () -> Unit,
     onJoin: (String) -> Unit,
 ) {
-    var name by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     Column(
         modifier = Modifier
@@ -455,20 +516,8 @@ private fun StartGroup(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(22.dp))
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Group name") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(10.dp))
-        Button(
-            onClick = { onCreate(name) },
-            enabled = name.isNotBlank() && !creating,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(if (creating) "Creating" else "Create a group")
+        Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
+            Text("Create a group")
         }
         Spacer(Modifier.height(26.dp))
         Text(
@@ -517,9 +566,21 @@ private fun PredictStartPreview() {
             onSelectTab = {},
             onAdjust = { _, _, _ -> },
             onSubmit = {},
-            onCreate = { _, _, _ -> },
             onJoin = {},
             onSendChat = {},
+            onNewGroup = {},
+            onEditGroup = {},
+            onCloseSetup = {},
+            onName = {},
+            onToggleLeague = {},
+            onRetryLeagues = {},
+            onPickTeams = {},
+            onToggleTeam = {},
+            onRemoveTeam = {},
+            onSearch = {},
+            onRetrySquads = {},
+            onDismissNotice = {},
+            onSave = {},
             onSignIn = {},
             onOpenSettings = {},
         )

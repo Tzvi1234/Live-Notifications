@@ -1,6 +1,11 @@
 package com.tzvi.kickoff.feature.onboarding
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -127,8 +132,12 @@ internal fun SourcePage(
     state: OnboardingUiState,
     entrance: EntranceScope,
     onChoose: (ConfiguredSource) -> Unit,
+    onApiKeyChange: (String) -> Unit,
+    onSaveApiKey: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val uriHandler = LocalUriHandler.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -136,34 +145,94 @@ internal fun SourcePage(
             .padding(horizontal = OnboardingSpacing.screen),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // The server first, and already connected: it is the answer for almost everybody,
+        // and the address is not a question this app asks any more.
         entrance.Block(0) {
             SourceTile(
-                icon = Icons.Outlined.PlayCircleOutline,
-                title = "Demo data",
-                body = "Real clubs and crests. Nothing to sign up for.",
-                badge = "NO SIGN-UP",
-                selected = state.chosenSource == ConfiguredSource.DEMO,
-                onClick = { onChoose(ConfiguredSource.DEMO) },
+                icon = Icons.Outlined.Link,
+                title = "The matchUP server",
+                // Signed out this still serves football perfectly well; it is only the
+                // predictions that cannot work without somewhere to attribute a guess. The
+                // tile says which is which rather than implying a lock that is not there.
+                body = if (state.hasAccount) {
+                    "Already connected. Pushes a goal the moment it happens, and it is " +
+                        "the only way to play the predictions game."
+                } else {
+                    "Already connected. Pushes a goal the moment it happens. Sign in " +
+                        "later if you want the predictions game too."
+                },
+                badge = "CONNECTED",
+                selected = state.chosenSource == ConfiguredSource.BACKEND,
+                onClick = { onChoose(ConfiguredSource.BACKEND) },
             )
         }
         entrance.Block(1) {
             SourceTile(
                 icon = Icons.Outlined.Key,
-                title = "An API-Football key",
-                body = "Your own key. 100 requests a day on the free tier.",
-                badge = "FREE TIER",
+                title = "My own API-Football key",
+                body = "Your key, your quota, no account needed - and no push and no " +
+                    "predictions, because there is no server holding them.",
+                badge = "NO ACCOUNT",
                 selected = state.chosenSource == ConfiguredSource.API_FOOTBALL,
                 onClick = { onChoose(ConfiguredSource.API_FOOTBALL) },
             )
         }
+
+        // The one input any of these choices still needs, under the tile that asks for it
+        // rather than on a page of its own.
+        AnimatedVisibility(
+            visible = state.chosenSource == ConfiguredSource.API_FOOTBALL,
+            enter = expandVertically(Motion.sizeSpring()) +
+                fadeIn(Motion.effects(Motion.Duration.MEDIUM)),
+            exit = shrinkVertically(Motion.sizeSpring()) +
+                fadeOut(Motion.effects(Motion.Duration.SHORT)),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(OnboardingSpacing.tight)) {
+                OutlinedTextField(
+                    value = state.apiKeyInput,
+                    onValueChange = onApiKeyChange,
+                    label = { Text("API key") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onSaveApiKey() }),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(OnboardingSpacing.tight),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(
+                        onClick = onSaveApiKey,
+                        enabled = state.apiKeyInput.isNotBlank() && !state.checkingSource,
+                    ) {
+                        if (state.checkingSource) {
+                            KickoffLoader(size = 18.dp)
+                        } else {
+                            Text("Check and save")
+                        }
+                    }
+                    TextButton(onClick = { uriHandler.openUri(API_FOOTBALL_DASHBOARD) }) {
+                        Text("Where do I get one?")
+                    }
+                }
+                SourceVerdict(
+                    state = state,
+                    okTitle = "Key accepted",
+                    hint = "Take it from dashboard.api-football.com, not from RapidAPI - " +
+                        "a RapidAPI key will not work here.",
+                )
+            }
+        }
+
         entrance.Block(2) {
             SourceTile(
-                icon = Icons.Outlined.Link,
-                title = "Your own backend",
-                body = "The only one that can push a goal the moment it happens.",
-                badge = "BEST FOR LIVE",
-                selected = state.chosenSource == ConfiguredSource.BACKEND,
-                onClick = { onChoose(ConfiguredSource.BACKEND) },
+                icon = Icons.Outlined.PlayCircleOutline,
+                title = "Demo data",
+                body = "Real clubs and crests, fixtures invented around right now. " +
+                    "Nothing to sign up for.",
+                badge = "NO SIGN-UP",
+                selected = state.chosenSource == ConfiguredSource.DEMO,
+                onClick = { onChoose(ConfiguredSource.DEMO) },
             )
         }
         entrance.Block(3) {
@@ -259,145 +328,6 @@ private fun SourceTile(
 }
 
 /** Whatever the choice on the previous page actually needs - and nothing else. */
-@Composable
-internal fun SetupPage(
-    state: OnboardingUiState,
-    entrance: EntranceScope,
-    onApiKeyChange: (String) -> Unit,
-    onSaveApiKey: () -> Unit,
-    onBackendUrlChange: (String) -> Unit,
-    onSaveBackendUrl: () -> Unit,
-    onBackToChoice: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val uriHandler = LocalUriHandler.current
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = OnboardingSpacing.screen),
-        verticalArrangement = Arrangement.spacedBy(OnboardingSpacing.block),
-    ) {
-        when (state.chosenSource) {
-            ConfiguredSource.DEMO -> {
-                entrance.Block(0) {
-                    ReadyNote(
-                        title = "Ready to go",
-                        body = "Fifteen clubs with their official crests, a match already " +
-                            "in play, and one you can watch run its whole ninety minutes " +
-                            "in about three.",
-                    )
-                }
-                entrance.Block(1) {
-                    Text(
-                        text = "Settings has the buttons that fire each notification by " +
-                            "hand, and the simulator that plays a match out.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            ConfiguredSource.API_FOOTBALL -> {
-                entrance.Block(0) {
-                    OutlinedTextField(
-                        value = state.apiKeyInput,
-                        onValueChange = onApiKeyChange,
-                        label = { Text("API key") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { onSaveApiKey() }),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                entrance.Block(1) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(OnboardingSpacing.tight),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Button(
-                            onClick = onSaveApiKey,
-                            enabled = state.apiKeyInput.isNotBlank() && !state.checkingSource,
-                        ) {
-                            if (state.checkingSource) {
-                                KickoffLoader(size = 18.dp)
-                            } else {
-                                Text("Check and save")
-                            }
-                        }
-                        TextButton(onClick = { uriHandler.openUri(API_FOOTBALL_DASHBOARD) }) {
-                            Text("Where do I get one?")
-                        }
-                    }
-                }
-                entrance.Block(2) {
-                    SourceVerdict(
-                        state = state,
-                        okTitle = "Key accepted",
-                        hint = "Take it from dashboard.api-football.com, not from " +
-                            "RapidAPI - a RapidAPI key will not work here.",
-                    )
-                }
-            }
-
-            ConfiguredSource.BACKEND -> {
-                entrance.Block(0) {
-                    OutlinedTextField(
-                        value = state.backendUrlInput,
-                        onValueChange = onBackendUrlChange,
-                        label = { Text("Backend URL") },
-                        placeholder = { Text("https://your-app.onrender.com") },
-                        singleLine = true,
-                        isError = state.backendUrlError != null,
-                        supportingText = {
-                            Text(
-                                state.backendUrlError
-                                    ?: "A bare host works too - https:// is added for you.",
-                            )
-                        },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                        keyboardActions = KeyboardActions(onGo = { onSaveBackendUrl() }),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                entrance.Block(1) {
-                    Button(
-                        onClick = onSaveBackendUrl,
-                        enabled = state.backendUrlInput.isNotBlank() && !state.checkingSource,
-                    ) {
-                        if (state.checkingSource) {
-                            KickoffLoader(size = 18.dp)
-                        } else {
-                            Text("Check and use")
-                        }
-                    }
-                }
-                entrance.Block(2) {
-                    SourceVerdict(
-                        state = state,
-                        okTitle = "Backend reached",
-                        hint = "The address Render shows at the top of your service page.",
-                    )
-                }
-            }
-
-            else -> entrance.Block(0) {
-                Column(verticalArrangement = Arrangement.spacedBy(OnboardingSpacing.tight)) {
-                    Text(
-                        text = "Nothing was picked on the last step, so there is nothing " +
-                            "to set up here.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Button(onClick = onBackToChoice) { Text("Go back and choose") }
-                }
-            }
-        }
-        Spacer(Modifier.height(OnboardingSpacing.block))
-    }
-}
-
 @Composable
 internal fun AlertsPage(
     state: OnboardingUiState,
@@ -700,25 +630,11 @@ private fun WelcomePagePreview() {
 private fun SourcePagePreview() {
     KickoffTheme {
         SourcePage(
-            state = OnboardingUiState(chosenSource = ConfiguredSource.DEMO),
-            entrance = EntranceScope(dealt = true),
-            onChoose = {},
-        )
-    }
-}
-
-@Preview(name = "Setup - key")
-@Composable
-private fun SetupPagePreview() {
-    KickoffTheme {
-        SetupPage(
             state = OnboardingUiState(chosenSource = ConfiguredSource.API_FOOTBALL),
             entrance = EntranceScope(dealt = true),
+            onChoose = {},
             onApiKeyChange = {},
             onSaveApiKey = {},
-            onBackendUrlChange = {},
-            onSaveBackendUrl = {},
-            onBackToChoice = {},
         )
     }
 }

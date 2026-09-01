@@ -183,22 +183,9 @@ fun OnboardingScreen(
                             OnboardingStep.SOURCE -> SourcePage(
                                 state = state,
                                 entrance = entrance,
-                                onChoose = { chosen ->
-                                    viewModel.chooseSource(chosen)
-                                    // Picking is the whole job of this page, so it hands
-                                    // straight over to the one page that choice needs.
-                                    goTo(OnboardingStep.SETUP.ordinal)
-                                },
-                            )
-
-                            OnboardingStep.SETUP -> SetupPage(
-                                state = state,
-                                entrance = entrance,
+                                onChoose = viewModel::chooseSource,
                                 onApiKeyChange = viewModel::onApiKeyChange,
                                 onSaveApiKey = viewModel::saveApiKey,
-                                onBackendUrlChange = viewModel::onBackendUrlChange,
-                                onSaveBackendUrl = viewModel::saveBackendUrl,
-                                onBackToChoice = { goTo(OnboardingStep.SOURCE.ordinal) },
                             )
 
                             OnboardingStep.LEAGUES -> LeaguesPage(

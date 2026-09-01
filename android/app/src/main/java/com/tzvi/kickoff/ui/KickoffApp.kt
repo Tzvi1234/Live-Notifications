@@ -36,6 +36,7 @@ import androidx.navigation.compose.rememberNavController
 import com.tzvi.kickoff.AppUiState
 import com.tzvi.kickoff.ui.motion.Motion
 import com.tzvi.kickoff.ui.navigation.KickoffNavHost
+import com.tzvi.kickoff.data.predict.PendingInvite
 import com.tzvi.kickoff.ui.navigation.Routes
 import com.tzvi.kickoff.ui.navigation.TopLevelDestination
 
@@ -58,13 +59,19 @@ fun KickoffApp(
     val currentRoute = backStackEntry?.destination?.route
 
 
-    // "kickoff://match/12345" from a notification or the overlay island.
     LaunchedEffect(deepLink) {
         val uri = deepLink ?: return@LaunchedEffect
+        // "kickoff://match/12345" from a notification or the overlay island.
         if (uri.scheme == "kickoff" && uri.host == "match") {
             uri.lastPathSegment?.toLongOrNull()?.let { matchId ->
                 navController.navigate(Routes.matchDetail(matchId))
             }
+        }
+        // "matchup://join/3YJK2CYK" from a friend. The code itself was parked by the
+        // activity before this ran, because joining needs an account and this may well be
+        // the tap that installed the app; all that is left here is to go and redeem it.
+        if (PendingInvite.codeIn(uri.scheme, uri.host, uri.lastPathSegment) != null) {
+            navController.navigate(Routes.PREDICT)
         }
         onDeepLinkHandled()
     }

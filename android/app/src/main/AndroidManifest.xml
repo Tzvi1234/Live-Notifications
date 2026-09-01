@@ -54,6 +54,17 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="kickoff" android:host="match" />
             </intent-filter>
+            <!--
+              An invitation to a predictions group: matchup://join/<CODE>. A custom scheme
+              rather than an https App Link, which would need an assetlinks.json pinned to
+              the release signing certificate.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="matchup" android:host="join" />
+            </intent-filter>
         </activity>
 
         <service

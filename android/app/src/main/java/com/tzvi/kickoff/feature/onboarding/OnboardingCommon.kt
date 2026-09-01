@@ -61,20 +61,15 @@ internal object OnboardingSpacing {
 
 private val RAIL_HEIGHT = 4.dp
 
-/** Title and one line of explanation, resolved per step because SETUP changes with the pick. */
+/** Title and one line of explanation, resolved per step because SOURCE changes with the pick. */
 internal data class StepCopy(val title: String, val subtitle: String)
 
 internal fun copyFor(step: OnboardingStep, state: OnboardingUiState): StepCopy = when (step) {
     OnboardingStep.WELCOME -> StepCopy("matchUP", "")
 
-    OnboardingStep.SOURCE -> StepCopy(
-        title = "Where do scores come from?",
-        subtitle = "matchUP has no feed of its own. Pick one.",
-    )
-
-    // The only step whose heading depends on an answer: it is showing one thing, and it
-    // should say which thing rather than make you remember what you tapped.
-    OnboardingStep.SETUP -> when (state.chosenSource) {
+    // The only step whose heading depends on an answer: once something is picked it is
+    // showing that one thing, and it should say which rather than make you remember.
+    OnboardingStep.SOURCE -> when (state.chosenSource) {
         ConfiguredSource.DEMO -> StepCopy(
             title = "Demo data it is",
             subtitle = "Real clubs and crests, fixtures invented around right now.",
@@ -86,13 +81,13 @@ internal fun copyFor(step: OnboardingStep, state: OnboardingUiState): StepCopy =
         )
 
         ConfiguredSource.BACKEND -> StepCopy(
-            title = "Point at your backend",
-            subtitle = "The address Render gave your deployment.",
+            title = "You're on the matchUP server",
+            subtitle = "Nothing to set up. Everything below is optional.",
         )
 
         else -> StepCopy(
-            title = "Nothing picked yet",
-            subtitle = "Go back one step and choose how matchUP should fetch.",
+            title = "Where do scores come from?",
+            subtitle = "matchUP has no feed of its own. Pick one.",
         )
     }
 

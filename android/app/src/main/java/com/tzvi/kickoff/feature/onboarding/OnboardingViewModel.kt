@@ -7,6 +7,8 @@ import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.repository.NoFootballSourceException
 import com.tzvi.kickoff.data.repository.SettingsRepository
 import com.tzvi.kickoff.data.repository.SourceProbe
+import com.tzvi.kickoff.data.auth.AuthRepository
+import com.tzvi.kickoff.data.auth.AuthState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -23,6 +25,7 @@ import javax.inject.Inject
 class OnboardingViewModel @Inject constructor(
     private val footballRepository: FootballRepository,
     private val settings: SettingsRepository,
+    private val auth: AuthRepository,
 ) : ViewModel() {
 
     private val mutableState = MutableStateFlow(OnboardingUiState())
@@ -41,6 +44,7 @@ class OnboardingViewModel @Inject constructor(
             val key = settings.apiFootballKey.first()
             val url = settings.backendUrl.first()
             val demo = settings.demoMode.first()
+            val signedIn = auth.state.value is AuthState.SignedIn
             mutableState.update {
                 it.copy(
                     apiKeyInput = key,
@@ -48,6 +52,16 @@ class OnboardingViewModel @Inject constructor(
                     backendUrlInput = url,
                     backendSaved = url.isNotBlank(),
                     demoEnabled = demo,
+                    hasAccount = signedIn,
+                    // Arriving here having skipped the sign-in is itself an answer: the
+                    // server is the shared one, on somebody else's quota, and an account
+                    // is what it asks for. Somebody who declined that wants their own key,
+                    // so the page opens on it rather than on a tile they cannot use.
+                    chosenSource = when {
+                        demo -> ConfiguredSource.DEMO
+                        !signedIn -> ConfiguredSource.API_FOOTBALL
+                        else -> ConfiguredSource.BACKEND
+                    },
                 )
             }
         }

@@ -20,10 +20,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tzvi.kickoff.ui.KickoffApp
 import com.tzvi.kickoff.ui.theme.KickoffTheme
 import com.tzvi.kickoff.ui.theme.shouldUseDarkTheme
+import com.tzvi.kickoff.data.predict.PendingInvite
+import javax.inject.Inject
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var pendingInvite: PendingInvite
 
     private val viewModel: MainViewModel by viewModels()
 
@@ -42,7 +46,7 @@ class MainActivity : ComponentActivity() {
         }
         super.onCreate(savedInstanceState)
 
-        deepLink = intent?.data
+        deepLink = intent?.data?.also(::parkInvite)
 
         // The launch icon animation and the first composed frame are one continuous
         // movement: the splash is held until settings have loaded (so the app never
@@ -81,10 +85,22 @@ class MainActivity : ComponentActivity() {
     }
 
     /** The launcher activity is singleTask, so a notification tap arrives here. */
+    /**
+     * Holds on to an invitation before anything can navigate away from it.
+     *
+     * The link may be what installed the app, so the screen that redeems it does not
+     * exist yet and the user is not signed in. Parking the code here means the join
+     * survives the sign-up, the onboarding and the process death in between.
+     */
+    private fun parkInvite(uri: Uri) {
+        PendingInvite.codeIn(uri.scheme, uri.host, uri.lastPathSegment)
+            ?.let(pendingInvite::offer)
+    }
+
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        deepLink = intent.data
+        deepLink = intent.data?.also(::parkInvite)
     }
 
     private fun AnimatorSet.doOnEnd(action: () -> Unit) {

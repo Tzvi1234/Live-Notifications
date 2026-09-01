@@ -32,6 +32,12 @@ interface PredictService {
     @GET("v1/groups/{id}")
     suspend fun group(@Path("id") groupId: Long): GroupJson
 
+    @PATCH("v1/groups/{id}")
+    suspend fun updateGroup(
+        @Path("id") groupId: Long,
+        @Body body: UpdateGroupRequest,
+    ): GroupJson
+
     @DELETE("v1/groups/{id}")
     suspend fun deleteGroup(@Path("id") groupId: Long)
 

@@ -47,6 +47,19 @@ data class CreateGroupRequest(
     val teamIds: List<Int> = emptyList(),
 )
 
+/**
+ * An edit, which is the whole selection every time.
+ *
+ * The server treats each list as a replacement rather than a merge, so a caller that sent
+ * only what changed would delete everything it left out.
+ */
+@Serializable
+data class UpdateGroupRequest(
+    val name: String,
+    val leagueIds: List<Int>,
+    val teamIds: List<Int>,
+)
+
 @Serializable
 data class JoinGroupRequest(val code: String)
 

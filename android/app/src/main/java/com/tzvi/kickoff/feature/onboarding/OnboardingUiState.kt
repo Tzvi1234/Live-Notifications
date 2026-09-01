@@ -15,11 +15,15 @@ enum class OnboardingStep {
     /** The splash. Owns the whole screen and is the one step the frame folds away for. */
     WELCOME,
 
-    /** Three tiles and nothing else: which of the three ways in do you want. */
+    /**
+     * Where the football comes from, and the one input the answer might need.
+     *
+     * It used to be two pages, the second of which asked for the backend's address. The
+     * address is not a question any more - every build ships pointed at one - so the only
+     * thing left to type is an API-Football key, and that belongs under the tile that asks
+     * for it rather than on a page of its own.
+     */
     SOURCE,
-
-    /** Only the chosen way's one input. Its heading changes with the choice. */
-    SETUP,
 
     LEAGUES,
     TEAMS,
@@ -74,6 +78,13 @@ data class OnboardingUiState(
     val sourceCheck: String? = null,
     val sourceCheckFailed: Boolean = false,
     val demoEnabled: Boolean = false,
+    /**
+     * Whether a session exists.
+     *
+     * The server tile is only offered to somebody who has one: it is a shared deployment
+     * on one API key, and the predictions it exists for cannot work anonymously either.
+     */
+    val hasAccount: Boolean = false,
     /** What was tapped on the SOURCE step - which is not yet what is configured. */
     val chosenSource: ConfiguredSource? = null,
 
@@ -138,7 +149,7 @@ data class OnboardingUiState(
     /** The chip in the step header: what this step has to show for itself so far. */
     fun statusFor(step: OnboardingStep): String? = when (step) {
         OnboardingStep.WELCOME, OnboardingStep.READY -> null
-        OnboardingStep.SOURCE, OnboardingStep.SETUP -> when (source) {
+        OnboardingStep.SOURCE -> when (source) {
             ConfiguredSource.NONE -> null
             ConfiguredSource.API_FOOTBALL -> "API KEY"
             ConfiguredSource.BACKEND -> "BACKEND"
@@ -155,10 +166,11 @@ data class OnboardingUiState(
      * next to it is the single most confusing thing a wizard can do.
      */
     fun blockedReason(step: OnboardingStep): String? = when (step) {
-        OnboardingStep.SOURCE -> "Pick one of the three".takeIf { chosenSource == null }
-        OnboardingStep.SETUP -> when (chosenSource) {
-            ConfiguredSource.API_FOOTBALL -> "Save your key to continue".takeIf { !hasSource }
-            ConfiguredSource.BACKEND -> "Save the URL to continue".takeIf { !hasSource }
+        OnboardingStep.SOURCE -> when {
+            chosenSource == null -> "Pick one of the three"
+            // The server and the demo need nothing typed, so this can only ever be the key.
+            chosenSource == ConfiguredSource.API_FOOTBALL && !apiKeySaved ->
+                "Save your key to continue"
             else -> null
         }
 
@@ -177,10 +189,12 @@ data class OnboardingUiState(
 
     fun canAdvanceFrom(step: OnboardingStep): Boolean = when (step) {
         OnboardingStep.WELCOME -> true
-        OnboardingStep.SOURCE -> chosenSource != null
-        // Demo configures itself the moment it is picked, so this only ever blocks on a
-        // key or a URL that has not been saved yet.
-        OnboardingStep.SETUP -> hasSource
+        // The server is already configured and the demo configures itself the moment it
+        // is picked, so this only ever blocks on a key that has not been saved yet.
+        OnboardingStep.SOURCE ->
+            chosenSource != null &&
+                (chosenSource != ConfiguredSource.API_FOOTBALL || apiKeySaved)
+
         OnboardingStep.LEAGUES -> selectedLeagueIds.isNotEmpty()
         OnboardingStep.TEAMS -> selected.isNotEmpty()
         OnboardingStep.ALERTS -> true
