@@ -276,15 +276,22 @@ class FootballRepository @Inject constructor(
 
     // ---- refresh -------------------------------------------------------------
 
-    /** Pulls the fixture window for every followed team into the cache. */
+    /**
+     * Pulls the fixture window for every followed team into the cache.
+     *
+     * Nothing followed means nothing to pull. It used to fall back to every fixture in the
+     * world today, which was the single worst line in the app: FixtureSyncWorker arms a
+     * pre-match alarm for every match this returns, so a fresh install - or a user who
+     * removed their last favourite - armed hundreds of alarms on a Saturday, each one
+     * waking a foreground service to decide it did not care. That is where the storm
+     * actually came from.
+     */
     suspend fun refreshFixtures(daysAhead: Long = 14, daysBehind: Long = 2): List<Match> {
         val teamIds = favouriteIdsNow()
+        if (teamIds.isEmpty()) return emptyList()
         val today = LocalDate.now()
-        val matches = if (teamIds.isEmpty()) {
-            source().fixturesOn(today)
-        } else {
+        val matches =
             source().fixturesForTeams(teamIds, today.minusDays(daysBehind), today.plusDays(daysAhead))
-        }
         if (matches.isNotEmpty()) matchDao.upsertAll(matches.map { it.toEntity() })
         return matches
     }

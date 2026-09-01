@@ -117,10 +117,14 @@ describe('the stage multiplier', () => {
 
   test('the competition gets heavier as it narrows', () => {
     const order = ['LEAGUE', 'ROUND_OF_16', 'QUARTER_FINAL', 'SEMI_FINAL', 'FINAL'] as const;
-    for (let i = 1; i < order.length; i += 1) {
-      const previous = STAGE_MULTIPLIER[order[i - 1]];
-      const current = STAGE_MULTIPLIER[order[i]];
-      assert.ok(current >= previous, `${order[i]} must not be worth less than ${order[i - 1]}`);
+    // Walked as a running pair rather than by index, so the stage names stay typed as the
+    // literals they are and the assertion can name them.
+    let previousStage: (typeof order)[number] = order[0];
+    let previous = STAGE_MULTIPLIER[previousStage];
+    for (const stage of order.slice(1)) {
+      const current = STAGE_MULTIPLIER[stage];
+      assert.ok(current >= previous, `${stage} must not be worth less than ${previousStage}`);
+      [previousStage, previous] = [stage, current];
     }
     assert.ok(STAGE_MULTIPLIER.FINAL > STAGE_MULTIPLIER.SEMI_FINAL);
   });

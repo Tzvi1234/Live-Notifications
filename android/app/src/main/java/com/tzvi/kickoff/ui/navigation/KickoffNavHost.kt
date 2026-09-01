@@ -101,6 +101,7 @@ fun KickoffNavHost(
                         MatchesScreen(
                             onOpenMatch = { matchId -> navController.navigate(Routes.matchDetail(matchId)) },
                             onOpenTeams = { navController.navigate(Routes.TEAMS) },
+                            onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                         )
                     }
                 }

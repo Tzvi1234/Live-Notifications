@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.tzvi.kickoff.core.model.mayFollowAutomatically
 import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.repository.NoFootballSourceException
 import com.tzvi.kickoff.data.repository.SettingsRepository
@@ -36,8 +37,17 @@ class FixtureSyncWorker @AssistedInject constructor(
 
             val lead = settings.settings.first().preMatchLeadMinutes
             val horizon = Instant.now().plus(Duration.ofHours(ALARM_HORIZON_HOURS))
+            val favourites = repository.favouriteIdsNow()
+            val now = Instant.now()
             matches
                 .filter { it.kickoffAt.isBefore(horizon) && !it.phase.isFinished }
+                // A match that has already kicked off does not need a pre-match alarm, and
+                // arming one fires it five seconds later - which is how a single sync
+                // turned into a burst of service starts.
+                .filter { it.kickoffAt.isAfter(now) }
+                // Alarms are the loudest thing this worker can do, so the favourites rule
+                // applies here too rather than only at the far end of it.
+                .filter { mayFollowAutomatically(it, favourites) }
                 .forEach { alarmScheduler.schedule(it, lead) }
 
             Result.success()

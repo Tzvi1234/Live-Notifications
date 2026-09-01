@@ -212,6 +212,7 @@ internal fun TimelineEmptyState(
     reason: TimelineEmptyReason,
     onRetry: () -> Unit,
     onOpenTeams: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when (reason) {
@@ -220,6 +221,10 @@ internal fun TimelineEmptyState(
             body = "matchUP isn't pointed at any data. Add your backend URL or an " +
                 "API-Football key in Settings and your teams' fixtures will fill in.",
             icon = Icons.Outlined.CloudOff,
+            // An empty state that names the screen with the fix has to be able to open
+            // it. Without the button this was the one dead end left in the app.
+            actionLabel = "Open Settings",
+            onAction = onOpenSettings,
             modifier = modifier,
         )
 
@@ -334,6 +339,7 @@ internal fun FixturesEmptyState(
     reason: MatchesEmptyReason,
     state: MatchesUiState,
     onRetry: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when (reason) {
@@ -342,6 +348,8 @@ internal fun FixturesEmptyState(
             body = "matchUP isn't pointed at any data. Add your backend URL or an " +
                 "API-Football key in Settings and the schedule will fill itself in.",
             icon = Icons.Outlined.CloudOff,
+            actionLabel = "Open Settings",
+            onAction = onOpenSettings,
             modifier = modifier,
         )
 
@@ -448,6 +456,7 @@ private fun NothingLivePreview() {
                     filter = MatchFilter.LIVE,
                 ),
                 onRetry = {},
+                onOpenSettings = {},
                 modifier = Modifier.fillMaxSize(),
             )
         }

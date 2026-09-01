@@ -17,6 +17,20 @@ import {
   requireObjectBody,
 } from './validation.js';
 
+/**
+ * How many competitions a person can plausibly have chosen to be woken for.
+ *
+ * A device that asks for more than this is not expressing a preference, it is uploading a
+ * catalogue - which is exactly what the app used to do, sending all thirty-one competitions
+ * it offers for browsing. `tokensForMatch` matches on `league_ids &&`, so that subscribed
+ * the phone to every goal, card, substitution, kick-off and full time in all of them.
+ *
+ * The app was fixed to send none, but an old build re-uploads the catalogue on every
+ * launch, so the guard lives here as well: the server is the only side that can protect a
+ * phone whose owner has not updated.
+ */
+const MAX_LEAGUE_SUBSCRIPTIONS = 5;
+
 export function createSubscriptionsRouter(deps: ApiDeps): Router {
   const router = express.Router();
   const logger = deps.logger.child({ component: 'routes.subscriptions' });
@@ -33,10 +47,22 @@ export function createSubscriptionsRouter(deps: ApiDeps): Router {
       throw badRequest('"preferences" must be a JSON object.');
     }
 
+    const requestedLeagues = requireIdArray(body.leagueIds, 'leagueIds');
+    // Dropped whole rather than truncated: a catalogue has no first five that mean
+    // anything, and keeping an arbitrary slice of it would still be a subscription nobody
+    // asked for. 204 either way - the device is not at fault and has nothing to retry.
+    const oversizedLeagueList = requestedLeagues.length > MAX_LEAGUE_SUBSCRIPTIONS;
+    if (oversizedLeagueList) {
+      logger.warn('ignoring an oversized league subscription', {
+        leagues: requestedLeagues.length,
+        limit: MAX_LEAGUE_SUBSCRIPTIONS,
+      });
+    }
+
     const subscription: SubscriptionRecord = {
       token,
       teamIds: requireIdArray(body.teamIds, 'teamIds'),
-      leagueIds: requireIdArray(body.leagueIds, 'leagueIds'),
+      leagueIds: oversizedLeagueList ? [] : requestedLeagues,
       // Fixture ids are Long on the client; every provider id so far fits a double exactly,
       // and `requireIdArray` rejects anything that would not.
       matchIds: requireIdArray(body.matchIds, 'matchIds'),

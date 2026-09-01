@@ -183,6 +183,10 @@ class LiveMatchService : Service() {
     private suspend fun pollLoop(matchId: Long, manual: Boolean) {
         var finishedAt: Instant? = null
         var lastPhase: MatchPhase? = null
+        var failures = 0
+        // Set once a card exists, so the exits below take it down rather than leaving a
+        // frozen scoreline on the shelf. Every break used to leak one.
+        var cardKey: String? = null
 
         while (currentCoroutineContext().isActive) {
             val config = settings.settings.first()
@@ -198,13 +202,26 @@ class LiveMatchService : Service() {
                 // match, firing five seconds later for any match already inside its
                 // window, which turned one sync into a screenful of cards appearing and
                 // vanishing.
-                if (!manual && !followsAFavourite(match)) break
+                if (!manual && !followsAFavourite(match)) {
+                    cardKey?.let(notifier::cancel)
+                    break
+                }
 
                 // Nothing is drawn for a match that is still an hour away. The alarm is
                 // re-armed for the moment it is worth watching instead.
+                // A postponed or abandoned match is neither live nor finished and its
+                // kick-off is in the past, so it slipped past the stand-down below and sat
+                // on "Starting soon" for ever, polling once a minute. It is never going to
+                // start; there is nothing to watch.
+                if (match.phase == MatchPhase.OFF) {
+                    cardKey?.let(notifier::cancel)
+                    break
+                }
+
                 val untilKickoff = Duration.between(Instant.now(), match.kickoffAt)
                 if (!match.isLive && !match.phase.isFinished && untilKickoff > STAND_DOWN_BEFORE) {
                     alarms.schedule(match, STAND_DOWN_BEFORE.toMinutes().toInt())
+                    cardKey?.let(notifier::cancel)
                     break
                 }
 
@@ -234,6 +251,9 @@ class LiveMatchService : Service() {
                     }
                 }
 
+                cardKey = activity.key
+                failures = 0
+
                 if (match.phase.isFinished) {
                     if (finishedAt == null) finishedAt = Instant.now()
                     if (Duration.between(finishedAt, Instant.now()) > FULL_TIME_LINGER) {
@@ -245,6 +265,16 @@ class LiveMatchService : Service() {
                 }
                 delay(intervalFor(match))
             } else {
+                // A refresh that never succeeds used to retry every forty-five seconds for
+                // ever, holding the service in the foreground with the anchor on screen and
+                // nothing under it - the context-free "matchUP" notification that would not
+                // go away. Give up rather than sit there; the sweep and the alarms will
+                // bring it back when there is something to show.
+                failures += 1
+                if (failures >= MAX_CONSECUTIVE_FAILURES) {
+                    cardKey?.let(notifier::cancel)
+                    break
+                }
                 delay(ERROR_BACKOFF_MS)
             }
         }
@@ -381,6 +411,9 @@ class LiveMatchService : Service() {
         private const val PRE_MATCH_INTERVAL_MS = 5 * 60_000L
         private const val FULL_TIME_INTERVAL_MS = 60_000L
         private const val ERROR_BACKOFF_MS = 45_000L
+
+        /** Roughly four minutes of failing before the service stands down. */
+        private const val MAX_CONSECUTIVE_FAILURES = 5
         private val FULL_TIME_LINGER: Duration = Duration.ofMinutes(10)
 
         /**

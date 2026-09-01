@@ -43,7 +43,11 @@ import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
 @Composable
-fun MatchesScreen(onOpenMatch: (Long) -> Unit, onOpenTeams: () -> Unit = {}) {
+fun MatchesScreen(
+    onOpenMatch: (Long) -> Unit,
+    onOpenTeams: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+) {
     val viewModel: MatchesViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -53,6 +57,7 @@ fun MatchesScreen(onOpenMatch: (Long) -> Unit, onOpenTeams: () -> Unit = {}) {
         state = state,
         onOpenMatch = onOpenMatch,
         onOpenTeams = onOpenTeams,
+        onOpenSettings = onOpenSettings,
         onSelectDate = viewModel::selectDate,
         onSelectFilter = viewModel::selectFilter,
         onSelectTab = viewModel::selectTab,
@@ -69,6 +74,7 @@ internal fun MatchesContent(
     state: MatchesUiState,
     onOpenMatch: (Long) -> Unit,
     onOpenTeams: () -> Unit,
+    onOpenSettings: () -> Unit,
     onSelectDate: (LocalDate) -> Unit,
     onSelectFilter: (MatchFilter) -> Unit,
     onSelectTab: (MatchesTab) -> Unit,
@@ -137,6 +143,7 @@ internal fun MatchesContent(
                             state = current,
                             onOpenMatch = onOpenMatch,
                             onOpenTeams = onOpenTeams,
+                            onOpenSettings = onOpenSettings,
                             onRefresh = onRefreshTimeline,
                         )
                     }
@@ -179,6 +186,7 @@ internal fun MatchesContent(
                     DayFixtures(
                         state = dayState,
                         onOpenMatch = onOpenMatch,
+                        onOpenSettings = onOpenSettings,
                         onRefresh = onRefresh,
                     )
                 }
@@ -198,6 +206,7 @@ private fun TeamTimeline(
     state: MatchesUiState,
     onOpenMatch: (Long) -> Unit,
     onOpenTeams: () -> Unit,
+    onOpenSettings: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     val emptyReason = state.timelineEmptyReason
@@ -210,6 +219,7 @@ private fun TeamTimeline(
                     reason = emptyReason,
                     onRetry = onRefresh,
                     onOpenTeams = onOpenTeams,
+                    onOpenSettings = onOpenSettings,
                     modifier = Modifier.fillParentMaxSize(),
                 )
             }
@@ -258,6 +268,7 @@ private fun TeamTimeline(
 private fun DayFixtures(
     state: MatchesUiState,
     onOpenMatch: (Long) -> Unit,
+    onOpenSettings: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     val emptyReason = state.emptyReason
@@ -273,6 +284,7 @@ private fun DayFixtures(
                     reason = emptyReason,
                     state = state,
                     onRetry = onRefresh,
+                    onOpenSettings = onOpenSettings,
                     modifier = Modifier.fillParentMaxSize(),
                 )
             }
@@ -477,6 +489,7 @@ private fun MatchesContentPreview() {
             state = previewState(groups = previewGroups()),
             onOpenMatch = {},
             onOpenTeams = {},
+            onOpenSettings = {},
             onSelectDate = {},
             onSelectFilter = {},
             onSelectTab = {},
@@ -496,6 +509,7 @@ private fun MatchesLoadingPreview() {
             state = previewState(isLoading = true),
             onOpenMatch = {},
             onOpenTeams = {},
+            onOpenSettings = {},
             onSelectDate = {},
             onSelectFilter = {},
             onSelectTab = {},
@@ -515,6 +529,7 @@ private fun MatchesEmptyPreview() {
             state = previewState(),
             onOpenMatch = {},
             onOpenTeams = {},
+            onOpenSettings = {},
             onSelectDate = {},
             onSelectFilter = {},
             onSelectTab = {},
@@ -534,6 +549,7 @@ private fun MatchesErrorPreview() {
             state = previewState(errorMessage = "Couldn't reach the network."),
             onOpenMatch = {},
             onOpenTeams = {},
+            onOpenSettings = {},
             onSelectDate = {},
             onSelectFilter = {},
             onSelectTab = {},
@@ -553,6 +569,7 @@ private fun MatchesNoSourcePreview() {
             state = previewState(sourceMissing = true),
             onOpenMatch = {},
             onOpenTeams = {},
+            onOpenSettings = {},
             onSelectDate = {},
             onSelectFilter = {},
             onSelectTab = {},
@@ -575,6 +592,7 @@ private fun MatchesStalePreview() {
             ),
             onOpenMatch = {},
             onOpenTeams = {},
+            onOpenSettings = {},
             onSelectDate = {},
             onSelectFilter = {},
             onSelectTab = {},

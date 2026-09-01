@@ -74,12 +74,23 @@ class DeviceRegistrationRepository @Inject constructor(
     private suspend fun pushSubscriptions(token: String) {
         val config = settings.settings.first()
         val teamIds = football.favouriteIdsNow()
-        val leagues = football.followedLeagues.first().map { it.id }
         backend.updateSubscriptions(
             SubscriptionRequest(
                 token = token,
                 teamIds = teamIds,
-                leagueIds = leagues,
+                // EMPTY, deliberately, and this is the fix for the notification storm.
+                //
+                // `followedLeagues` is the browse catalogue - every competition the app
+                // offers, written wholesale by featuredLeagues() with no user action behind
+                // it and never removed from. Sending it here made the server read it as a
+                // notification preference: tokensForMatch matches on `league_ids &&`, so
+                // this phone was subscribed to every goal, card, substitution, kick-off and
+                // full time in all thirty-one competitions. On a Saturday afternoon that is
+                // dozens of high-priority pushes for clubs the user has never heard of.
+                //
+                // A league is not something anybody chose to follow. The teams are, and
+                // they are the whole subscription.
+                leagueIds = emptyList(),
                 matchIds = emptyList(),
                 preferences = SubscriptionPreferencesJson(
                     goals = config.notifyGoals,

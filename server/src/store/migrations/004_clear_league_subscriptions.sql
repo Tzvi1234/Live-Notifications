@@ -1,0 +1,14 @@
+-- Empties `subscriptions.league_ids` for every device already registered.
+--
+-- The column was never a preference anybody set. The app wrote its browse catalogue into
+-- it - all thirty-one competitions it offers - and `tokensForMatch` matches on
+-- `league_ids &&`, so every registered phone was subscribed to every goal, card,
+-- substitution, kick-off and full time in all of them. On a Saturday afternoon that is a
+-- push every few seconds for clubs the user has never followed.
+--
+-- The app no longer sends leagues, so a device fixes itself the moment it registers again -
+-- but only if it updates. A phone still running the old build re-registers the catalogue on
+-- every launch, and one that never updates would keep the storm for ever. This clears the
+-- state that is already stored; the server-side guard in tokensForMatch is what keeps a
+-- stale client from writing it back.
+UPDATE subscriptions SET league_ids = '{}' WHERE league_ids <> '{}';

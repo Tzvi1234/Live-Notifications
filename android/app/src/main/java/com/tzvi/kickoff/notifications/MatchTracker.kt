@@ -3,6 +3,7 @@ package com.tzvi.kickoff.notifications
 import android.content.Context
 import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.data.local.dao.TrackedActivityDao
+import com.tzvi.kickoff.work.MatchAlarmScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -21,6 +22,7 @@ class MatchTracker @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val trackedActivityDao: TrackedActivityDao,
     private val notifier: LiveActivityNotifier,
+    private val alarms: MatchAlarmScheduler,
 ) {
     fun isTracking(matchId: Long): Flow<Boolean> =
         trackedActivityDao.observeAll().map { rows ->
@@ -40,5 +42,10 @@ class MatchTracker @Inject constructor(
         trackedActivityDao.markDismissed(key)
         notifier.cancel(key)
         LiveMatchService.untrack(context, matchId)
+        // And the pre-match alarm, or the card the user just dismissed comes straight back
+        // at kick-off: the alarm hands the match to the service, the service sees a
+        // favourite club and starts following it again. Stopping something has to stop the
+        // thing that restarts it.
+        alarms.cancel(matchId)
     }
 }
