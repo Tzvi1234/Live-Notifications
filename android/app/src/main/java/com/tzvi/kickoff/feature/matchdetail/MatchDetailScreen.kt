@@ -285,13 +285,23 @@ private fun MatchTabContent(
                 match = match,
                 modifier = Modifier.padding(horizontal = ScreenPadding),
             )
-            MatchDetailTab.LINEUPS -> MatchLineupsSection(
-                lineups = state.lineups,
-                match = match,
-                modifier = Modifier.padding(horizontal = ScreenPadding),
-                lineupsCovered = state.coverage?.lineups != false,
-                onPlayerTap = onPlayerTap,
-            )
+            MatchDetailTab.LINEUPS -> Column {
+                MatchLineupsSection(
+                    lineups = state.lineups,
+                    match = match,
+                    modifier = Modifier.padding(horizontal = ScreenPadding),
+                    lineupsCovered = state.coverage?.lineups != false,
+                    onPlayerTap = onPlayerTap,
+                )
+                // Above the fold when there is no line-up yet, which is most of the time
+                // somebody opens this tab: the XI is published twenty minutes before
+                // kick-off and the absences are known days earlier.
+                AbsencesSection(
+                    absences = state.absences,
+                    match = match,
+                    modifier = Modifier.padding(horizontal = ScreenPadding),
+                )
+            }
             MatchDetailTab.STATS -> MatchStatsSection(
                 stats = state.stats,
                 match = match,

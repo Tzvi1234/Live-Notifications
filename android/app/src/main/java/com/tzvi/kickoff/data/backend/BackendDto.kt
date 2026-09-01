@@ -114,7 +114,19 @@ data class MatchDetailJson(
     val awayLineup: TeamLineupJson? = null,
     val homeStats: Map<String, String> = emptyMap(),
     val awayStats: Map<String, String> = emptyMap(),
+    /** Absent on an older backend, which is why both default to empty rather than null. */
+    val homeAbsences: List<AbsenceJson> = emptyList(),
+    val awayAbsences: List<AbsenceJson> = emptyList(),
     val sequence: Long = 0,
+)
+
+@Serializable
+data class AbsenceJson(
+    val playerId: Int? = null,
+    val name: String = "",
+    val photoUrl: String? = null,
+    val out: Boolean = true,
+    val reason: String? = null,
 )
 
 @Serializable

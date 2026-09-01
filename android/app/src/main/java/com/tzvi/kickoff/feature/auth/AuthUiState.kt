@@ -7,7 +7,7 @@ package com.tzvi.kickoff.feature.auth
  * instance verifies email addresses and which attributes it insists on, so a sign-up can
  * land on either of them and the flow has to be able to go there.
  */
-enum class AuthStep { WELCOME, SIGN_IN, SIGN_UP, VERIFY, DETAILS }
+enum class AuthStep { WELCOME, SIGN_IN, SIGN_UP, VERIFY, DETAILS, PROFILE }
 
 /** Whether this build can offer accounts at all. */
 enum class AccountAvailability { RESOLVING, AVAILABLE, UNAVAILABLE }
@@ -28,10 +28,25 @@ data class AuthUiState(
     val error: String? = null,
     val notice: String? = null,
     val signedIn: Boolean = false,
+    /**
+     * Whether this flow still owes the user a profile step.
+     *
+     * Set BEFORE the call that can complete a sign-up, not after it. `signedIn` is derived
+     * from Clerk's own user flow and flips the moment the session lands - which is inside
+     * the verify call, before its result has been applied - so a flag set afterwards would
+     * always lose the race and the screen would leave before the profile page drew.
+     *
+     * Only the email sign-up sets it. A Google account arrives with a name and a picture
+     * already, and asking for them again would be asking for what we have.
+     */
+    val collectingProfile: Boolean = false,
     /** Where this screen hands over to: onboarding on a fresh install, Today after a
      *  sign-out. */
     val needsOnboarding: Boolean = true,
 ) {
+    /** True once there is a session AND nothing left for this flow to ask. */
+    val finished: Boolean get() = signedIn && !collectingProfile
+
     /** True while either route is mid-flight; every control on the page goes quiet. */
     val working: Boolean get() = busy || googleBusy
 
@@ -55,6 +70,8 @@ data class AuthUiState(
             // Clerk asked for these, so all of them: a half-filled update just comes
             // straight back as the same missing-requirements answer.
             AuthStep.DETAILS -> missingFields.all { fieldValues[it].orEmpty().isNotBlank() }
+            // The profile page saves through its own view model and has its own buttons.
+            AuthStep.PROFILE -> true
         }
 
     /** The one thing standing between this step and its button, or null. */

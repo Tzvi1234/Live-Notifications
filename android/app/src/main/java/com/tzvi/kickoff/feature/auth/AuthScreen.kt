@@ -53,7 +53,9 @@ fun AuthScreen(
     val leave = { onDone(state.needsOnboarding) }
     val skip = { viewModel.continueWithoutAccount(leave) }
 
-    LaunchedEffect(state.signedIn) { if (state.signedIn) leave() }
+    // `finished`, not `signedIn`: a sign-up has a session before it has a name and a
+    // picture, and leaving on the session alone is what would skip the profile page.
+    LaunchedEffect(state.finished) { if (state.finished) leave() }
 
     BackHandler(enabled = state.step != AuthStep.WELCOME) { viewModel.back() }
 
@@ -137,6 +139,8 @@ fun AuthScreen(
                             onBack = viewModel::back,
                             onSkip = skip,
                         )
+
+                        AuthStep.PROFILE -> ProfilePage(onDone = viewModel::finishProfile)
                     }
                 }
             }

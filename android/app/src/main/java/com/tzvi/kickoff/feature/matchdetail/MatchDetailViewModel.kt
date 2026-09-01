@@ -13,6 +13,7 @@ import com.tzvi.kickoff.core.model.MatchPhase
 import com.tzvi.kickoff.core.model.MatchSide
 import com.tzvi.kickoff.core.model.MatchStatistics
 import com.tzvi.kickoff.core.model.Score
+import com.tzvi.kickoff.data.repository.MatchAbsences
 import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.notifications.MatchTracker
 import com.tzvi.kickoff.data.repository.NoFootballSourceException
@@ -136,6 +137,7 @@ class MatchDetailViewModel @Inject constructor(
             match = match,
             timeline = timelineOf(events),
             lineups = detail.lineups,
+            absences = detail.absences,
             stats = detail.statistics.toComparisons(),
             prediction = preview.prediction,
             predictionLoading = preview.isLoading,
@@ -203,6 +205,7 @@ class MatchDetailViewModel @Inject constructor(
                         // A poll that came back without line-ups has not withdrawn the
                         // ones already published, it simply did not carry them again.
                         lineups = detail.lineups ?: it.lineups,
+                        absences = detail.absences ?: it.absences,
                         statistics = detail.statistics ?: it.statistics,
                         isLoading = false,
                         isRefreshing = false,
@@ -307,6 +310,7 @@ class MatchDetailViewModel @Inject constructor(
 
     private data class DetailState(
         val lineups: MatchLineups? = null,
+        val absences: MatchAbsences? = null,
         val statistics: MatchStatistics? = null,
         val isLoading: Boolean = false,
         val isRefreshing: Boolean = false,

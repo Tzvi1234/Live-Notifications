@@ -1,5 +1,6 @@
 package com.tzvi.kickoff.feature.matchdetail
 
+import com.tzvi.kickoff.data.repository.MatchAbsences
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
 import com.tzvi.kickoff.core.model.MatchEventType
@@ -62,6 +63,14 @@ data class MatchDetailUiState(
     /** Newest first. */
     val timeline: List<TimelineEntry> = emptyList(),
     val lineups: MatchLineups? = null,
+    /**
+     * Who is out, per side, before kick-off.
+     *
+     * The line-up answers "who is playing" twenty minutes before a match; this answers it
+     * days earlier, which is when anybody making a prediction actually needs it. Null when
+     * the competition carries no injury data.
+     */
+    val absences: MatchAbsences? = null,
     val stats: List<StatComparison> = emptyList(),
     /** The provider's pre-match read. Null when this competition does not carry one. */
     val prediction: MatchPrediction? = null,

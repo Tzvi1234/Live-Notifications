@@ -105,6 +105,9 @@ internal fun copyFor(step: AuthStep, state: AuthUiState): StepCopy = when (step)
         title = "One or two more things",
         subtitle = "This Clerk instance asks for these before it will finish the sign-up.",
     )
+
+    // ProfilePage draws its own heading around the picture it is asking for.
+    AuthStep.PROFILE -> StepCopy(title = "Say who you are", subtitle = "")
 }
 
 // ---- the shared frame ----------------------------------------------------------
@@ -590,20 +593,11 @@ internal fun VerifyPage(
             }
         },
     ) {
-        OutlinedTextField(
+        OtpField(
             value = state.code,
             onValueChange = onCodeChange,
-            label = { Text("Six-digit code") },
-            singleLine = true,
+            onSubmit = onSubmit,
             enabled = !state.working,
-            shape = KickoffShapes.medium,
-            colors = authFieldColors(),
-            leadingIcon = { Icon(Icons.Outlined.Password, contentDescription = null) },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.NumberPassword,
-                imeAction = ImeAction.Done,
-            ),
-            keyboardActions = KeyboardActions(onDone = { onSubmit() }),
             modifier = Modifier.fillMaxWidth(),
         )
 

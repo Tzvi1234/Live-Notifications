@@ -217,8 +217,29 @@ export interface MatchDetailJson {
   /** Provider stat label -> display value, already stringified (e.g. "Ball Possession" -> "55%"). */
   homeStats: Record<string, string>;
   awayStats: Record<string, string>;
+  /**
+   * Who is out and who is a doubt, per side.
+   *
+   * Present long before a line-up is, which is the point: a confirmed XI lands twenty
+   * minutes before kick-off, and everybody making a prediction has already decided by
+   * then. Absent when the competition has no injury coverage - which is most of them
+   * below the top flight, so a screen that assumes it will be there is a screen with a
+   * hole in it.
+   */
+  homeAbsences?: AbsenceJson[] | undefined;
+  awayAbsences?: AbsenceJson[] | undefined;
   /** Monotonic per match; the client drops any detail payload older than the one it holds. */
   sequence: number;
+}
+
+export interface AbsenceJson {
+  playerId?: number | undefined;
+  name: string;
+  photoUrl?: string | undefined;
+  /** True for a definite absence, false for a doubt. */
+  out: boolean;
+  /** The provider's own word: "Knock", "Suspended", "Illness". */
+  reason?: string | undefined;
 }
 
 export interface MatchListJson {

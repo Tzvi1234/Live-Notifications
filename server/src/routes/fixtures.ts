@@ -16,11 +16,12 @@ import {
   QuotaExhaustedError,
   type ApiFixture,
   type ApiFootballClient,
+  type ApiInjury,
   type FixtureQuery,
 } from '../provider/apiFootball.js';
 import { currentSeason, toEvents, toLineups, toMatch, toStats } from '../provider/mapper.js';
 import type { Logger } from '../logger.js';
-import type { MatchDetailJson, MatchJson, MatchListJson } from '../types.js';
+import type { AbsenceJson, MatchDetailJson, MatchJson, MatchListJson } from '../types.js';
 import {
   addDays,
   badRequest,
@@ -125,7 +126,7 @@ export function createFixturesRouter(deps: ApiDeps): Router {
     const abandoned = match.phase === 'OFF';
     const started = !abandoned && match.phase !== 'SCHEDULED';
 
-    const [rawEvents, rawLineups, rawStats] = await Promise.all([
+    const [rawEvents, rawLineups, rawStats, rawInjuries] = await Promise.all([
       fixture.events ??
         (started
           ? optionalSection(logger, matchId, 'events', () => deps.provider.events(matchId))
@@ -138,6 +139,11 @@ export function createFixturesRouter(deps: ApiDeps): Router {
         (started
           ? optionalSection(logger, matchId, 'statistics', () => deps.provider.statistics(matchId))
           : []),
+      // Only worth asking before the whistle: once a match is under way the line-up is
+      // the answer to "who is playing", and an injury list is history.
+      started
+        ? []
+        : optionalSection(logger, matchId, 'injuries', () => deps.provider.injuries(matchId)),
     ]);
 
     // Read, never bumped: `nextSequence` belongs to the poller, and a client refresh must
@@ -154,6 +160,7 @@ export function createFixturesRouter(deps: ApiDeps): Router {
       events: toEvents(matchId, homeTeamId, rawEvents),
       ...toLineups(homeTeamId, rawLineups),
       ...toStats(homeTeamId, rawStats),
+      ...toAbsences(homeTeamId, rawInjuries),
       sequence: state?.lastSequence ?? 0,
     };
     res.json(detail);
@@ -318,4 +325,50 @@ export function presentMatches(raw: ApiFixture[], teamIds: number[], leagueIds: 
   }
 
   return [...byId.values()].sort((a, b) => a.kickoffAt - b.kickoffAt || a.id - b.id);
+}
+
+/**
+ * Splits an injury list into the two sides, and says who is out rather than doubtful.
+ *
+ * The provider's `type` is prose - "Missing Fixture" for a definite absence, "Questionable"
+ * for a doubt - and everything that is not explicitly a doubt is treated as out, because
+ * over-reporting an absence is the harmless direction: a player who turns up is a pleasant
+ * surprise, one who does not after the app said he would is a wrong team sheet.
+ */
+function toAbsences(
+  homeTeamId: number,
+  raw: ApiInjury[],
+): Pick<MatchDetailJson, 'homeAbsences' | 'awayAbsences'> {
+  if (raw.length === 0) return {};
+
+  const home: AbsenceJson[] = [];
+  const away: AbsenceJson[] = [];
+
+  for (const entry of raw) {
+    const name = entry.player?.name?.trim();
+    if (!name) continue;
+
+    const type = entry.player?.type?.toLowerCase() ?? '';
+    const absence: AbsenceJson = {
+      name,
+      out: !type.includes('question') && !type.includes('doubt'),
+    };
+    const playerId = entry.player?.id ?? undefined;
+    if (playerId !== undefined) absence.playerId = playerId;
+    const photo = entry.player?.photo ?? undefined;
+    if (photo) absence.photoUrl = photo;
+    const reason = entry.player?.reason?.trim();
+    if (reason) absence.reason = reason;
+
+    (entry.team?.id === homeTeamId ? home : away).push(absence);
+  }
+
+  // Definite absences first: a missing striker matters more than a doubtful full-back.
+  const byCertainty = (a: AbsenceJson, b: AbsenceJson): number =>
+    a.out === b.out ? a.name.localeCompare(b.name) : a.out ? -1 : 1;
+
+  const result: Pick<MatchDetailJson, 'homeAbsences' | 'awayAbsences'> = {};
+  if (home.length > 0) result.homeAbsences = home.sort(byCertainty);
+  if (away.length > 0) result.awayAbsences = away.sort(byCertainty);
+  return result;
 }

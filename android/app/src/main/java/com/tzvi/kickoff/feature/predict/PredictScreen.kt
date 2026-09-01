@@ -1,5 +1,11 @@
 package com.tzvi.kickoff.feature.predict
 
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.foundation.layout.Box
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -52,6 +58,7 @@ import com.tzvi.kickoff.core.model.League
 import com.tzvi.kickoff.core.model.Team
 import com.tzvi.kickoff.data.predict.PendingInvite
 import com.tzvi.kickoff.feature.auth.AccountRequired
+import com.tzvi.kickoff.ui.component.Avatar
 import com.tzvi.kickoff.ui.component.EmptyState
 import com.tzvi.kickoff.ui.component.LoadingState
 import com.tzvi.kickoff.ui.component.SectionHeader
@@ -79,6 +86,8 @@ fun PredictScreen(onSignIn: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
         onSendChat = viewModel::sendChat,
         onNewGroup = viewModel::newGroup,
         onEditGroup = viewModel::editGroup,
+        onLeaveGroup = viewModel::leaveGroup,
+        onDeleteGroup = viewModel::deleteGroup,
         onCloseSetup = viewModel::closeSetup,
         onName = viewModel::nameGroup,
         onToggleLeague = viewModel::toggleLeague,
@@ -108,6 +117,8 @@ internal fun PredictContent(
     onSendChat: (String) -> Unit,
     onNewGroup: () -> Unit,
     onEditGroup: () -> Unit,
+    onLeaveGroup: () -> Unit,
+    onDeleteGroup: () -> Unit,
     onCloseSetup: () -> Unit,
     onName: (String) -> Unit,
     onToggleLeague: (League) -> Unit,
@@ -204,6 +215,11 @@ internal fun PredictContent(
                     if (state.groups.size > 1) {
                         GroupSwitcher(state = state, onSelectGroup = onSelectGroup)
                     }
+                    GroupBar(
+                        state = state,
+                        onLeave = onLeaveGroup,
+                        onDelete = onDeleteGroup,
+                    )
                     PrimaryTabRow(selectedTabIndex = state.tab.ordinal) {
                         PredictTab.entries.forEach { entry ->
                             Tab(
@@ -362,10 +378,10 @@ private fun TableTab(state: PredictUiState) {
         if (state.members.isEmpty()) {
             item(key = "table-empty") {
                 EmptyState(
-                    title = "Nothing settled yet",
-                    body = "Points land when a match finishes: 3 for the exact score, " +
-                        "1 for calling it the right way.",
-                    icon = Icons.Outlined.Group,
+                    title = "Everyone on nought",
+                    body = "The table fills in as matches finish. Until then you are all " +
+                        "joint first, which is the only time that will happen.",
+                    icon = Icons.Outlined.EmojiEvents,
                 )
             }
         } else {
@@ -373,6 +389,7 @@ private fun TableTab(state: PredictUiState) {
                 LeaderboardRow(
                     position = index + 1,
                     member = member,
+                    isCaptain = member.userId == state.captainUserId,
                     predicted = live?.let { fixture ->
                         (listOfNotNull(fixture.myPrediction) + fixture.others)
                             .firstOrNull { it.userId == member.userId }
@@ -571,6 +588,8 @@ private fun PredictStartPreview() {
             onNewGroup = {},
             onEditGroup = {},
             onCloseSetup = {},
+            onLeaveGroup = {},
+            onDeleteGroup = {},
             onName = {},
             onToggleLeague = {},
             onRetryLeagues = {},
@@ -585,4 +604,133 @@ private fun PredictStartPreview() {
             onOpenSettings = {},
         )
     }
+}
+
+/**
+ * The group's own row: who is playing, how the points work, and the way out.
+ *
+ * The rules live behind a button rather than on the screen because they are read once and
+ * argued about later - but they have to be reachable at the moment of the argument, and
+ * they are the server's own numbers rather than a copy compiled into the app, so a house
+ * rule changed on the server shows up here without a release.
+ */
+@Composable
+private fun GroupBar(
+    state: PredictUiState,
+    onLeave: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val group = state.selected ?: return
+    var menuOpen by remember { mutableStateOf(false) }
+    var confirmingDelete by remember { mutableStateOf(false) }
+    var confirmingLeave by remember { mutableStateOf(false) }
+    var showingRules by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = ScreenPadding, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = if (group.isOwner) "You are the captain" else "${state.members.size} playing",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = { showingRules = true }) { Text("How points work") }
+        Box {
+            IconButton(onClick = { menuOpen = true }) {
+                Icon(
+                    imageVector = Icons.Outlined.MoreVert,
+                    contentDescription = "Group options",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                if (group.isOwner) {
+                    // The owner has no "leave": nothing here can hand the captaincy on, and
+                    // a group whose captain has gone could never be edited again.
+                    DropdownMenuItem(
+                        text = { Text("Delete group") },
+                        onClick = {
+                            menuOpen = false
+                            confirmingDelete = true
+                        },
+                    )
+                } else {
+                    DropdownMenuItem(
+                        text = { Text("Leave group") },
+                        onClick = {
+                            menuOpen = false
+                            confirmingLeave = true
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    if (showingRules) {
+        RulesSheet(rules = state.rules, onDismiss = { showingRules = false })
+    }
+
+    if (confirmingLeave) {
+        ConfirmDialog(
+            title = "Leave ${group.name}?",
+            body = "Your picks stay on the table - taking them away would rewrite " +
+                "everybody else's season. You can be invited back.",
+            confirmLabel = "Leave",
+            onConfirm = {
+                confirmingLeave = false
+                onLeave()
+            },
+            onDismiss = { confirmingLeave = false },
+        )
+    }
+
+    if (confirmingDelete) {
+        ConfirmDialog(
+            title = "Delete ${group.name}?",
+            body = "The table, the picks and the chat go with it, for everybody. " +
+                "This cannot be undone.",
+            confirmLabel = "Delete",
+            destructive = true,
+            onConfirm = {
+                confirmingDelete = false
+                onDelete()
+            },
+            onDismiss = { confirmingDelete = false },
+        )
+    }
+}
+
+@Composable
+private fun ConfirmDialog(
+    title: String,
+    body: String,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    destructive: Boolean = false,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(body) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = confirmLabel,
+                    color = if (destructive) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                )
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

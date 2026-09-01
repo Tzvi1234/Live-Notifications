@@ -13,6 +13,8 @@ import com.tzvi.kickoff.BuildConfig
 import com.tzvi.kickoff.core.model.AppSettings
 import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.core.model.LiveCardStyle
+import com.tzvi.kickoff.data.auth.AuthRepository
+import com.tzvi.kickoff.data.auth.AuthState
 import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.local.KickoffDatabase
 import com.tzvi.kickoff.data.repository.SettingsRepository
@@ -62,6 +64,7 @@ class SettingsViewModel @Inject constructor(
     private val liveCardPreview: LiveCardPreview,
     private val simulator: MatchSimulator,
     private val database: KickoffDatabase,
+    auth: AuthRepository,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
 
@@ -140,6 +143,26 @@ class SettingsViewModel @Inject constructor(
             appVersion = APP_VERSION,
             dynamicColorAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
             message = form.message,
+        )
+        // Folded in afterwards rather than as a sixth source: `combine` is only typed up
+        // to five flows, and a sixth silently drops every parameter to Any.
+    }.combine(auth.state) { ui, account ->
+        val user = (account as? AuthState.SignedIn)?.user
+        ui.copy(
+            profile = ProfileSummary(
+                signedIn = user != null,
+                name = listOfNotNull(user?.firstName, user?.lastName)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" "),
+                email = user?.let { signedIn ->
+                    val addresses = signedIn.emailAddresses.orEmpty()
+                    (
+                        addresses.firstOrNull { it.id == signedIn.primaryEmailAddressId }
+                            ?: addresses.firstOrNull()
+                        )?.emailAddress
+                }.orEmpty(),
+                avatarUrl = user?.imageUrl?.takeIf { it.isNotBlank() },
+            ),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS), SettingsUiState())
 

@@ -64,8 +64,11 @@ class AuthViewModel @Inject constructor(
     fun onPasswordChange(value: String) =
         mutableState.update { it.copy(password = value, error = null) }
 
-    fun onCodeChange(value: String) =
-        mutableState.update { it.copy(code = value.filter(Char::isDigit), error = null) }
+    fun onCodeChange(value: String) = mutableState.update {
+        // Capped as well as filtered: the boxed field draws exactly MIN_CODE_LENGTH boxes,
+        // and a seventh digit would be held in the state with nowhere to be seen.
+        it.copy(code = value.filter(Char::isDigit).take(MIN_CODE_LENGTH), error = null)
+    }
 
     fun onFieldChange(field: String, value: String) = mutableState.update {
         it.copy(fieldValues = it.fieldValues + (field to value), error = null)
@@ -84,6 +87,8 @@ class AuthViewModel @Inject constructor(
             // Verification and details belong to a sign-up that is already open, so back
             // out of them lands on the form that started it rather than on the splash.
             AuthStep.VERIFY, AuthStep.DETAILS -> AuthStep.SIGN_UP
+            // There is a session by now; backing out of the profile page is skipping it.
+            AuthStep.PROFILE -> AuthStep.PROFILE
         }
         it.copy(step = target, error = null, notice = null)
     }
@@ -99,6 +104,7 @@ class AuthViewModel @Inject constructor(
             AuthStep.SIGN_UP -> signUp(state)
             AuthStep.VERIFY -> verify(state)
             AuthStep.DETAILS -> submitDetails(state)
+            AuthStep.PROFILE -> Unit
         }
     }
 
@@ -107,6 +113,8 @@ class AuthViewModel @Inject constructor(
     }
 
     private fun signUp(state: AuthUiState) = working {
+        // Before the call, not after: see AuthUiState.collectingProfile.
+        mutableState.update { it.copy(collectingProfile = true) }
         apply(auth.signUp(state.email, state.password))
     }
 
@@ -146,6 +154,9 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /** Done with the profile page, whether or not anything was filled in. */
+    fun finishProfile() = mutableState.update { it.copy(collectingProfile = false) }
+
     /** The escape hatch. The app is worth using signed out and has to stay that way. */
     fun continueWithoutAccount(onDone: () -> Unit) {
         viewModelScope.launch {
@@ -156,7 +167,13 @@ class AuthViewModel @Inject constructor(
 
     private fun apply(outcome: AuthOutcome) = mutableState.update { state ->
         when (outcome) {
-            AuthOutcome.Complete -> state.copy(error = null, notice = null)
+            // A finished sign-UP lands on the profile page; a sign-IN just leaves. The
+            // flag is what tells them apart, since Complete is the same sentinel for both.
+            AuthOutcome.Complete -> state.copy(
+                step = if (state.collectingProfile) AuthStep.PROFILE else state.step,
+                error = null,
+                notice = null,
+            )
 
             is AuthOutcome.NeedsEmailCode -> state.copy(
                 step = AuthStep.VERIFY,

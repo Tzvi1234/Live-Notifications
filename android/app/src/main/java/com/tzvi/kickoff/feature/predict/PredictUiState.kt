@@ -1,5 +1,6 @@
 package com.tzvi.kickoff.feature.predict
 
+import com.tzvi.kickoff.core.model.Rulebook
 import com.tzvi.kickoff.core.model.ChatMessage
 import com.tzvi.kickoff.core.model.GroupFixture
 import com.tzvi.kickoff.core.model.GroupMember
@@ -240,6 +241,10 @@ data class PredictUiState(
     val groups: List<PredictGroup> = emptyList(),
     val selected: PredictGroup? = null,
     val members: List<GroupMember> = emptyList(),
+    /** Whoever created the group, marked on the table even with nothing settled yet. */
+    val captainUserId: String? = null,
+    /** The server's own scoring rules, or null on a backend too old to send them. */
+    val rules: Rulebook? = null,
     val fixtures: List<GroupFixture> = emptyList(),
     val chat: List<ChatMessage> = emptyList(),
     val tab: PredictTab = PredictTab.FIXTURES,

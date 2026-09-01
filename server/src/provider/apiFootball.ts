@@ -59,6 +59,9 @@ const SQUAD_TTL_SECONDS = 6 * 60 * 60;
 /** The provider computes these once per fixture; they do not move before kick-off. */
 const PREDICTION_TTL_SECONDS = 60 * 60;
 
+/** Availability firms up as a match approaches, but not minute to minute. */
+const INJURY_TTL_SECONDS = 60 * 60;
+
 /** How long an empty answer is held. See `#fetchItems` for why it is not the full TTL. */
 const EMPTY_RESULT_TTL_MS = 60_000;
 
@@ -117,6 +120,20 @@ export interface ApiAccountStatus {
     current?: number | null;
     limit_day?: number | null;
   } | null;
+}
+
+/** One unavailable player, as /injuries reports them. */
+export interface ApiInjury {
+  player?: {
+    id?: number | null;
+    name?: string | null;
+    photo?: string | null;
+    /** "Missing Fixture" for a definite absence, "Questionable" for a doubt. */
+    type?: string | null;
+    /** The provider's free-text reason: "Knock", "Suspended", "Illness". */
+    reason?: string | null;
+  } | null;
+  team?: { id?: number | null; name?: string | null } | null;
 }
 
 export interface ApiEnvelope<T> {
@@ -904,6 +921,23 @@ export class ApiFootballClient {
       { fixture: fixtureId },
       true,
       cacheTtlSeconds ?? PREDICTION_TTL_SECONDS,
+    );
+  }
+
+  /**
+   * Who is unavailable for a fixture, and why.
+   *
+   * The one endpoint that answers the question every team-sheet argument starts with. It
+   * is published a few days out and firms up as the match approaches, so it caches for an
+   * hour rather than for minutes - and unlike a line-up it exists long before kick-off,
+   * which is exactly when somebody is deciding what to predict.
+   */
+  async injuries(fixtureId: number, cacheTtlSeconds?: number): Promise<ApiInjury[]> {
+    return this.#request<ApiInjury>(
+      '/injuries',
+      { fixture: fixtureId },
+      true,
+      cacheTtlSeconds ?? INJURY_TTL_SECONDS,
     );
   }
 

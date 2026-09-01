@@ -104,7 +104,33 @@ data class LeaderboardJson(
     /** The scoring rule, sent rather than assumed, so the screen never contradicts it. */
     val exactPoints: Int = 3,
     val outcomePoints: Int = 1,
+    /** Whoever created the group. Marked on the table even before a ball is kicked. */
+    val captainUserId: String? = null,
+    /**
+     * The whole rulebook, as the server actually scores with it.
+     *
+     * Absent on an older server, which is why the screen treats a null as "show nothing"
+     * rather than as "show zeroes": a rules sheet full of noughts is worse than no sheet.
+     */
+    val rules: RulebookJson? = null,
     val entries: List<LeaderboardEntryJson> = emptyList(),
+)
+
+@Serializable
+data class RulebookJson(
+    val scoring: List<ScoringRowJson> = emptyList(),
+    val multipliers: List<MultiplierRowJson> = emptyList(),
+    val notes: List<String> = emptyList(),
+)
+
+@Serializable
+data class ScoringRowJson(val label: String = "", val points: Int = 0)
+
+@Serializable
+data class MultiplierRowJson(
+    val stage: String = "",
+    val label: String = "",
+    val multiplier: Int = 1,
 )
 
 @Serializable
