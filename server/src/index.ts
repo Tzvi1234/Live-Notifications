@@ -77,6 +77,7 @@ interface RunningPoller extends PollerHandle {
 async function main(): Promise<void> {
   setLogLevel(config.logLevel);
   logger.info('kickoff server starting', describeConfig(config));
+  warnAboutOverrides(process.env);
 
   const store = await createStore({ databaseUrl: config.databaseUrl }, logger);
 
@@ -229,6 +230,41 @@ function closeServer(server: Server): Promise<void> {
  * are described, never printed: the API key and the service account are the two things a
  * log drain must not carry, and a database URL embeds its password.
  */
+/**
+ * Names the environment variables that are quietly overriding the code.
+ *
+ * Both of these have now bitten twice. An env var set once on the Render service outlives
+ * its removal from render.yaml - the blueprint declares variables, it does not delete
+ * them - and `env ?? default` means the stale value keeps winning silently. The result
+ * looks like the code change never happened: thirty-one competitions ship and fourteen
+ * appear, a plan with 75,000 requests a day is throttled at 7,500.
+ *
+ * Warned about rather than ignored, because both are legitimate settings that somebody
+ * may have meant. The log line is what makes "I changed it and nothing happened" a
+ * two-second diagnosis instead of an afternoon.
+ */
+function warnAboutOverrides(env: NodeJS.ProcessEnv): void {
+  const leagues = env.FEATURED_LEAGUE_IDS?.trim();
+  if (leagues) {
+    logger.warn(
+      'FEATURED_LEAGUE_IDS is set in the environment, so it REPLACES the list the code ' +
+        'ships with. Unset it in the Render dashboard (Environment -> delete the ' +
+        'variable) to get every competition this build knows about.',
+      { configured: leagues.split(',').length, shippedWithCode: config.featuredLeagueIds.length },
+    );
+  }
+
+  const budget = env.DAILY_REQUEST_BUDGET?.trim();
+  if (budget) {
+    logger.warn(
+      'DAILY_REQUEST_BUDGET is set in the environment, so this server will refuse calls ' +
+        'past it even when the plan allows more. Unset it in the Render dashboard to ' +
+        'follow whatever the API-Football plan permits.',
+      { configured: budget },
+    );
+  }
+}
+
 function describeConfig(active: KickoffConfig): Record<string, unknown> {
   return {
     nodeEnv: active.nodeEnv,
