@@ -24,7 +24,7 @@ import com.tzvi.kickoff.data.local.entity.TrackedActivityEntity
         MatchEventEntity::class,
         TrackedActivityEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class KickoffDatabase : RoomDatabase() {
@@ -61,6 +61,43 @@ abstract class KickoffDatabase : RoomDatabase() {
                         "ALTER TABLE followed_leagues ADD COLUMN $column INTEGER NOT NULL DEFAULT 1",
                     )
                 }
+            }
+        }
+
+        /**
+         * Narrows the tracked activities to the columns a live match card fills.
+         *
+         * SQLite on the API levels this app still runs on has no DROP COLUMN, so the
+         * table is recreated and copied across. Written out rather than left to the
+         * destructive fallback for [MIGRATION_1_2]'s reason: the fallback drops every
+         * table, including the followed teams and leagues, which are the user's own
+         * choices and not cache.
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL(
+                    "CREATE TABLE tracked_activities_new (" +
+                        "`key` TEXT NOT NULL, " +
+                        "kind TEXT NOT NULL, " +
+                        "matchId INTEGER, " +
+                        "startsAt INTEGER NOT NULL, " +
+                        "endsAt INTEGER, " +
+                        "dismissed INTEGER NOT NULL DEFAULT 0, " +
+                        "lastSequence INTEGER NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`key`))",
+                )
+                connection.execSQL(
+                    "INSERT INTO tracked_activities_new " +
+                        "(`key`, kind, matchId, startsAt, endsAt, dismissed, lastSequence, " +
+                        "updatedAt) " +
+                        "SELECT `key`, kind, matchId, startsAt, endsAt, dismissed, " +
+                        "lastSequence, updatedAt FROM tracked_activities",
+                )
+                connection.execSQL("DROP TABLE tracked_activities")
+                connection.execSQL(
+                    "ALTER TABLE tracked_activities_new RENAME TO tracked_activities",
+                )
             }
         }
     }

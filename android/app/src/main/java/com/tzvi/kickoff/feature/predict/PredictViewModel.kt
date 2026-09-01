@@ -38,8 +38,10 @@ class PredictViewModel @Inject constructor(
 
             // The game only exists over a backend. Going direct to API-Football is a
             // perfectly good way to use the rest of the app and simply has no server to
-            // hold anybody else's guesses.
-            if (settings.backendUrl.first().isBlank()) {
+            // hold anybody else's guesses - the backend URL is no longer the test for
+            // that, since every install ships pointed at one.
+            val direct = settings.useDirectApi.first() && settings.apiFootballKey.first().isNotBlank()
+            if (direct || settings.backendUrl.first().isBlank()) {
                 mutableState.update {
                     it.copy(
                         isLoading = false,

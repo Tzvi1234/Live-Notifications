@@ -9,7 +9,6 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.tzvi.kickoff.core.model.AppSettings
 import com.tzvi.kickoff.core.model.LiveCardStyle
@@ -34,9 +33,6 @@ class SettingsRepository @Inject constructor(
         val notifySubs = booleanPreferencesKey("notify_subs")
         val notifyKickoff = booleanPreferencesKey("notify_kickoff")
         val notifyLineups = booleanPreferencesKey("notify_lineups")
-        val calendarSync = booleanPreferencesKey("calendar_sync")
-        val calendarLead = intPreferencesKey("calendar_lead_minutes")
-        val calendarIds = stringSetPreferencesKey("calendar_ids")
         val pushEnabled = booleanPreferencesKey("push_enabled")
         val dynamicColor = booleanPreferencesKey("dynamic_color")
         val darkTheme = stringPreferencesKey("dark_theme")
@@ -59,9 +55,6 @@ class SettingsRepository @Inject constructor(
             notifySubstitutions = p[Keys.notifySubs] ?: false,
             notifyKickoffAndFullTime = p[Keys.notifyKickoff] ?: true,
             notifyLineups = p[Keys.notifyLineups] ?: true,
-            calendarSyncEnabled = p[Keys.calendarSync] ?: false,
-            calendarLeadMinutes = p[Keys.calendarLead] ?: 30,
-            enabledCalendarIds = p[Keys.calendarIds].orEmpty().mapNotNull(String::toLongOrNull).toSet(),
             pushEnabled = p[Keys.pushEnabled] ?: true,
             useDynamicColor = p[Keys.dynamicColor] ?: true,
             darkTheme = p[Keys.darkTheme]
@@ -113,8 +106,6 @@ class SettingsRepository @Inject constructor(
     suspend fun setNotifySubstitutions(value: Boolean) = edit { it[Keys.notifySubs] = value }
     suspend fun setNotifyKickoffAndFullTime(value: Boolean) = edit { it[Keys.notifyKickoff] = value }
     suspend fun setNotifyLineups(value: Boolean) = edit { it[Keys.notifyLineups] = value }
-    suspend fun setCalendarSyncEnabled(value: Boolean) = edit { it[Keys.calendarSync] = value }
-    suspend fun setCalendarLeadMinutes(minutes: Int) = edit { it[Keys.calendarLead] = minutes }
     suspend fun setPushEnabled(value: Boolean) = edit { it[Keys.pushEnabled] = value }
     suspend fun setDynamicColor(value: Boolean) = edit { it[Keys.dynamicColor] = value }
     suspend fun setApiFootballKey(key: String) = edit { it[Keys.apiKey] = key.trim() }
@@ -125,9 +116,6 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setDarkTheme(pref: AppSettings.DarkThemePreference) =
         edit { it[Keys.darkTheme] = pref.name }
-
-    suspend fun setEnabledCalendars(ids: Set<Long>) =
-        edit { it[Keys.calendarIds] = ids.map(Long::toString).toSet() }
 
     /** Every preference gone, including onboarding-complete: the next launch starts over. */
     suspend fun eraseEverything() {

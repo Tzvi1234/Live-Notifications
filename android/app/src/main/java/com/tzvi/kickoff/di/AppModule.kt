@@ -158,7 +158,7 @@ object AppModule {
     @Singleton
     fun database(@ApplicationContext context: Context): KickoffDatabase =
         Room.databaseBuilder(context, KickoffDatabase::class.java, KickoffDatabase.NAME)
-            .addMigrations(KickoffDatabase.MIGRATION_1_2)
+            .addMigrations(KickoffDatabase.MIGRATION_1_2, KickoffDatabase.MIGRATION_2_3)
             // Still the last resort, but every version bump from here needs a real
             // migration first: the followed teams and leagues are the user's own choices,
             // not cache, and dropping them silently is not an upgrade.

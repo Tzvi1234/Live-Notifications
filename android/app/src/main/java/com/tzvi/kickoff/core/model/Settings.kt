@@ -40,9 +40,6 @@ data class AppSettings(
     val notifySubstitutions: Boolean = false,
     val notifyKickoffAndFullTime: Boolean = true,
     val notifyLineups: Boolean = true,
-    val calendarSyncEnabled: Boolean = false,
-    val calendarLeadMinutes: Int = 30,
-    val enabledCalendarIds: Set<Long> = emptySet(),
     val pushEnabled: Boolean = true,
     /** On by default: Material You is the platform default look, not an opt-in. */
     val useDynamicColor: Boolean = true,

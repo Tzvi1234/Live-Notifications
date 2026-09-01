@@ -1,11 +1,11 @@
 package com.tzvi.kickoff.ui.navigation
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Casino
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.SportsSoccer
-import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.SportsSoccer
@@ -18,7 +18,7 @@ object Routes {
     const val TODAY = "today"
     const val MATCHES = "matches"
     const val TEAMS = "teams"
-    const val CALENDAR = "calendar"
+    const val PREDICT = "predict"
     const val SETTINGS = "settings"
 
     const val MATCH_DETAIL = "match/{matchId}"
@@ -31,7 +31,14 @@ object Routes {
     const val ARG_TEAM_ID = "teamId"
 }
 
-/** The four top-level destinations that appear in the navigation bar. */
+/**
+ * The four top-level destinations in the navigation bar.
+ *
+ * Predictions took the calendar's place. The calendar read the device's own agenda and
+ * offered to tell you a match clashed with something - which the fixture list already
+ * said, better, without a permission prompt. This is the tab worth opening when there is
+ * no match on.
+ */
 enum class TopLevelDestination(
     val route: String,
     val label: String,
@@ -41,5 +48,5 @@ enum class TopLevelDestination(
     TODAY(Routes.TODAY, "Today", Icons.Filled.Home, Icons.Outlined.Home),
     MATCHES(Routes.MATCHES, "Matches", Icons.Filled.SportsSoccer, Icons.Outlined.SportsSoccer),
     TEAMS(Routes.TEAMS, "Teams", Icons.Filled.Groups, Icons.Outlined.Groups),
-    CALENDAR(Routes.CALENDAR, "Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth),
+    PREDICT(Routes.PREDICT, "Predict", Icons.Filled.Casino, Icons.Outlined.Casino),
 }

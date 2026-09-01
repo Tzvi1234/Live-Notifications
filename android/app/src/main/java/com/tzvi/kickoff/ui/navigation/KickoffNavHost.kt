@@ -12,7 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.tzvi.kickoff.feature.auth.AuthScreen
 import com.tzvi.kickoff.feature.auth.ProfileScreen
-import com.tzvi.kickoff.feature.calendar.CalendarScreen
+import com.tzvi.kickoff.feature.predict.PredictScreen
 import com.tzvi.kickoff.feature.matchdetail.MatchDetailScreen
 import com.tzvi.kickoff.feature.matches.MatchesScreen
 import com.tzvi.kickoff.feature.onboarding.OnboardingScreen
@@ -113,8 +113,13 @@ fun KickoffNavHost(
                     }
                 }
 
-                composable(Routes.CALENDAR) {
-                    Scoped { CalendarScreen() }
+                composable(Routes.PREDICT) {
+                    Scoped {
+                        PredictScreen(
+                            onSignIn = { navController.navigate(Routes.AUTH) },
+                            onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                        )
+                    }
                 }
 
                 // Opened from a settings row, so it grows out of that row rather than

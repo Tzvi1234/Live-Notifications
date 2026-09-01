@@ -7,8 +7,6 @@
     <string name="channel_live_match_desc">The ongoing scoreboard card for a match you follow.</string>
     <string name="channel_match_events">Goals and cards</string>
     <string name="channel_match_events_desc">Alerts for goals, red cards and full time.</string>
-    <string name="channel_calendar">Calendar events</string>
-    <string name="channel_calendar_desc">A live card for the calendar event you are heading into.</string>
 
     <!-- Live card -->
     <string name="live_kickoff_in">Kick-off in %1$s</string>

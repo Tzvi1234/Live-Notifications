@@ -110,8 +110,6 @@ data class TrackedActivityEntity(
     @PrimaryKey val key: String,
     val kind: String,
     val matchId: Long?,
-    val calendarEventId: Long?,
-    val calendarInstanceStart: Long?,
     val startsAt: Long,
     val endsAt: Long?,
     @ColumnInfo(defaultValue = "0") val dismissed: Boolean = false,

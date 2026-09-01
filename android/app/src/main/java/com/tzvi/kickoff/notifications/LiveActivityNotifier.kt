@@ -34,7 +34,6 @@ import javax.inject.Singleton
 class LiveActivityNotifier @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val matchBuilder: MatchNotificationBuilder,
-    private val calendarBuilder: CalendarNotificationBuilder,
     private val crestLoader: CrestLoader,
     private val capability: LiveUpdateCapability,
     private val trackedActivityDao: TrackedActivityDao,
@@ -144,23 +143,6 @@ class LiveActivityNotifier @Inject constructor(
         )
     }
 
-    // canPost() checks POST_NOTIFICATIONS before anything is built; lint cannot see
-    // through the helper.
-    @SuppressLint("MissingPermission")
-    suspend fun postCalendar(activity: LiveActivity.CalendarActivity): Boolean =
-        postLock.withLock {
-            if (!canPost()) return false
-            if (isDismissed(activity.key)) return false
-            val id = activity.notificationId
-            if (isRateLimited(id)) return false
-
-            val notification = calendarBuilder.build(activity)
-            manager.notify(id, notification)
-            lastPostAt[id] = System.currentTimeMillis()
-            track(activity)
-            true
-        }
-
     fun cancel(key: String) {
         manager.cancel(key.hashCode() and 0x7FFFFFFF)
         lastRendering.remove(key)
@@ -268,24 +250,17 @@ class LiveActivityNotifier @Inject constructor(
         return System.currentTimeMillis() - last < MIN_UPDATE_INTERVAL_MS
     }
 
-    private suspend fun track(activity: LiveActivity) {
+    private suspend fun track(activity: LiveActivity.MatchActivity) {
         val existing = trackedActivityDao.get(activity.key)
         trackedActivityDao.upsert(
             TrackedActivityEntity(
                 key = activity.key,
-                kind = when (activity) {
-                    is LiveActivity.MatchActivity -> KIND_MATCH
-                    is LiveActivity.CalendarActivity -> KIND_CALENDAR
-                },
-                matchId = (activity as? LiveActivity.MatchActivity)?.match?.id,
-                calendarEventId = (activity as? LiveActivity.CalendarActivity)?.event?.eventId,
-                calendarInstanceStart = (activity as? LiveActivity.CalendarActivity)
-                    ?.event?.instanceStart?.toEpochMilli(),
+                kind = KIND_MATCH,
+                matchId = activity.match.id,
                 startsAt = activity.startsAt.toEpochMilli(),
                 endsAt = activity.endsAt?.toEpochMilli(),
                 dismissed = existing?.dismissed ?: false,
-                lastSequence = (activity as? LiveActivity.MatchActivity)?.sequence
-                    ?: existing?.lastSequence ?: 0,
+                lastSequence = activity.sequence,
                 updatedAt = System.currentTimeMillis(),
             ),
         )
@@ -293,7 +268,6 @@ class LiveActivityNotifier @Inject constructor(
 
     companion object {
         const val KIND_MATCH = "match"
-        const val KIND_CALENDAR = "calendar"
 
         /** Two seconds between silent refreshes of the same card. */
         private const val MIN_UPDATE_INTERVAL_MS = 2_000L

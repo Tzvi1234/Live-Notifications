@@ -265,11 +265,26 @@ data class TeamFormJson(
  *
  * The Clerk publishable key lives here rather than in the APK so it can be rotated on
  * Render without shipping a new build, and so a self-hosted backend can point the app at
- * its own Clerk instance.
+ * its own Clerk instance. The key is absent when the server has no Clerk configured,
+ * which is a supported state and not an error.
  */
 @Serializable
 data class ServerConfigJson(
     val clerkPublishableKey: String? = null,
-    val predictionsEnabled: Boolean = false,
-    val chatEnabled: Boolean = false,
+    val features: ServerFeaturesJson = ServerFeaturesJson(),
+)
+
+/**
+ * What this particular deployment can actually do.
+ *
+ * `predictionGame` is false unless the server has both Clerk and a real database - the
+ * in-memory store would lose every guess on the next deploy, so it says so rather than
+ * letting people play a game that quietly forgets.
+ */
+@Serializable
+data class ServerFeaturesJson(
+    val auth: Boolean = false,
+    val predictionGame: Boolean = false,
+    val push: Boolean = false,
+    val polling: Boolean = false,
 )
