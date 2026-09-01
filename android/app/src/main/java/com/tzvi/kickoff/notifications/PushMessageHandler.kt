@@ -50,6 +50,16 @@ class PushMessageHandler @Inject constructor(
         if (tracked != null && sequence in 1..tracked.lastSequence) return
 
         val match = parseMatch(matchId, data) ?: return
+
+        // The device's own answer to "is this mine", regardless of what the server sent.
+        // Subscriptions are the server's decision and they go stale - a team unfollowed
+        // while offline, a subscription the server never retired, a push meant for a
+        // device that was replaced. This is the copy of the rule that runs on the phone
+        // the notification would actually appear on, and it is the one the user asked for:
+        // matches involving a followed club, and nothing else.
+        val favourites = repository.favouriteIdsNow()
+        if (match.home.id !in favourites && match.away.id !in favourites) return
+
         val event = parseEvent(matchId, data, match)
 
         // The same insert-ignore gate the poller uses: whichever path arrives first wins,

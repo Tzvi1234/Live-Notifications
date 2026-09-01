@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.tzvi.kickoff.core.model.mayFollowAutomatically
 import com.tzvi.kickoff.data.local.dao.TrackedActivityDao
 import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.repository.NoFootballSourceException
@@ -53,6 +54,14 @@ class ActivitySweepWorker @AssistedInject constructor(
      * *next* match, which reads as the app being broken.
      */
     private suspend fun adoptOrphanedLiveMatches() {
+        // No favourites means notify me about NOTHING, not about everything. Both data
+        // sources treat an empty team list as "do not filter" - the direct one returns
+        // every in-play match on earth, the backend omits the query parameter - so a
+        // fresh install with nothing followed was adopting five arbitrary matches and
+        // posting cards for clubs the user had never heard of.
+        val favourites = footballRepository.favouriteIdsNow()
+        if (favourites.isEmpty()) return
+
         val live = try {
             footballRepository.refreshLive()
         } catch (_: NoFootballSourceException) {
@@ -63,6 +72,9 @@ class ActivitySweepWorker @AssistedInject constructor(
         val tracked = trackedActivityDao.active().mapNotNull { it.matchId }.toSet()
         live.asSequence()
             .filter { it.id !in tracked }
+            // Belt and braces over the source's own filter: whatever comes back, only a
+            // match one of the followed clubs is playing in is worth a notification.
+            .filter { mayFollowAutomatically(it, favourites) }
             .take(MAX_ADOPTED)
             .forEach { LiveMatchService.track(applicationContext, it.id) }
     }

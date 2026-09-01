@@ -30,7 +30,9 @@ class MatchTracker @Inject constructor(
     suspend fun follow(matchId: Long) {
         // A dismissed card is never reposted, so following again has to lift that first.
         trackedActivityDao.delete(LiveActivity.MatchActivity.matchKey(matchId))
-        LiveMatchService.track(context, matchId)
+        // manual: the user is on this match's screen and asked for it by name, so the
+        // favourites rule that governs automatic tracking does not apply.
+        LiveMatchService.track(context, matchId, manual = true)
     }
 
     suspend fun unfollow(matchId: Long) {

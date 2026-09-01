@@ -8,6 +8,8 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
+import com.tzvi.kickoff.work.MatchAlarmScheduler
+import com.tzvi.kickoff.core.model.mayFollowAutomatically
 import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
@@ -46,6 +48,7 @@ class LiveMatchService : Service() {
     @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var notifier: LiveActivityNotifier
     @Inject lateinit var builder: MatchNotificationBuilder
+    @Inject lateinit var alarms: MatchAlarmScheduler
 
     private val scope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
     private val tracked = ConcurrentHashMap<Long, Job>()
@@ -69,7 +72,7 @@ class LiveMatchService : Service() {
         when (intent?.action) {
             ACTION_TRACK -> intent.getLongExtra(EXTRA_MATCH_ID, -1L)
                 .takeIf { it > 0 }
-                ?.let(::track)
+                ?.let { track(it, manual = intent.getBooleanExtra(EXTRA_MANUAL, false)) }
 
             ACTION_UNTRACK -> {
                 val id = intent.getLongExtra(EXTRA_MATCH_ID, -1L)
@@ -155,11 +158,11 @@ class LiveMatchService : Service() {
         anchoredCount = count
     }
 
-    private fun track(matchId: Long) {
+    private fun track(matchId: Long, manual: Boolean) {
         if (tracked.containsKey(matchId)) return
         tracked[matchId] = scope.launch {
             try {
-                pollLoop(matchId)
+                pollLoop(matchId, manual)
             } finally {
                 tracked.remove(matchId)
                 postAnchor()
@@ -177,7 +180,7 @@ class LiveMatchService : Service() {
      * returns only the events this device has not seen, so an event alerts exactly once
      * regardless of whether polling or a push delivered it first.
      */
-    private suspend fun pollLoop(matchId: Long) {
+    private suspend fun pollLoop(matchId: Long, manual: Boolean) {
         var finishedAt: Instant? = null
         var lastPhase: MatchPhase? = null
 
@@ -187,6 +190,24 @@ class LiveMatchService : Service() {
 
             if (refresh != null) {
                 val match = refresh.detail.match
+
+                // Both of these run BEFORE anything is posted, which is the whole point.
+                // The stand-down check used to sit after the card had already gone out, so
+                // a tick that stood down posted a notification and cancelled it in the
+                // same breath - and FixtureSyncWorker arms an alarm for every upcoming
+                // match, firing five seconds later for any match already inside its
+                // window, which turned one sync into a screenful of cards appearing and
+                // vanishing.
+                if (!manual && !followsAFavourite(match)) break
+
+                // Nothing is drawn for a match that is still an hour away. The alarm is
+                // re-armed for the moment it is worth watching instead.
+                val untilKickoff = Duration.between(Instant.now(), match.kickoffAt)
+                if (!match.isLive && !match.phase.isFinished && untilKickoff > STAND_DOWN_BEFORE) {
+                    alarms.schedule(match, STAND_DOWN_BEFORE.toMinutes().toInt())
+                    break
+                }
+
                 val stage = stageOf(match)
                 val whistle = whistleEvent(lastPhase, match)
                 lastPhase = match.phase
@@ -222,16 +243,6 @@ class LiveMatchService : Service() {
                 } else {
                     finishedAt = null
                 }
-                // A match followed from its T-60 alarm would otherwise hold a visible
-                // foreground notification for the whole hour before kick-off, which reads
-                // as the app nagging for no reason. Stand down and let the alarm bring us
-                // back when there is actually something to watch.
-                val untilKickoff = Duration.between(Instant.now(), match.kickoffAt)
-                if (!match.isLive && !match.phase.isFinished && untilKickoff > STAND_DOWN_BEFORE) {
-                    notifier.cancel(activity.key)
-                    break
-                }
-
                 delay(intervalFor(match))
             } else {
                 delay(ERROR_BACKOFF_MS)
@@ -282,6 +293,18 @@ class LiveMatchService : Service() {
             scoreAfter = match.score,
         )
     }
+
+    /**
+     * The last gate before a card is drawn: is this a match the user actually follows?
+     *
+     * Checked here as well as in the sweep worker because tracking can start from three
+     * places - the sweep, a pre-match alarm, a tap on a match screen - and only two of
+     * them know anything about favourites. A match that is not one of theirs must never
+     * reach the notification shelf, whichever door it came through.
+     */
+    private suspend fun followsAFavourite(match: Match): Boolean =
+        mayFollowAutomatically(match, repository.favouriteIdsNow())
+
 
     private fun stageOf(match: Match): LiveActivity.MatchActivity.Stage = when {
         match.phase.isFinished -> LiveActivity.MatchActivity.Stage.FULL_TIME
@@ -351,6 +374,7 @@ class LiveMatchService : Service() {
         private const val ACTION_UNTRACK = "com.tzvi.kickoff.action.UNTRACK_MATCH"
         private const val ACTION_STOP = "com.tzvi.kickoff.action.STOP_TRACKING"
         private const val EXTRA_MATCH_ID = "match_id"
+        private const val EXTRA_MANUAL = "manual"
 
         private const val LIVE_INTERVAL_MS = 20_000L
         private const val IMMINENT_INTERVAL_MS = 60_000L
@@ -368,10 +392,21 @@ class LiveMatchService : Service() {
          */
         private val STAND_DOWN_BEFORE: Duration = Duration.ofMinutes(12)
 
-        fun track(context: Context, matchId: Long) {
+        /**
+         * Starts following a match.
+         *
+         * [manual] separates the two reasons this is ever called, and they need different
+         * rules. Automatic tracking - the sweep worker, a pre-match alarm - must only ever
+         * touch a followed club: that is the user's standing instruction and the thing
+         * they asked for after being notified about strangers. A manual follow is the user
+         * tapping "follow this match" on a screen they navigated to on purpose, and
+         * refusing that because the club is not a favourite would break the feature.
+         */
+        fun track(context: Context, matchId: Long, manual: Boolean = false) {
             val intent = Intent(context, LiveMatchService::class.java)
                 .setAction(ACTION_TRACK)
                 .putExtra(EXTRA_MATCH_ID, matchId)
+                .putExtra(EXTRA_MANUAL, manual)
             context.startForegroundService(intent)
         }
 
