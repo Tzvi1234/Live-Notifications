@@ -6,6 +6,11 @@ import com.tzvi.kickoff.feature.onboarding.normaliseBackendUrl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -60,8 +65,11 @@ class SourceProbes @Inject constructor(
                     !response.isSuccessful ->
                         SourceProbe.Failed("$base answered HTTP ${response.code}.")
 
-                    // A 200 from something that is not matchUP is still the wrong address.
-                    !body.contains("\"status\"") -> SourceProbe.Failed(
+                    // A 200 from something that is not matchUP is still the wrong address:
+                    // a parked domain, a proxy, somebody else's service. The health route's
+                    // contract is `ok` plus the provider it is fronting, and both have to be
+                    // there - `ok` alone is the commonest shape on the whole internet.
+                    !looksLikeBackendHealth(body) -> SourceProbe.Failed(
                         "Something answered at $base, but it is not a matchUP backend.",
                     )
 
@@ -126,4 +134,22 @@ class SourceProbes @Inject constructor(
             .joinToString("; ") { key -> "$key: ${errors.optString(key)}" }
             .takeIf { it.isNotBlank() }
     }
+}
+
+/**
+ * Does this body look like our own `/v1/health`?
+ *
+ * Checked structurally rather than by substring. The first version looked for a `"status"`
+ * key that the route has never sent, so every correctly deployed backend was rejected as
+ * "not a matchUP backend" - a check that can only pass by accident is worse than no check.
+ * The contract is `ok: true` plus the name of the provider being fronted; `ok` on its own
+ * is the commonest JSON shape on the internet and proves nothing.
+ *
+ * Top-level and internal so it can be tested without a device: this is exactly the kind of
+ * check that is only ever exercised against a real deployment, and it was wrong for weeks.
+ */
+internal fun looksLikeBackendHealth(body: String): Boolean {
+    val json = runCatching { Json.parseToJsonElement(body).jsonObject }.getOrNull() ?: return false
+    val ok = json["ok"]?.jsonPrimitive?.booleanOrNull ?: return false
+    return ok && json["provider"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
 }
