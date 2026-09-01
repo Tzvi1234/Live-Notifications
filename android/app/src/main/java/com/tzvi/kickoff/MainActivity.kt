@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tzvi.kickoff.ui.KickoffApp
+import com.tzvi.kickoff.ui.island.IslandOverlayService
 import com.tzvi.kickoff.ui.theme.KickoffTheme
 import com.tzvi.kickoff.ui.theme.shouldUseDarkTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -78,6 +79,16 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        IslandOverlayService.appForeground(this)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        IslandOverlayService.appBackground(this)
     }
 
     /** The launcher activity is singleTask, so a notification tap arrives here. */

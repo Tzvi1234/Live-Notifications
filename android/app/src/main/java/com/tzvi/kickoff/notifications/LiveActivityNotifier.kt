@@ -124,9 +124,14 @@ class LiveActivityNotifier @Inject constructor(
         lastRendering.remove(key)
     }
 
-    /** True when the system actually promoted the last posted card for [key]. */
+    /**
+     * True when the system actually promoted the last posted card for [key].
+     *
+     * Both non-plain renderings ask for promotion now, so what decides this is the
+     * device, not which of the two was chosen.
+     */
     fun isPromoted(key: String): Boolean =
-        lastRendering[key] == MatchNotificationBuilder.Rendering.PROMOTED &&
+        lastRendering[key] != MatchNotificationBuilder.Rendering.PLAIN &&
             capability.canPostPromoted()
 
     // ---- internals -----------------------------------------------------------

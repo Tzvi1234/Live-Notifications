@@ -79,8 +79,8 @@ data class SettingsUiState(
 /** The word on the segmented button. */
 val LiveCardStyle.label: String
     get() = when (this) {
-        LiveCardStyle.AUTO -> "Auto"
-        LiveCardStyle.RICH -> "Rich"
+        LiveCardStyle.AUTO -> "Clock"
+        LiveCardStyle.RICH -> "Commentary"
         LiveCardStyle.PLAIN -> "Plain"
     }
 
@@ -93,16 +93,15 @@ val LiveCardStyle.label: String
 val LiveCardStyle.explanation: String
     get() = when (this) {
         LiveCardStyle.AUTO ->
-            "Prefers a promoted Live Update - the only kind of notification that reaches " +
-                "the status-bar chip, the lock screen and, where the hardware supports it, " +
-                "the always-on display. Falls back to Rich where promotion is unavailable."
+            "The match clock as a bar: two halves, a mark at every goal, and the ball on " +
+                "the current minute. Crests sit at either end in the shade."
         LiveCardStyle.RICH ->
-            "Draws a full scoreboard with crests inside the shade. A custom layout is never " +
-                "promoted, so this trades away the chip, the lock-screen card and the " +
-                "always-on display."
+            "The last five things that happened, newest first. Long text is the only kind " +
+                "Android carries onto the always-on display in full, so this is the one to " +
+                "pick if the lock screen is where you actually read it."
         LiveCardStyle.PLAIN ->
-            "The system's own template. Nothing custom is drawn and no promotion is asked " +
-                "for, which makes it the most predictable of the three."
+            "The system's own template with nothing requested. The most predictable of " +
+                "the three, and the only one that never asks to be promoted."
     }
 
 val AppSettings.DarkThemePreference.label: String

@@ -11,33 +11,25 @@ import java.net.URI
  * a scrolling page could push its title off the top and leave the user looking at controls
  * with nothing naming them; now one fixed header above the pager reads this instead.
  */
-enum class OnboardingStep(
-    val title: String,
-    val subtitle: String,
-) {
-    WELCOME(
-        title = "Kickoff",
-        subtitle = "",
-    ),
-    CONNECT(
-        title = "Choose where scores come from",
-        subtitle = "Pick one of the three below. Settings can change it later.",
-    ),
-    LEAGUES(
-        title = "Pick your competitions",
-        subtitle = "This only decides which squads the next step offers.",
-    ),
-    TEAMS(
-        title = "Pick the teams you follow",
-        subtitle = "Every match these teams play gets a live card.",
-    ),
-    NOTIFICATIONS(
-        title = "Turn the live card on",
-        subtitle = "One notification per match that keeps editing itself.",
-    ),
+enum class OnboardingStep {
+    /** The splash. Owns the whole screen and is the one step the frame folds away for. */
+    WELCOME,
+
+    /** Three tiles and nothing else: which of the three ways in do you want. */
+    SOURCE,
+
+    /** Only the chosen way's one input. Its heading changes with the choice. */
+    SETUP,
+
+    LEAGUES,
+    TEAMS,
+    ALERTS,
+
+    /** The closing beat: what was picked, and what happens from here. */
+    READY,
     ;
 
-    /** 1-based position among the four steps that ask for something; welcome is 0. */
+    /** 1-based position among the steps that ask for something; welcome is 0. */
     val number: Int get() = ordinal
 
     companion object {
@@ -64,6 +56,8 @@ data class OnboardingUiState(
     val backendUrlError: String? = null,
     val backendSaved: Boolean = false,
     val demoEnabled: Boolean = false,
+    /** What was tapped on the SOURCE step - which is not yet what is configured. */
+    val chosenSource: ConfiguredSource? = null,
 
     val leaguesLoading: Boolean = false,
     val leagues: List<League> = emptyList(),
@@ -125,8 +119,8 @@ data class OnboardingUiState(
 
     /** The chip in the step header: what this step has to show for itself so far. */
     fun statusFor(step: OnboardingStep): String? = when (step) {
-        OnboardingStep.WELCOME -> null
-        OnboardingStep.CONNECT -> when (source) {
+        OnboardingStep.WELCOME, OnboardingStep.READY -> null
+        OnboardingStep.SOURCE, OnboardingStep.SETUP -> when (source) {
             ConfiguredSource.NONE -> null
             ConfiguredSource.API_FOOTBALL -> "API KEY"
             ConfiguredSource.BACKEND -> "BACKEND"
@@ -135,7 +129,7 @@ data class OnboardingUiState(
 
         OnboardingStep.LEAGUES -> selectedLeagueIds.size.takeIf { it > 0 }?.let { "$it PICKED" }
         OnboardingStep.TEAMS -> selected.size.takeIf { it > 0 }?.let { "$it PICKED" }
-        OnboardingStep.NOTIFICATIONS -> if (notificationsGranted) "ALLOWED" else null
+        OnboardingStep.ALERTS -> if (notificationsGranted) "ALLOWED" else null
     }
 
     /**
@@ -143,11 +137,18 @@ data class OnboardingUiState(
      * next to it is the single most confusing thing a wizard can do.
      */
     fun blockedReason(step: OnboardingStep): String? = when (step) {
+        OnboardingStep.SOURCE -> "Pick one of the three".takeIf { chosenSource == null }
+        OnboardingStep.SETUP -> when (chosenSource) {
+            ConfiguredSource.API_FOOTBALL -> "Save your key to continue".takeIf { !hasSource }
+            ConfiguredSource.BACKEND -> "Save the URL to continue".takeIf { !hasSource }
+            else -> null
+        }
+
         OnboardingStep.LEAGUES ->
             "Pick at least one competition".takeIf { selectedLeagueIds.isEmpty() }
 
         OnboardingStep.TEAMS -> "Pick at least one team".takeIf { selected.isEmpty() }
-        OnboardingStep.NOTIFICATIONS -> when {
+        OnboardingStep.READY -> when {
             saving -> "Saving your choices"
             selected.isEmpty() -> "Go back and pick a team"
             else -> null
@@ -158,11 +159,14 @@ data class OnboardingUiState(
 
     fun canAdvanceFrom(step: OnboardingStep): Boolean = when (step) {
         OnboardingStep.WELCOME -> true
-        // Deliberately skippable: the leagues page says plainly what skipping costs.
-        OnboardingStep.CONNECT -> true
+        OnboardingStep.SOURCE -> chosenSource != null
+        // Demo configures itself the moment it is picked, so this only ever blocks on a
+        // key or a URL that has not been saved yet.
+        OnboardingStep.SETUP -> hasSource
         OnboardingStep.LEAGUES -> selectedLeagueIds.isNotEmpty()
         OnboardingStep.TEAMS -> selected.isNotEmpty()
-        OnboardingStep.NOTIFICATIONS -> selected.isNotEmpty() && !saving
+        OnboardingStep.ALERTS -> true
+        OnboardingStep.READY -> selected.isNotEmpty() && !saving
     }
 
     /** The furthest page a swipe may settle on, given what has been filled in so far. */

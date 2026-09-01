@@ -8,10 +8,6 @@
     <!-- Notification (RemoteViews) palette. These cannot come from the Compose
          ColorScheme, so they are pinned here and mirrored in values-night. -->
     <color name="notif_surface">#FFF3FCEE</color>
-    <color name="notif_surface_variant">#FFDDE5D8</color>
-    <color name="notif_on_surface">#FF171D17</color>
-    <color name="notif_on_surface_muted">#FF414941</color>
     <color name="notif_accent">#FF006E2A</color>
     <color name="notif_live">#FFBA1A1A</color>
-    <color name="notif_card">#FFE7F1E3</color>
 </resources>

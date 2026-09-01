@@ -5,18 +5,23 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.net.Uri
 import android.os.Build
 import android.view.View
 import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.scale
 import com.tzvi.kickoff.MainActivity
 import com.tzvi.kickoff.R
 import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.core.model.LiveCardStyle
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
+import com.tzvi.kickoff.core.model.MatchEventType
 import com.tzvi.kickoff.core.model.MatchSide
 import com.tzvi.kickoff.core.model.MatchStatistics
 import com.tzvi.kickoff.core.model.TeamLineup
@@ -31,14 +36,28 @@ import javax.inject.Singleton
 /**
  * Renders a [LiveActivity.MatchActivity] into a notification.
  *
- * Android forces a choice that iOS does not. A promoted "Live Update" is the only
- * notification that reaches the status-bar chip, stays expanded on the lock screen and
- * can appear on an always-on display - but the eligibility rules forbid custom
- * `RemoteViews` outright, so the promoted card can only be the system template plus a
- * `ProgressStyle` bar. A custom scoreboard with crests and a big scoreline is prettier
- * in the shade, and is permanently disqualified from all of those surfaces.
+ * Everything here stays inside the rules for a *promoted* ongoing notification, because
+ * promotion is the only thing that puts a card on the status-bar chip, keeps it expanded
+ * on the lock screen and gets it onto an always-on display. Those rules are narrow and
+ * verified against AOSP rather than assumed:
  *
- * So this builds both and picks at post time; see [Rendering].
+ *  - Custom `RemoteViews` disqualify a notification outright - `setCustomContentView`,
+ *    `setCustomBigContentView`, `setCustomHeadsUpContentView`, and the same three on any
+ *    `publicVersion`. There is no escape hatch, so the prettier hand-drawn scoreboard
+ *    this class used to build has been removed rather than kept as a second-class option:
+ *    it could never appear anywhere but the shade.
+ *  - `setColorized(true)` also disqualifies it, from Android 16 QPR1 onwards. (On 16.0
+ *    the rule was the exact opposite and colorization was *required* - which is why this
+ *    only ever promotes on QPR1+, where one consistent set of rules applies.)
+ *  - Only five styles may be promoted: none, `BigTextStyle`, `CallStyle`, `MetricStyle`
+ *    and `ProgressStyle`. The two used here are the last and the second.
+ *
+ * What reaches the always-on display is narrower still: SystemUI does not draw your
+ * notification there at all, it re-inflates the platform template into a monochrome
+ * white-on-black skeleton with every span stripped, every colour discarded, actions
+ * dropped and a colour large icon dropped entirely. So the score lives in the *title*,
+ * which is the largest thing on that surface, and `BigTextStyle` is the only style whose
+ * long text survives to it. The two renderings below follow from exactly that.
  */
 @Singleton
 class MatchNotificationBuilder @Inject constructor(
@@ -47,13 +66,13 @@ class MatchNotificationBuilder @Inject constructor(
 ) {
     /** Which of the three faces a given post used, so callers can report it honestly. */
     enum class Rendering {
-        /** ProgressStyle + promoted ongoing. Reaches the chip, lock screen and AOD. */
-        PROMOTED,
+        /** ProgressStyle: the match clock as a bar. Promoted where the device allows it. */
+        CLOCK,
 
-        /** Custom scoreboard RemoteViews. Shade and lock screen only, never AOD. */
-        RICH,
+        /** BigTextStyle: a running commentary. The only text that reaches the AOD. */
+        COMMENTARY,
 
-        /** System template. The fallback that always works. */
+        /** System template, nothing requested. The fallback that always works. */
         PLAIN,
     }
 
@@ -70,8 +89,8 @@ class MatchNotificationBuilder @Inject constructor(
         val builder = baseBuilder(activity)
 
         when (rendering) {
-            Rendering.PROMOTED -> applyPromoted(builder, activity, crests)
-            Rendering.RICH -> applyRich(builder, activity, requireNotNull(crests))
+            Rendering.CLOCK -> applyClock(builder, activity, crests)
+            Rendering.COMMENTARY -> applyCommentary(builder, activity, crests)
             Rendering.PLAIN -> applyPlain(builder, activity)
         }
         return Result(builder.build(), rendering)
@@ -117,13 +136,14 @@ class MatchNotificationBuilder @Inject constructor(
 
     private fun chooseRendering(style: LiveCardStyle, crests: Crests?): Rendering = when (style) {
         LiveCardStyle.PLAIN -> Rendering.PLAIN
-        LiveCardStyle.RICH -> if (crests != null) Rendering.RICH else Rendering.PLAIN
+        // BigTextStyle needs nothing from the platform and renders on every version; the
+        // crests only decorate it, so this one never has to fall back.
+        LiveCardStyle.RICH -> Rendering.COMMENTARY
         LiveCardStyle.AUTO -> when {
             // Promotion is what buys the chip, the lock screen and the AOD, so it wins
             // whenever the device and the user allow it.
-            capability.supportsProgressStyle && capability.canPostPromoted() -> Rendering.PROMOTED
-            crests != null -> Rendering.RICH
-            else -> Rendering.PLAIN
+            capability.supportsProgressStyle && capability.canPostPromoted() -> Rendering.CLOCK
+            else -> Rendering.COMMENTARY
         }
     }
 
@@ -229,7 +249,7 @@ class MatchNotificationBuilder @Inject constructor(
      * every goal at the minute it went in, coloured by the side that scored, and the
      * ball tracker sitting on the current minute. Start and end icons are the crests.
      */
-    private fun applyPromoted(
+    private fun applyClock(
         builder: NotificationCompat.Builder,
         activity: LiveActivity.MatchActivity,
         crests: Crests?,
@@ -300,132 +320,140 @@ class MatchNotificationBuilder @Inject constructor(
         else -> HOME_GOAL_COLOR
     }
 
-    // ---- rich (custom scoreboard) -------------------------------------------
+    // ---- commentary (BigTextStyle) ------------------------------------------
 
-    private fun applyRich(
+    /**
+     * A running teleprinter of the match, and the closest a promoted notification gets to
+     * an iOS Live Activity.
+     *
+     * `BigTextStyle` earns its place for one reason: it is the only promotable style whose
+     * long text is carried to the always-on display. Every other style hands the AOD a
+     * single `contentText` line. So the last few events go in `bigText`, the score goes in
+     * the title where the AOD draws it largest, and the crests ride along as a large icon
+     * for the surfaces that still have colour.
+     */
+    private fun applyCommentary(
         builder: NotificationCompat.Builder,
         activity: LiveActivity.MatchActivity,
-        crests: Crests,
+        crests: Crests?,
     ) {
-        builder.setStyle(NotificationCompat.DecoratedCustomViewStyle())
-            .setCustomContentView(collapsedViews(activity, crests))
-            .setCustomBigContentView(expandedViews(activity, crests))
-            .setCustomHeadsUpContentView(collapsedViews(activity, crests))
-    }
+        val match = activity.match
+        builder.setStyle(
+            NotificationCompat.BigTextStyle()
+                .bigText(commentaryText(activity))
+                .setBigContentTitle(contentTitle(activity))
+                .setSummaryText(headline(activity)),
+        )
+            .setSubText(subText(activity))
+            .setShortCriticalText(shortCriticalText(activity))
 
-    private fun collapsedViews(
-        activity: LiveActivity.MatchActivity,
-        crests: Crests,
-    ): RemoteViews {
-        val m = activity.match
-        return RemoteViews(context.packageName, R.layout.notification_match_collapsed).apply {
-            setImageViewBitmap(R.id.crest_home, crests.home)
-            setImageViewBitmap(R.id.crest_away, crests.away)
-            setTextViewText(R.id.code_home, m.home.code)
-            setTextViewText(R.id.code_away, m.away.code)
-            setTextViewText(R.id.score, m.score?.let { "${it.home} - ${it.away}" } ?: "vs")
-            setTextViewText(R.id.clock, collapsedClock(activity))
+        // Full colour here on purpose. The shade and the lock screen show it; the AOD
+        // drops any non-grayscale large icon, and on that surface the title and the
+        // commentary are doing the work anyway.
+        crests?.let { builder.setLargeIcon(crestPair(it)) }
+
+        if (capability.canPostPromoted()) builder.setRequestPromotedOngoing(true)
+
+        if (activity.stage == LiveActivity.MatchActivity.Stage.PRE_MATCH) {
+            builder.setWhen(match.kickoffAt.toEpochMilli())
+                .setShowWhen(true)
+                .setUsesChronometer(true)
+                .setChronometerCountDown(true)
         }
     }
 
-    private fun collapsedClock(activity: LiveActivity.MatchActivity): String = when (activity.stage) {
-        LiveActivity.MatchActivity.Stage.PRE_MATCH ->
-            TIME_FORMAT.format(activity.match.kickoffAt.atZone(ZoneId.systemDefault()))
-        LiveActivity.MatchActivity.Stage.LIVE -> activity.match.clockLabel
-        LiveActivity.MatchActivity.Stage.FULL_TIME -> "FT"
+    /** "Premier League - 78'", the header line above the title. */
+    private fun subText(activity: LiveActivity.MatchActivity): String {
+        val league = activity.match.leagueName.takeIf { it.isNotBlank() }
+        val clock = when (activity.stage) {
+            LiveActivity.MatchActivity.Stage.PRE_MATCH -> null
+            LiveActivity.MatchActivity.Stage.LIVE -> activity.match.clockLabel
+            LiveActivity.MatchActivity.Stage.FULL_TIME -> "Full time"
+        }
+        return listOfNotNull(league, clock).joinToString(" \u00b7 ")
     }
 
-    private fun expandedViews(
-        activity: LiveActivity.MatchActivity,
-        crests: Crests,
-    ): RemoteViews {
-        val m = activity.match
-        return RemoteViews(context.packageName, R.layout.notification_match_expanded).apply {
-            crests.league?.let { setImageViewBitmap(R.id.league_logo, it) }
-                ?: setViewVisibility(R.id.league_logo, View.GONE)
-            setTextViewText(
-                R.id.league_name,
-                listOfNotNull(m.leagueName.takeIf { it.isNotBlank() }, m.round)
-                    .joinToString(" · "),
-            )
+    private fun headline(activity: LiveActivity.MatchActivity): String =
+        activity.latestEvent?.headline() ?: contentText(activity)
 
-            setImageViewBitmap(R.id.crest_home, crests.home)
-            setImageViewBitmap(R.id.crest_away, crests.away)
-            setTextViewText(R.id.name_home, m.home.name)
-            setTextViewText(R.id.name_away, m.away.name)
-            setTextViewText(R.id.score_home, m.score?.home?.toString() ?: "–")
-            setTextViewText(R.id.score_away, m.score?.away?.toString() ?: "–")
-
-            setTextViewText(R.id.clock, collapsedClock(activity))
-            setProgressBar(
-                R.id.match_progress,
-                Match.REGULATION_MINUTES,
-                m.progressMinutes,
-                false,
-            )
-
-            if (activity.stage == LiveActivity.MatchActivity.Stage.LIVE) {
-                setViewVisibility(R.id.live_pill, View.VISIBLE)
-                setTextViewText(R.id.live_pill, "LIVE")
-            } else {
-                setViewVisibility(R.id.live_pill, View.GONE)
+    /**
+     * Newest first, because the AOD card is height-capped and the top of the block is the
+     * part that always survives. Before kick-off there is no commentary to give, so the
+     * formations stand in for it.
+     */
+    private fun commentaryText(activity: LiveActivity.MatchActivity): CharSequence {
+        if (activity.stage == LiveActivity.MatchActivity.Stage.PRE_MATCH) {
+            val lineups = activity.lineups
+            val home = lineups?.home
+            val away = lineups?.away
+            if (home != null && away != null) {
+                return buildString {
+                    append(countdownText(activity.match.kickoffAt))
+                    home.formation?.let { append("\n\n${home.teamName}  $it") }
+                    away.formation?.let { append("\n${away.teamName}  $it") }
+                }
             }
-
-            applyEventStrip(this, activity)
-            applyLineups(this, activity)
-            applyStats(this, activity)
+            return countdownText(activity.match.kickoffAt)
         }
+
+        val lines = activity.recentEvents
+            .asSequence()
+            .sortedByDescending { it.minute ?: 0 }
+            .take(COMMENTARY_LINES)
+            .map { event ->
+                val minute = event.minuteLabel.padEnd(4)
+                "$minute ${eventGlyph(event)} ${event.headline()}"
+            }
+            .toList()
+
+        if (lines.isEmpty()) return contentText(activity)
+        return lines.joinToString("\n")
     }
 
-    private fun applyEventStrip(views: RemoteViews, activity: LiveActivity.MatchActivity) {
-        val event = activity.latestEvent
-        if (event != null && activity.stage != LiveActivity.MatchActivity.Stage.PRE_MATCH) {
-            views.setViewVisibility(R.id.event_strip, View.VISIBLE)
-            views.setTextViewText(R.id.event_minute, event.minuteLabel)
-            views.setTextViewText(R.id.event_text, event.headline())
-        } else if (activity.stage == LiveActivity.MatchActivity.Stage.PRE_MATCH) {
-            views.setViewVisibility(R.id.event_strip, View.VISIBLE)
-            views.setTextViewText(R.id.event_minute, "")
-            views.setTextViewText(R.id.event_text, contentText(activity))
-        } else {
-            views.setViewVisibility(R.id.event_strip, View.GONE)
-        }
+    /**
+     * A single character, not an emoji font: the AOD strips styling but keeps codepoints,
+     * and these read at any size where a coloured icon would have been discarded.
+     */
+    private fun eventGlyph(event: MatchEvent): String = when {
+        event.type.isGoal -> "\u26bd"
+        event.type == MatchEventType.RED_CARD -> "\ud83d\udfe5"
+        event.type == MatchEventType.YELLOW_CARD -> "\ud83d\udfe8"
+        event.type == MatchEventType.SUBSTITUTION -> "\u21c4"
+        else -> "\u2022"
     }
 
-    private fun applyLineups(views: RemoteViews, activity: LiveActivity.MatchActivity) {
-        val lineups = activity.lineups
-        val home = lineups?.home
-        val away = lineups?.away
-        if (activity.stage != LiveActivity.MatchActivity.Stage.PRE_MATCH ||
-            home == null || away == null
-        ) {
-            views.setViewVisibility(R.id.lineup_block, View.GONE)
-            return
-        }
-        views.setViewVisibility(R.id.lineup_block, View.VISIBLE)
-        views.setTextViewText(R.id.lineup_home_formation, home.formation.orEmpty())
-        views.setTextViewText(R.id.lineup_away_formation, away.formation.orEmpty())
-        views.setTextViewText(R.id.lineup_home_players, compactXi(home))
-        views.setTextViewText(R.id.lineup_away_players, compactXi(away))
+    /**
+     * Both crests on one 16:9 bitmap.
+     *
+     * 16:9 because that is the widest aspect the system will not crop: a large icon is
+     * capped at 48dp tall, and the AOD widens it to at most 48dp x 16/9 before clamping.
+     * Anything bigger is silently downscaled, so it is generated at exactly that size.
+     */
+    private fun crestPair(crests: Crests): Bitmap {
+        val density = context.resources.displayMetrics.density
+        val height = (LARGE_ICON_DP * density).toInt().coerceAtLeast(1)
+        val width = (height * 16f / 9f).toInt().coerceAtLeast(height)
+        val crestSize = (height * 0.82f).toInt().coerceAtLeast(1)
+        val top = (height - crestSize) / 2f
+
+        val output = createBitmap(width, height)
+        val canvas = Canvas(output)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
+
+        canvas.drawBitmap(
+            crests.home.scale(crestSize, crestSize),
+            0f,
+            top,
+            paint,
+        )
+        canvas.drawBitmap(
+            crests.away.scale(crestSize, crestSize),
+            (width - crestSize).toFloat(),
+            top,
+            paint,
+        )
+        return output
     }
-
-    /** Surnames only - a full XI has to fit four short lines. */
-    private fun compactXi(lineup: TeamLineup): String =
-        lineup.startingXi.joinToString(" · ") { it.surname }
-
-    private fun applyStats(views: RemoteViews, activity: LiveActivity.MatchActivity) {
-        val possession = activity.statistics?.pair(MatchStatistics.POSSESSION)
-        if (activity.stage != LiveActivity.MatchActivity.Stage.PRE_MATCH && possession != null) {
-            views.setViewVisibility(R.id.stats_block, View.VISIBLE)
-            views.setTextViewText(R.id.stat_home, possession.first)
-            views.setTextViewText(R.id.stat_label, "possession")
-            views.setTextViewText(R.id.stat_away, possession.second)
-        } else {
-            views.setViewVisibility(R.id.stats_block, View.GONE)
-        }
-    }
-
-    // ---- plain ---------------------------------------------------------------
 
     private fun applyPlain(
         builder: NotificationCompat.Builder,
@@ -482,6 +510,8 @@ class MatchNotificationBuilder @Inject constructor(
     private fun color(resId: Int) = ContextCompat.getColor(context, resId)
 
     private companion object {
+        const val COMMENTARY_LINES = 5
+        const val LARGE_ICON_DP = 48
         const val SEGMENT_FIRST_HALF = 1
         const val SEGMENT_SECOND_HALF = 2
         const val HOME_GOAL_COLOR = 0xFF00C853.toInt()

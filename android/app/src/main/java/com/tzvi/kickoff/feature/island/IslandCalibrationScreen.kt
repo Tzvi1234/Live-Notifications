@@ -3,6 +3,7 @@ package com.tzvi.kickoff.feature.island
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,12 +17,21 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.CenterFocusStrong
+import androidx.compose.material.icons.outlined.Remove
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,16 +52,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tzvi.kickoff.core.model.IslandCutout
@@ -69,8 +77,9 @@ import kotlin.math.roundToInt
  *
  * Everything is drawn against near-black so the panel edge disappears and the only two
  * things left to compare are the ring and the real camera. Detection fills the numbers in
- * where Android reports a cutout at all; the sliders are what actually settle it, because
- * the reported rectangle is the region the system reserves rather than the lens.
+ * where Android reports a cutout at all; the arrows are what actually settle it, because
+ * the reported rectangle is the region the system reserves rather than the lens, and on
+ * most phones it is a few dp too generous.
  */
 @Composable
 fun IslandCalibrationScreen(
@@ -160,7 +169,7 @@ private fun IslandCalibrationContent(
             onClick = onBack,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(top = 120.dp, start = 8.dp),
+                .padding(top = 130.dp, start = 8.dp),
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -176,7 +185,7 @@ private fun IslandCalibrationContent(
                 .navigationBarsPadding()
                 .padding(16.dp)
                 // Capped so the panel can never grow over the ring it is there to place.
-                .heightIn(max = 440.dp)
+                .heightIn(max = 470.dp)
                 .clip(KickoffShapes.large)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .verticalScroll(rememberScrollState())
@@ -192,7 +201,7 @@ private fun IslandCalibrationContent(
             Text(
                 text = "Move the ring until it sits exactly around the camera hole in your " +
                     "screen. The island then puts the score on one side of it and the clock " +
-                    "on the other, instead of floating underneath.",
+                    "on the other, instead of floating over it.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -220,7 +229,11 @@ private fun IslandCalibrationContent(
                 onClick = {
                     val detected = IslandCutoutDetector.detect(view)
                     detectionFailed = detected == null
-                    if (detected != null) onChange(detected)
+                    // Detection knows nothing about how round your screen corners are, so
+                    // whatever radius was already set survives it.
+                    if (detected != null) {
+                        onChange(detected.copy(cornerRadiusDp = cutout.cornerRadiusDp))
+                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -229,32 +242,24 @@ private fun IslandCalibrationContent(
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                 )
-                Spacer(Modifier.size(8.dp))
+                Spacer(Modifier.width(8.dp))
                 Text("Detect automatically")
             }
             if (detectionFailed) {
                 Text(
-                    text = "Android reports no cutout on this display, so the sliders are " +
+                    text = "Android reports no cutout on this display, so the arrows are " +
                         "the only way. Set it by eye - it does not have to be perfect.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            CalibrationSlider(
-                label = "Sideways",
-                value = cutout.centerXFraction,
-                valueRange = 0f..1f,
-                readout = "${(cutout.centerXFraction * 100).roundToInt()}%",
-                onChange = { onChange(cutout.copy(centerXFraction = it)) },
+            NudgePad(
+                cutout = cutout,
+                screenWidthDp = screenWidth.value,
+                onChange = onChange,
             )
-            CalibrationSlider(
-                label = "Down from the top",
-                value = cutout.centerYDp.toFloat(),
-                valueRange = IslandCutout.MIN_CENTER_Y.toFloat()..IslandCutout.MAX_CENTER_Y.toFloat(),
-                readout = "${cutout.centerYDp} dp",
-                onChange = { onChange(cutout.copy(centerYDp = it.roundToInt())) },
-            )
+
             CalibrationSlider(
                 label = "Circle size",
                 value = cutout.diameterDp.toFloat(),
@@ -262,12 +267,25 @@ private fun IslandCalibrationContent(
                 readout = "${cutout.diameterDp} dp",
                 onChange = { onChange(cutout.copy(diameterDp = it.roundToInt())) },
             )
+            CalibrationSlider(
+                label = "Corner radius of the open card",
+                value = cutout.cornerRadiusDp.toFloat(),
+                valueRange = IslandCutout.MIN_CORNER.toFloat()..IslandCutout.MAX_CORNER.toFloat(),
+                readout = "${cutout.cornerRadiusDp} dp",
+                onChange = { onChange(cutout.copy(cornerRadiusDp = it.roundToInt())) },
+            )
+            Text(
+                text = "Match that last one to how round your own screen corners are - it " +
+                    "is what makes the open card look like part of the phone.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             TextButton(
                 onClick = { previewExpanded = !previewExpanded },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (previewExpanded) "Collapse the preview" else "Preview it open")
+                Text(if (previewExpanded) "Close the preview" else "Preview it open")
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -279,6 +297,94 @@ private fun IslandCalibrationContent(
                 }
             }
         }
+    }
+}
+
+/**
+ * Four arrows and a size pair.
+ *
+ * Sliders are hopeless for this: the whole travel is the width of the screen, so one pixel
+ * of thumb is several dp of circle and you can never quite land on the lens. An arrow is
+ * one dp, every time, and you can watch the ring creep onto the camera.
+ */
+@Composable
+private fun NudgePad(
+    cutout: IslandCutout,
+    screenWidthDp: Float,
+    onChange: (IslandCutout) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            NudgeButton(Icons.Filled.KeyboardArrowUp, "Move up") {
+                onChange(cutout.nudgedY(-1))
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NudgeButton(Icons.Filled.KeyboardArrowLeft, "Move left") {
+                    onChange(cutout.nudgedX(-1, screenWidthDp))
+                }
+                Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "${(cutout.centerXFraction * 100).roundToInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                NudgeButton(Icons.Filled.KeyboardArrowRight, "Move right") {
+                    onChange(cutout.nudgedX(1, screenWidthDp))
+                }
+            }
+            NudgeButton(Icons.Filled.KeyboardArrowDown, "Move down") {
+                onChange(cutout.nudgedY(1))
+            }
+        }
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = "Position",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "${cutout.centerYDp} dp down from the top edge",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NudgeButton(Icons.Outlined.Remove, "Smaller circle") {
+                    onChange(cutout.resized(-1))
+                }
+                NudgeButton(Icons.Outlined.Add, "Bigger circle") {
+                    onChange(cutout.resized(1))
+                }
+                Spacer(Modifier.width(2.dp))
+                Text(
+                    text = "size",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NudgeButton(icon: ImageVector, description: String, onClick: () -> Unit) {
+    FilledTonalIconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
+        Icon(imageVector = icon, contentDescription = description, modifier = Modifier.size(20.dp))
     }
 }
 

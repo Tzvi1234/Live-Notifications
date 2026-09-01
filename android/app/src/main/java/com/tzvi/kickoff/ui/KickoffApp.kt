@@ -28,28 +28,24 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.tzvi.kickoff.AppUiState
-import com.tzvi.kickoff.ui.island.COLLAPSED_HEIGHT
-import com.tzvi.kickoff.ui.island.DynamicIsland
 import com.tzvi.kickoff.ui.motion.Motion
 import com.tzvi.kickoff.ui.navigation.KickoffNavHost
 import com.tzvi.kickoff.ui.navigation.Routes
 import com.tzvi.kickoff.ui.navigation.TopLevelDestination
 
 /**
- * The app shell: navigation bar, nav graph, and the live island floating above both.
+ * The app shell: navigation bar and nav graph.
  *
- * The island deliberately sits outside the NavHost. It tracks the match, not the screen,
- * so it must survive navigation - if it lived inside a destination it would be torn down
- * and rebuilt on every transition, and the score would flicker.
+ * The live island is deliberately NOT here. It is a system overlay that exists to put the
+ * score in front of you while you are somewhere else, so drawing it over Kickoff's own
+ * screens only ever put a second copy of the scoreline on top of the toolbar. See
+ * IslandOverlayService, which hides itself whenever this app is in the foreground.
  */
 @Composable
 fun KickoffApp(
@@ -61,8 +57,6 @@ fun KickoffApp(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    var islandExpanded by rememberSaveable { mutableStateOf(false) }
-    var islandDismissed by remember { mutableStateOf(false) }
 
     // "kickoff://match/12345" from a notification or the overlay island.
     LaunchedEffect(deepLink) {
@@ -130,47 +124,9 @@ fun KickoffApp(
             )
         }
 
-        val islandActivity = state.liveActivity?.takeUnless { islandDismissed }
-        val cutout = state.islandCutout
-        // Calibrated, the island places itself against the display's own top edge, so it
-        // takes the full width and no status-bar inset; uncalibrated it floats as before.
-        val islandModifier = if (cutout.enabled) {
-            Modifier.align(Alignment.TopStart).fillMaxWidth()
-        } else {
-            Modifier
-                .align(Alignment.TopCenter)
-                .padding(WindowInsets.statusBars.asPaddingValues())
-                .padding(horizontal = 12.dp, vertical = 4.dp)
-        }
-        DynamicIsland(
-            activity = islandActivity,
-            expanded = islandExpanded,
-            cutout = cutout,
-            cameraCenterX = windowWidth() * cutout.centerXFraction,
-            pillTop = (cutout.centerYDp.dp - COLLAPSED_HEIGHT / 2).coerceAtLeast(0.dp),
-            onToggle = { islandExpanded = !islandExpanded },
-            onOpenMatch = { matchId ->
-                islandExpanded = false
-                navController.navigate(Routes.matchDetail(matchId))
-            },
-            onDismiss = {
-                islandExpanded = false
-                islandDismissed = true
-            },
-            modifier = islandModifier,
-        )
+        // No island inside Kickoff. It exists to put the score somewhere you are NOT
+        // looking - over the launcher, over another app - and over its own match screens
+        // it was just a second copy of the same numbers sitting on the toolbar.
+        // IslandOverlayService draws it, and hides itself while this app is in front.
     }
-}
-
-/**
- * The width of the window the island is drawn in.
- *
- * `Configuration.screenWidthDp` is the display's, which is a different number in split
- * screen and in a freeform window - and the camera's position has to be expressed in the
- * coordinates the island actually lays out in.
- */
-@Composable
-private fun windowWidth(): Dp {
-    val width = LocalWindowInfo.current.containerSize.width
-    return with(LocalDensity.current) { width.toDp() }
 }

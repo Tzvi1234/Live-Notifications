@@ -1,8 +1,11 @@
 package com.tzvi.kickoff.data.repository
 
 import com.tzvi.kickoff.core.model.League
+import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
+import com.tzvi.kickoff.core.model.PlayerCard
+import com.tzvi.kickoff.core.model.PlayerMatchStats
 import com.tzvi.kickoff.core.model.MatchPhase
 import com.tzvi.kickoff.core.model.Team
 import com.tzvi.kickoff.data.demo.DemoFootballDataSource
@@ -13,6 +16,7 @@ import com.tzvi.kickoff.data.local.dao.MatchEventDao
 import com.tzvi.kickoff.data.local.toDomain
 import com.tzvi.kickoff.data.local.toEntity
 import com.tzvi.kickoff.data.local.toFavouriteEntity
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -20,6 +24,7 @@ import kotlinx.coroutines.flow.map
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.util.concurrent.ConcurrentHashMap
 import java.time.ZoneId
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -56,8 +61,27 @@ class FootballRepository @Inject constructor(
         }.map { rows -> rows.map { it.toDomain() } }
     }
 
+    /**
+     * Live matches, the ones you follow first.
+     *
+     * Anything that shows a single live match - the island above all - takes the head of
+     * this list, so the ordering is the answer to "which match, when several are on":
+     * a followed team wins, and between two followed teams (or none) the one that kicked
+     * off first does, because that is the one already in progress.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
     val liveMatches: Flow<List<Match>> =
-        matchDao.observeLive(LIVE_PHASES).map { rows -> rows.map { it.toDomain() } }
+        favouriteTeamIds.flatMapLatest { favouriteIds ->
+            val followed = favouriteIds.toSet()
+            matchDao.observeLive(LIVE_PHASES).map { rows ->
+                rows.map { it.toDomain() }
+                    .sortedWith(
+                        compareByDescending<Match> {
+                            it.home.id in followed || it.away.id in followed
+                        }.thenBy { it.kickoffAt },
+                    )
+            }
+        }
 
     fun observeMatch(matchId: Long): Flow<Match?> =
         matchDao.observe(matchId).map { it?.toDomain() }
@@ -84,6 +108,52 @@ class FootballRepository @Inject constructor(
         source().teams(leagueId, season, null)
 
     suspend fun searchTeams(query: String): List<Team> = source().teams(null, null, query)
+
+    // ---- players -------------------------------------------------------------
+
+    /**
+     * One fetch per match, then answered from memory.
+     *
+     * The provider returns every player's line for a fixture in a single request, so the
+     * first tap on any shirt pays for the whole squad and the next ten taps are free -
+     * which matters on a key with 100 requests a day. The profile is a separate, optional
+     * request and its absence never empties the sheet.
+     */
+    private val playersByMatch = ConcurrentHashMap<Long, Map<Int, PlayerMatchStats>>()
+
+    suspend fun playerCard(
+        playerId: Int,
+        matchId: Long?,
+        name: String,
+        photoUrl: String?,
+        teamName: String?,
+    ): PlayerCard {
+        val src = source()
+        val matchLine = matchId?.let { id ->
+            playersByMatch[id] ?: runCatching { src.playersInMatch(id) }
+                .getOrDefault(emptyMap())
+                .also { if (it.isNotEmpty()) playersByMatch[id] = it }
+        }?.get(playerId)
+
+        val profile = runCatching { src.playerProfile(playerId) }.getOrNull()
+
+        return PlayerCard(
+            id = playerId,
+            name = name,
+            photoUrl = photoUrl,
+            teamName = teamName,
+            profile = profile,
+            match = matchLine,
+        )
+    }
+
+    suspend fun squad(teamId: Int): List<LineupPlayer> =
+        runCatching { source().squad(teamId) }.getOrDefault(emptyList())
+
+    /** A live match's numbers move; a reopened sheet should not show the 60th minute at 85. */
+    fun invalidatePlayers(matchId: Long) {
+        playersByMatch.remove(matchId)
+    }
 
     // ---- favourites ----------------------------------------------------------
 

@@ -28,6 +28,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +41,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.tzvi.kickoff.core.model.LineupPlayer
+import com.tzvi.kickoff.feature.player.PlayerRequest
+import com.tzvi.kickoff.feature.player.PlayerSheet
+import com.tzvi.kickoff.ui.component.CrestImage
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.ui.component.EmptyState
 import com.tzvi.kickoff.ui.component.MetaChip
@@ -69,6 +76,10 @@ internal fun TeamSheet(
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
 
+    // Sheet over sheet is deliberate: dismissing the player drops you back onto the squad
+    // you were browsing, which is exactly where the next tap is going.
+    var playerRequest by remember { mutableStateOf<PlayerRequest?>(null) }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -84,7 +95,22 @@ internal fun TeamSheet(
                     onOpenMatch(matchId)
                 }
             },
+            onPlayerTap = { player ->
+                player.id?.let { id ->
+                    playerRequest = PlayerRequest(
+                        playerId = id,
+                        name = player.name,
+                        photoUrl = player.photoUrl,
+                        teamName = state.team.name,
+                        matchId = null,
+                    )
+                }
+            },
         )
+    }
+
+    playerRequest?.let { request ->
+        PlayerSheet(request = request, onDismiss = { playerRequest = null })
     }
 }
 
@@ -94,6 +120,7 @@ internal fun TeamSheetBody(
     onToggleFavourite: () -> Unit,
     onOpenMatch: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    onPlayerTap: (LineupPlayer) -> Unit = {},
 ) {
     val team = state.team
 
@@ -143,6 +170,13 @@ internal fun TeamSheetBody(
 
         Spacer(Modifier.height(18.dp))
         FavouriteButton(isFavourite = state.isFavourite, onClick = onToggleFavourite)
+
+        if (state.squad.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            SectionHeader(title = "Squad")
+            SquadGrid(players = state.squad, onPlayerTap = onPlayerTap)
+            Spacer(Modifier.height(10.dp))
+        }
 
         Spacer(Modifier.height(6.dp))
         SectionHeader(title = "Next fixtures")
@@ -348,6 +382,59 @@ private fun TeamSheetFollowedPreview() {
             onToggleFavourite = {},
             onOpenMatch = {},
         )
+    }
+}
+
+/**
+ * The roster as faces.
+ *
+ * A FlowRow rather than a lazy grid: the sheet already scrolls, and a nested lazy
+ * container inside a scrollable column is the classic infinite-height crash.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun SquadGrid(
+    players: List<LineupPlayer>,
+    onPlayerTap: (LineupPlayer) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    androidx.compose.foundation.layout.FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        players.forEach { player ->
+            SquadFace(player = player, onTap = { onPlayerTap(player) })
+        }
+    }
+}
+
+@Composable
+private fun SquadFace(player: LineupPlayer, onTap: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .width(64.dp)
+            .clip(KickoffShapes.small)
+            .clickable(onClick = onTap)
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CrestImage(url = player.photoUrl, fallback = player.surname, size = 44.dp)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = player.surname,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        player.number?.let {
+            Text(
+                text = "#$it",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

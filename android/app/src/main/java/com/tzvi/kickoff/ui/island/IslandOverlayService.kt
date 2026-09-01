@@ -71,6 +71,26 @@ class IslandOverlayService :
     private var overlayView: ComposeView? = null
     private var cutout: IslandCutout = IslandCutout.Unset
 
+    /**
+     * True while Kickoff itself is on screen.
+     *
+     * The island exists to put the score where you are not looking. Floating it over the
+     * app's own match screens just stacks a second copy of the scoreline on the toolbar,
+     * so the window comes down for as long as the app is in front and goes straight back
+     * up when it leaves.
+     */
+    private var appInForeground = false
+
+    /**
+     * True only after a real show() start. The foreground/background signals reach this
+     * service by startService, which CREATES it if nothing was running - and a service
+     * created by its own bookkeeping signal must not conjure an island the user never
+     * turned on.
+     */
+    private var active = false
+
+    private val expandedState = mutableStateOf(false)
+
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val viewModelStore: ViewModelStore get() = store
     override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
@@ -94,14 +114,37 @@ class IslandOverlayService :
                 stopSelf()
                 return START_NOT_STICKY
             }
+            ACTION_APP_FOREGROUND -> {
+                appInForeground = true
+                if (!active) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                removeOverlay()
+            }
+
+            ACTION_APP_BACKGROUND -> {
+                appInForeground = false
+                if (!active) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                lifecycleScope.launch { start() }
+            }
+
             // The calibration decides the window's own geometry, so it has to be read
             // before the window is added rather than observed from inside the content.
-            else -> lifecycleScope.launch {
-                cutout = settings.islandCutout.first()
-                showOverlay()
+            else -> {
+                active = true
+                lifecycleScope.launch { start() }
             }
         }
         return START_STICKY
+    }
+
+    private suspend fun start() {
+        cutout = settings.islandCutout.first()
+        if (!appInForeground) showOverlay()
     }
 
     private fun showOverlay() {
@@ -115,9 +158,9 @@ class IslandOverlayService :
             setViewTreeViewModelStoreOwner(this@IslandOverlayService)
             setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
             setContent {
-                var expanded by androidx.compose.runtime.remember {
-                    androidx.compose.runtime.mutableStateOf(false)
-                }
+                // Held by the service, not by the composition: the window's own size and
+                // position change with it, so the two must never be able to disagree.
+                var expanded by expandedState
                 var activity by androidx.compose.runtime.remember {
                     mutableStateOf<LiveActivity.MatchActivity?>(null)
                 }
@@ -177,6 +220,27 @@ class IslandOverlayService :
         runCatching { manager.addView(view, layoutParams(expanded = false)) }
             .onSuccess { overlayView = view }
             .onFailure { stopSelf() }
+
+        // Nobody has calibrated yet: take Android's own word for where the hole is rather
+        // than floating the pill over it. This is a guess, and Settings says so - but a
+        // guess placed on the camera beats a pill parked on top of it.
+        if (!cutout.enabled) {
+            view.post {
+                val detected = IslandCutoutDetector.detect(view) ?: return@post
+                cutout = detected
+                runCatching {
+                    windowManager?.updateViewLayout(view, layoutParams(expandedState.value))
+                }
+            }
+        }
+    }
+
+    private fun removeOverlay() {
+        val view = overlayView ?: return
+        runCatching { windowManager?.removeView(view) }
+        view.setViewTreeLifecycleOwner(null)
+        overlayView = null
+        expandedState.value = false
     }
 
     private fun updateTouchability(expanded: Boolean) {
@@ -257,6 +321,8 @@ class IslandOverlayService :
 
     companion object {
         private const val ACTION_HIDE = "com.tzvi.kickoff.action.HIDE_ISLAND"
+        private const val ACTION_APP_FOREGROUND = "com.tzvi.kickoff.action.APP_FOREGROUND"
+        private const val ACTION_APP_BACKGROUND = "com.tzvi.kickoff.action.APP_BACKGROUND"
         private const val OVERLAY_TOP_MARGIN_PX = 24
         private const val SIDE_WIDTH_DP = 92
         private const val COLLAPSED_HEIGHT_DP = 44
@@ -279,6 +345,25 @@ class IslandOverlayService :
             context.startService(
                 Intent(context, IslandOverlayService::class.java).setAction(ACTION_HIDE),
             )
+        }
+
+        /**
+         * Called from MainActivity's onStart/onStop.
+         *
+         * Deliberately fire-and-forget: if the service is not running these do nothing,
+         * which is exactly right - there is no island to take down.
+         */
+        fun appForeground(context: Context) = signal(context, ACTION_APP_FOREGROUND)
+
+        fun appBackground(context: Context) = signal(context, ACTION_APP_BACKGROUND)
+
+        private fun signal(context: Context, action: String) {
+            if (!canDrawOverlay(context)) return
+            runCatching {
+                context.startService(
+                    Intent(context, IslandOverlayService::class.java).setAction(action),
+                )
+            }
         }
     }
 }

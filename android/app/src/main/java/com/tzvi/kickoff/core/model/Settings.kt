@@ -3,15 +3,17 @@ package com.tzvi.kickoff.core.model
 /** How the live match card should be rendered, when the device gives us a choice. */
 enum class LiveCardStyle {
     /**
-     * Prefer a promoted Live Update (status-bar chip, top of the shade, lock screen,
-     * and on devices that support it the always-on display). Falls back to [RICH]
-     * automatically wherever promotion is unavailable.
+     * The match clock as a real progress bar - two halves as segments, a point at every
+     * goal, the ball riding the current minute. Falls back to [RICH] on devices too old
+     * for ProgressStyle, which is a fallback in name only: both are promoted.
      */
     AUTO,
 
     /**
-     * Always use the custom scoreboard layout. Richer looking, but a custom RemoteViews
-     * is a hard disqualifier for promotion, so this trades the chip and AOD away.
+     * A running commentary instead of a bar. The stored name is historical - this used to
+     * be a hand-drawn scoreboard, which could never be promoted and so could never reach
+     * the lock screen or the always-on display. It is now BigTextStyle, whose long text is
+     * the only kind Android carries onto an always-on display in full.
      */
     RICH,
 

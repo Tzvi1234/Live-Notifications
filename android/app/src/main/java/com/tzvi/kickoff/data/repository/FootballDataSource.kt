@@ -1,10 +1,13 @@
 package com.tzvi.kickoff.data.repository
 
 import com.tzvi.kickoff.core.model.League
+import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
 import com.tzvi.kickoff.core.model.MatchLineups
 import com.tzvi.kickoff.core.model.MatchStatistics
+import com.tzvi.kickoff.core.model.PlayerMatchStats
+import com.tzvi.kickoff.core.model.PlayerProfile
 import com.tzvi.kickoff.core.model.Team
 import java.time.LocalDate
 
@@ -18,6 +21,25 @@ interface FootballDataSource {
     suspend fun fixturesForTeams(teamIds: List<Int>, from: LocalDate, to: LocalDate): List<Match>
     suspend fun liveFixtures(teamIds: List<Int>): List<Match>
     suspend fun matchDetail(matchId: Long): MatchDetail
+
+    /**
+     * Every player's line for one fixture, keyed by player id.
+     *
+     * Deliberately whole-match rather than per-player: the provider returns all ~36
+     * players in a single request, so fetching one player would cost exactly as much as
+     * fetching the lot. A source with nothing to say returns an empty map rather than
+     * throwing - the sheet degrades to the profile alone.
+     */
+    suspend fun playersInMatch(matchId: Long): Map<Int, PlayerMatchStats> = emptyMap()
+
+    /** Birth, nationality and physicals. Null when the source cannot supply them. */
+    suspend fun playerProfile(playerId: Int): PlayerProfile? = null
+
+    /**
+     * The club's current roster. [LineupPlayer] is reused because a squad member is the
+     * same five fields with the pitch coordinates left null. Empty = not supported here.
+     */
+    suspend fun squad(teamId: Int): List<LineupPlayer> = emptyList()
 }
 
 data class MatchDetail(

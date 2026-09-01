@@ -2,6 +2,7 @@ package com.tzvi.kickoff.feature.matchdetail
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +55,7 @@ internal fun MatchLineupsSection(
     lineups: MatchLineups?,
     match: Match,
     modifier: Modifier = Modifier,
+    onPlayerTap: (LineupPlayer, TeamLineup) -> Unit = { _, _ -> },
 ) {
     val home = lineups?.home
     val away = lineups?.away
@@ -62,11 +64,11 @@ internal fun MatchLineupsSection(
         return
     }
     Column(modifier.fillMaxWidth()) {
-        Pitch(home = home, away = away)
+        Pitch(home = home, away = away, onPlayerTap = onPlayerTap)
         Spacer(Modifier.height(20.dp))
-        TeamLineupDetail(home)
+        TeamLineupDetail(home, onPlayerTap = onPlayerTap)
         Spacer(Modifier.height(20.dp))
-        TeamLineupDetail(away)
+        TeamLineupDetail(away, onPlayerTap = onPlayerTap)
     }
 }
 
@@ -78,7 +80,12 @@ internal fun MatchLineupsSection(
  * both themes, so scheme colours would flip to dark-on-dark at night.
  */
 @Composable
-private fun Pitch(home: TeamLineup, away: TeamLineup, modifier: Modifier = Modifier) {
+private fun Pitch(
+    home: TeamLineup,
+    away: TeamLineup,
+    onPlayerTap: (LineupPlayer, TeamLineup) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val turf = KickoffTheme.accents.pitch
     val markings = KickoffTheme.accents.pitchLine
 
@@ -101,11 +108,13 @@ private fun Pitch(home: TeamLineup, away: TeamLineup, modifier: Modifier = Modif
             HalfPitch(
                 rows = away.rows.map { it.asReversed() },
                 isHome = false,
+                onTap = { onPlayerTap(it, away) },
                 modifier = Modifier.weight(1f),
             )
             HalfPitch(
                 rows = home.rows.asReversed(),
                 isHome = true,
+                onTap = { onPlayerTap(it, home) },
                 modifier = Modifier.weight(1f),
             )
         }
@@ -116,6 +125,7 @@ private fun Pitch(home: TeamLineup, away: TeamLineup, modifier: Modifier = Modif
 private fun HalfPitch(
     rows: List<List<LineupPlayer>>,
     isHome: Boolean,
+    onTap: (LineupPlayer) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -127,18 +137,21 @@ private fun HalfPitch(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                row.forEach { player -> PlayerDisc(player, isHome) }
+                row.forEach { player -> PlayerDisc(player, isHome, onTap = { onTap(player) }) }
             }
         }
     }
 }
 
 @Composable
-private fun PlayerDisc(player: LineupPlayer, isHome: Boolean) {
+private fun PlayerDisc(player: LineupPlayer, isHome: Boolean, onTap: () -> Unit) {
     val light = KickoffTheme.accents.onLive
     val turf = KickoffTheme.accents.pitch
     Column(
-        modifier = Modifier.width(DiscColumnWidth),
+        modifier = Modifier
+            .width(DiscColumnWidth)
+            .clip(KickoffShapes.small)
+            .clickable(onClick = onTap),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -149,11 +162,18 @@ private fun PlayerDisc(player: LineupPlayer, isHome: Boolean) {
                 .border(1.5.dp, light, KickoffShapeTokens.crest),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = player.number?.toString().orEmpty(),
-                style = KickoffTextStyles.shirtNumber,
-                color = if (isHome) turf else light,
-            )
+            // The face where the provider has one; the shirt number where it does not.
+            // CrestImage already falls back to text itself, but its initials fallback is
+            // meant for club names - a number reads better on a shirt.
+            if (player.photoUrl != null) {
+                CrestImage(url = player.photoUrl, fallback = player.surname, size = DiscSize)
+            } else {
+                Text(
+                    text = player.number?.toString().orEmpty(),
+                    style = KickoffTextStyles.shirtNumber,
+                    color = if (isHome) turf else light,
+                )
+            }
         }
         Spacer(Modifier.height(3.dp))
         Text(
@@ -215,7 +235,11 @@ private fun DrawScope.drawPitchMarkings(color: Color) {
 }
 
 @Composable
-private fun TeamLineupDetail(lineup: TeamLineup, modifier: Modifier = Modifier) {
+private fun TeamLineupDetail(
+    lineup: TeamLineup,
+    onPlayerTap: (LineupPlayer, TeamLineup) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -258,17 +282,20 @@ private fun TeamLineupDetail(lineup: TeamLineup, modifier: Modifier = Modifier) 
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                lineup.substitutes.forEach { SubstituteChip(it) }
+                lineup.substitutes.forEach { player ->
+                    SubstituteChip(player, onTap = { onPlayerTap(player, lineup) })
+                }
             }
         }
     }
 }
 
 @Composable
-private fun SubstituteChip(player: LineupPlayer) {
+private fun SubstituteChip(player: LineupPlayer, onTap: () -> Unit) {
     Surface(
         shape = KickoffShapeTokens.chip,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        onClick = onTap,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),

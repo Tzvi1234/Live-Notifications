@@ -52,7 +52,27 @@ class OnboardingViewModel @Inject constructor(
         }
     }
 
-    // ---- step 2: source -------------------------------------------------------
+    // ---- step 2: which source --------------------------------------------------
+
+    /**
+     * Records the pick, and for the demo acts on it immediately.
+     *
+     * Demo is the one choice with nothing left to fill in, so choosing it configures it;
+     * the setup page after it is then a confirmation rather than a form. The other two
+     * only record the intent - a key or a URL still has to be saved.
+     */
+    fun chooseSource(source: ConfiguredSource) {
+        mutableState.update { it.copy(chosenSource = source) }
+        if (source == ConfiguredSource.DEMO) {
+            useDemoData()
+        } else if (mutableState.value.demoEnabled) {
+            // Switching away from the demo has to actually switch away, or the demo keeps
+            // outranking the key you are about to paste and nothing appears to change.
+            stopUsingDemoData()
+        }
+    }
+
+    // ---- step 3: setting that source up ----------------------------------------
 
     fun onApiKeyChange(value: String) = mutableState.update { it.copy(apiKeyInput = value) }
 

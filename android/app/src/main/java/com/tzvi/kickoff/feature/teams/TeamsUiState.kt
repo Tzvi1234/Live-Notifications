@@ -1,6 +1,7 @@
 package com.tzvi.kickoff.feature.teams
 
 import com.tzvi.kickoff.core.model.League
+import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchPhase
 import com.tzvi.kickoff.core.model.Team
@@ -43,6 +44,7 @@ data class TeamSheetState(
     val isFavourite: Boolean = false,
     val fixtures: List<Match> = emptyList(),
     val fixturesLoading: Boolean = false,
+    val squad: List<LineupPlayer> = emptyList(),
 )
 
 data class TeamsUiState(

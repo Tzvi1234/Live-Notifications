@@ -2,6 +2,7 @@ package com.tzvi.kickoff.feature.teams
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.Team
 import com.tzvi.kickoff.data.repository.FootballRepository
@@ -71,13 +72,29 @@ class TeamsViewModel @Inject constructor(
             }
         }
 
+    /** Fetched once per opened sheet; a closed sheet fetches nothing. */
+    private val sheetSquad: Flow<List<LineupPlayer>> = local
+        .map { it.sheet?.team?.id }
+        .distinctUntilChanged()
+        .flatMapLatest { teamId ->
+            if (teamId == null) {
+                flowOf(emptyList())
+            } else {
+                flow { emit(footballRepository.squad(teamId)) }
+            }
+        }
+
+    // Six sources against combine's five typed slots: the two sheet-scoped flows travel
+    // as a pair rather than dropping the whole lambda to Array<Any>.
+    private val sheetExtras = combine(sheetFixtures, sheetSquad, ::Pair)
+
     val uiState: StateFlow<TeamsUiState> = combine(
         footballRepository.favouriteTeams,
         footballRepository.followedLeagues,
         local,
         search,
-        sheetFixtures,
-    ) { favourites, leagues, state, searchState, fixtures ->
+        sheetExtras,
+    ) { favourites, leagues, state, searchState, (fixtures, squad) ->
         val favouriteIds = favourites.mapTo(mutableSetOf()) { it.id }
         TeamsUiState(
             isLoading = false,
@@ -106,6 +123,7 @@ class TeamsViewModel @Inject constructor(
                     isFavourite = isFavourite,
                     fixtures = fixtures,
                     fixturesLoading = isFavourite && state.fixturesRefreshing,
+                    squad = squad,
                 )
             },
         )

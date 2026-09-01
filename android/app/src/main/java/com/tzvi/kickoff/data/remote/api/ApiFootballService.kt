@@ -2,9 +2,12 @@ package com.tzvi.kickoff.data.remote.api
 
 import com.tzvi.kickoff.data.remote.dto.ApiEnvelope
 import com.tzvi.kickoff.data.remote.dto.EventResponse
+import com.tzvi.kickoff.data.remote.dto.FixturePlayersResponse
 import com.tzvi.kickoff.data.remote.dto.FixtureResponse
 import com.tzvi.kickoff.data.remote.dto.LeagueCatalogueResponse
 import com.tzvi.kickoff.data.remote.dto.LineupResponse
+import com.tzvi.kickoff.data.remote.dto.PlayerProfileResponse
+import com.tzvi.kickoff.data.remote.dto.SquadResponse
 import com.tzvi.kickoff.data.remote.dto.StatisticsResponse
 import com.tzvi.kickoff.data.remote.dto.TeamCatalogueResponse
 import retrofit2.http.GET
@@ -68,6 +71,35 @@ interface ApiFootballService {
 
     @GET("fixtures/statistics")
     suspend fun statistics(@Query("fixture") fixtureId: Long): ApiEnvelope<StatisticsResponse>
+
+    /**
+     * Every player's line for one fixture, in one request.
+     *
+     * This is the whole player-detail feature on a 100-a-day key: photo, shirt number,
+     * position, rating and the full stat block for all ~36 players come back together, so
+     * tapping through from a line-up costs nothing beyond the fetch already made.
+     */
+    @GET("fixtures/players")
+    suspend fun fixturePlayers(
+        @Query("fixture") fixtureId: Long,
+        @Query("team") teamId: Int? = null,
+    ): ApiEnvelope<FixturePlayersResponse>
+
+    /**
+     * Identity only - birth, nationality, height, weight. No season parameter, unlike
+     * `/players`, which is why this is the one used for a profile header.
+     */
+    /**
+     * The current roster - the cheapest way to a full list of faces and shirt numbers,
+     * and worth exactly one request per team because it changes a few times a season.
+     */
+    @GET("players/squads")
+    suspend fun squad(@Query("team") teamId: Int): ApiEnvelope<SquadResponse>
+
+    @GET("players/profiles")
+    suspend fun playerProfile(
+        @Query("player") playerId: Int,
+    ): ApiEnvelope<PlayerProfileResponse>
 
     companion object {
         const val BASE_URL = "https://v3.football.api-sports.io/"

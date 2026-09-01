@@ -133,7 +133,12 @@ data class EventResponse(
 data class EventTimeDto(val elapsed: Int? = null, val extra: Int? = null)
 
 @Serializable
-data class PlayerRefDto(val id: Int? = null, val name: String? = null)
+data class PlayerRefDto(
+    val id: Int? = null,
+    val name: String? = null,
+    /** Only /fixtures/players sends this; event payloads carry no photo. */
+    val photo: String? = null,
+)
 
 // ---- lineups ----------------------------------------------------------------
 
@@ -230,4 +235,146 @@ data class SeasonDto(
     val start: String? = null,
     val end: String? = null,
     val current: Boolean = false,
+)
+
+// ---- players -------------------------------------------------------------------------
+
+@Serializable
+data class FixturePlayersResponse(
+    val team: TeamRefDto? = null,
+    val players: List<FixturePlayerDto> = emptyList(),
+)
+
+@Serializable
+data class FixturePlayerDto(
+    val player: PlayerRefDto? = null,
+    /** Exactly one element for a single fixture, but the provider still sends a list. */
+    val statistics: List<PlayerFixtureStatsDto> = emptyList(),
+)
+
+@Serializable
+data class PlayerFixtureStatsDto(
+    val games: PlayerGamesDto? = null,
+    val offsides: Int? = null,
+    val shots: PlayerShotsDto? = null,
+    val goals: PlayerGoalsDto? = null,
+    val passes: PlayerPassesDto? = null,
+    val tackles: PlayerTacklesDto? = null,
+    val duels: PlayerDuelsDto? = null,
+    val dribbles: PlayerDribblesDto? = null,
+    val fouls: PlayerFoulsDto? = null,
+    val cards: PlayerCardsDto? = null,
+    val penalty: PlayerPenaltyDto? = null,
+)
+
+@Serializable
+data class PlayerGamesDto(
+    val minutes: Int? = null,
+    val number: Int? = null,
+    val position: String? = null,
+    /** A string upstream ("6.3"), so it is kept as one rather than parsed and re-rendered. */
+    val rating: String? = null,
+    val captain: Boolean? = null,
+    val substitute: Boolean? = null,
+)
+
+@Serializable
+data class PlayerShotsDto(val total: Int? = null, val on: Int? = null)
+
+@Serializable
+data class PlayerGoalsDto(
+    val total: Int? = null,
+    val conceded: Int? = null,
+    val assists: Int? = null,
+    val saves: Int? = null,
+)
+
+/**
+ * `accuracy` is "68%" on this endpoint but a bare integer on the season-stats one, so it
+ * is typed as a string here and never shared with that parser.
+ */
+@Serializable
+data class PlayerPassesDto(
+    val total: Int? = null,
+    val key: Int? = null,
+    val accuracy: String? = null,
+)
+
+@Serializable
+data class PlayerTacklesDto(
+    val total: Int? = null,
+    val blocks: Int? = null,
+    val interceptions: Int? = null,
+)
+
+@Serializable
+data class PlayerDuelsDto(val total: Int? = null, val won: Int? = null)
+
+@Serializable
+data class PlayerDribblesDto(
+    val attempts: Int? = null,
+    val success: Int? = null,
+    /** How often the player was dribbled past, not how often they dribbled. */
+    val past: Int? = null,
+)
+
+@Serializable
+data class PlayerFoulsDto(val drawn: Int? = null, val committed: Int? = null)
+
+/** No `yellowred` key on this endpoint, unlike the season-statistics one. */
+@Serializable
+data class PlayerCardsDto(val yellow: Int? = null, val red: Int? = null)
+
+/** The provider's own misspelling of "committed" is load-bearing - do not correct it. */
+@Serializable
+data class PlayerPenaltyDto(
+    val won: Int? = null,
+    val commited: Int? = null,
+    val scored: Int? = null,
+    val missed: Int? = null,
+    val saved: Int? = null,
+)
+
+@Serializable
+data class PlayerProfileResponse(val player: PlayerProfileDto? = null)
+
+@Serializable
+data class PlayerProfileDto(
+    val id: Int? = null,
+    val name: String? = null,
+    val firstname: String? = null,
+    val lastname: String? = null,
+    val age: Int? = null,
+    val birth: PlayerBirthDto? = null,
+    val nationality: String? = null,
+    val height: String? = null,
+    val weight: String? = null,
+    val number: Int? = null,
+    val position: String? = null,
+    val photo: String? = null,
+)
+
+@Serializable
+data class PlayerBirthDto(
+    val date: String? = null,
+    val place: String? = null,
+    val country: String? = null,
+)
+
+@Serializable
+data class SquadResponse(
+    val team: TeamRefDto? = null,
+    /** Flat objects here, unlike lineups and fixture players - the provider's own shape. */
+    val players: List<SquadPlayerDto> = emptyList(),
+)
+
+@Serializable
+data class SquadPlayerDto(
+    val id: Int? = null,
+    val name: String? = null,
+    val age: Int? = null,
+    val number: Int? = null,
+    /** Long form on this endpoint: "Goalkeeper", "Defender", "Midfielder", "Attacker". */
+    val position: String? = null,
+    val photo: String? = null,
 )

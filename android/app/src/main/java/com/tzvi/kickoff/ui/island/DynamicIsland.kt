@@ -229,8 +229,10 @@ private fun CalibratedIsland(
             animationSpec = Motion.dpSpring(),
             label = "island-x",
         )
+        // Collapsed it is a pill, so the radius is simply half its height. Expanded it
+        // takes the radius the user matched to their own screen corners.
         val corner by animateDpAsState(
-            targetValue = if (expanded) 30.dp else COLLAPSED_HEIGHT / 2,
+            targetValue = if (expanded) cutout.cornerRadiusDp.dp else COLLAPSED_HEIGHT / 2,
             animationSpec = spring(dampingRatio = 0.7f, stiffness = 400f),
             label = "island-corner",
         )

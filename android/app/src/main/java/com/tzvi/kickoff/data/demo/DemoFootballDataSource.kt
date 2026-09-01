@@ -1,7 +1,10 @@
 package com.tzvi.kickoff.data.demo
 
 import com.tzvi.kickoff.core.model.League
+import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
+import com.tzvi.kickoff.core.model.PlayerMatchStats
+import com.tzvi.kickoff.core.model.PlayerProfile
 import com.tzvi.kickoff.core.model.Team
 import com.tzvi.kickoff.data.repository.FootballDataSource
 import com.tzvi.kickoff.data.repository.MatchDetail
@@ -85,6 +88,29 @@ class DemoFootballDataSource @Inject constructor() : FootballDataSource {
             lineups = DemoCatalogue.lineups(matchId),
             statistics = if (live || match.phase.isFinished) DemoCatalogue.statistics(matchId) else null,
         )
+    }
+
+    override suspend fun playerProfile(playerId: Int): PlayerProfile? {
+        settle()
+        return DemoCatalogue.playerProfile(playerId)
+    }
+
+    override suspend fun squad(teamId: Int): List<LineupPlayer> {
+        settle()
+        return DemoCatalogue.squad(teamId)
+    }
+
+    override suspend fun playersInMatch(matchId: Long): Map<Int, PlayerMatchStats> {
+        settle()
+        val lineups = DemoCatalogue.lineups(matchId)
+        val minute = DemoCatalogue.match(matchId)?.elapsedMinutes ?: 0
+        return listOfNotNull(lineups.home, lineups.away)
+            .flatMap { it.startingXi + it.substitutes }
+            .mapNotNull { player ->
+                val id = player.id ?: return@mapNotNull null
+                id to DemoCatalogue.playerStats(id, minute)
+            }
+            .toMap()
     }
 
     private suspend fun settle() = delay(SETTLE_MS)

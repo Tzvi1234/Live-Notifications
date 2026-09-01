@@ -275,10 +275,12 @@ class SettingsViewModel @Inject constructor(
 
     private fun previewMessage(rendering: MatchNotificationBuilder.Rendering?): String =
         when (rendering) {
-            MatchNotificationBuilder.Rendering.PROMOTED ->
-                "Posted as a Live Update - check the status bar and lock screen."
-            MatchNotificationBuilder.Rendering.RICH ->
-                "Posted as the rich scoreboard. It will not appear in the status bar or on the always-on display."
+            MatchNotificationBuilder.Rendering.CLOCK ->
+                "Posted as a Live Update with the match clock - check the status bar chip, " +
+                    "the lock screen and the always-on display."
+            MatchNotificationBuilder.Rendering.COMMENTARY ->
+                "Posted as a Live Update with the commentary block. Its text is the only " +
+                    "kind that reaches the always-on display in full."
             MatchNotificationBuilder.Rendering.PLAIN ->
                 "Posted using the plain system template."
             // A refused post and a post throttled behind the previous one are
@@ -325,7 +327,24 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun toggleSimulation() {
-        if (uiState.value.demo.simulating) simulator.stop() else simulator.start()
+        if (uiState.value.demo.simulating) {
+            simulator.stop()
+            return
+        }
+        simulator.start()
+        // The island is where a simulated match is worth watching, and it deliberately
+        // hides while Kickoff is in front - so it is raised here and the message below
+        // tells you to leave the app to see it.
+        if (IslandOverlayService.canDrawOverlay(context)) {
+            IslandOverlayService.show(context)
+            session.update { it.copy(floatingIslandEnabled = true) }
+            editor.update {
+                it.copy(
+                    message = "Simulating. Press home - the island follows the match out " +
+                        "of the app.",
+                )
+            }
+        }
     }
 
     fun showPreMatchCard() = preview(LiveActivity.MatchActivity.Stage.PRE_MATCH)

@@ -48,6 +48,7 @@ class SettingsRepository @Inject constructor(
         val cutoutX = floatPreferencesKey("island_cutout_center_x")
         val cutoutY = intPreferencesKey("island_cutout_center_y_dp")
         val cutoutDiameter = intPreferencesKey("island_cutout_diameter_dp")
+        val cutoutCorner = intPreferencesKey("island_cutout_corner_dp")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
@@ -98,6 +99,7 @@ class SettingsRepository @Inject constructor(
             centerXFraction = p[Keys.cutoutX] ?: IslandCutout.Unset.centerXFraction,
             centerYDp = p[Keys.cutoutY] ?: IslandCutout.Unset.centerYDp,
             diameterDp = p[Keys.cutoutDiameter] ?: IslandCutout.Unset.diameterDp,
+            cornerRadiusDp = p[Keys.cutoutCorner] ?: IslandCutout.Unset.cornerRadiusDp,
         ).sanitised()
     }
 
@@ -124,6 +126,7 @@ class SettingsRepository @Inject constructor(
         p[Keys.cutoutX] = safe.centerXFraction
         p[Keys.cutoutY] = safe.centerYDp
         p[Keys.cutoutDiameter] = safe.diameterDp
+        p[Keys.cutoutCorner] = safe.cornerRadiusDp
     }
 
     suspend fun setDarkTheme(pref: AppSettings.DarkThemePreference) =

@@ -26,7 +26,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -148,6 +151,7 @@ internal fun SettingsContent(
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val snackbarHostState = remember { SnackbarHostState() }
+    var openCard by rememberSaveable { mutableStateOf<SettingsCardId?>(null) }
 
     LaunchedEffect(state.message) {
         val message = state.message ?: return@LaunchedEffect
@@ -196,6 +200,9 @@ internal fun SettingsContent(
 
             // A plain scrolling column rather than a lazy list: the two text fields must
             // keep their focus and their contents when the group scrolls out of view.
+            // One card open at a time. Seven sections expanded at once is what made this
+            // screen a wall; an accordion keeps the whole list of what Kickoff can do on
+            // one screenful, and opens only the thing you came for.
             else -> Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -204,25 +211,46 @@ internal fun SettingsContent(
                     .padding(horizontal = ScreenPadding),
                 verticalArrangement = Arrangement.spacedBy(SectionGap),
             ) {
+                val toggle: (SettingsCardId) -> Unit = { id ->
+                    openCard = if (openCard == id) null else id
+                }
+
+                DataSourceSection(
+                    form = state.dataSource,
+                    pushEnabled = state.settings.pushEnabled,
+                    expanded = openCard == SettingsCardId.DATA_SOURCE,
+                    onToggle = { toggle(SettingsCardId.DATA_SOURCE) },
+                    onApiKeyChange = onApiKeyChange,
+                    onToggleApiKeyVisibility = onToggleApiKeyVisibility,
+                    onSaveApiKey = onSaveApiKey,
+                    onBackendUrlChange = onBackendUrlChange,
+                    onSaveBackendUrl = onSaveBackendUrl,
+                    onSetPushEnabled = onSetPushEnabled,
+                )
                 LiveCardSection(
                     style = state.settings.liveCardStyle,
                     status = state.liveUpdate,
+                    expanded = openCard == SettingsCardId.LIVE_CARD,
+                    onToggle = { toggle(SettingsCardId.LIVE_CARD) },
                     onSelectStyle = onSelectLiveCardStyle,
                     onOpenPromotionSettings = onOpenPromotionSettings,
                     onPreviewCard = onPreviewCard,
                     onDismissPreview = onDismissPreview,
                 )
-                DemoSection(
-                    demo = state.demo,
-                    onSetDemoMode = onSetDemoMode,
-                    onPreMatch = onDemoPreMatch,
-                    onLive = onDemoLive,
-                    onFullTime = onDemoFullTime,
-                    onToggleSimulation = onToggleSimulation,
+                IslandSection(
+                    status = state.island,
+                    cutout = state.islandCutout,
+                    expanded = openCard == SettingsCardId.ISLAND,
+                    onToggle = { toggle(SettingsCardId.ISLAND) },
+                    onSetEnabled = onSetFloatingIsland,
+                    onGrantOverlayPermission = onGrantOverlayPermission,
+                    onCalibrateCutout = onCalibrateCutout,
                 )
                 AlertsSection(
                     settings = state.settings,
                     access = state.notifications,
+                    expanded = openCard == SettingsCardId.ALERTS,
+                    onToggle = { toggle(SettingsCardId.ALERTS) },
                     onSetGoals = onSetGoals,
                     onSetCards = onSetCards,
                     onSetSubstitutions = onSetSubstitutions,
@@ -231,38 +259,40 @@ internal fun SettingsContent(
                     onSetLeadMinutes = onSetLeadMinutes,
                     onRequestNotifications = onRequestNotifications,
                 )
-                IslandSection(
-                    status = state.island,
-                    cutout = state.islandCutout,
-                    onSetEnabled = onSetFloatingIsland,
-                    onGrantOverlayPermission = onGrantOverlayPermission,
-                    onCalibrateCutout = onCalibrateCutout,
-                )
-                DataSourceSection(
-                    form = state.dataSource,
-                    pushEnabled = state.settings.pushEnabled,
-                    onApiKeyChange = onApiKeyChange,
-                    onToggleApiKeyVisibility = onToggleApiKeyVisibility,
-                    onSaveApiKey = onSaveApiKey,
-                    onBackendUrlChange = onBackendUrlChange,
-                    onSaveBackendUrl = onSaveBackendUrl,
-                    onSetPushEnabled = onSetPushEnabled,
+                DemoSection(
+                    demo = state.demo,
+                    expanded = openCard == SettingsCardId.DEMO,
+                    onToggle = { toggle(SettingsCardId.DEMO) },
+                    onSetDemoMode = onSetDemoMode,
+                    onPreMatch = onDemoPreMatch,
+                    onLive = onDemoLive,
+                    onFullTime = onDemoFullTime,
+                    onToggleSimulation = onToggleSimulation,
                 )
                 AppearanceSection(
                     settings = state.settings,
                     dynamicColorAvailable = state.dynamicColorAvailable,
+                    expanded = openCard == SettingsCardId.APPEARANCE,
+                    onToggle = { toggle(SettingsCardId.APPEARANCE) },
                     onSelectTheme = onSelectTheme,
                     onSetDynamicColor = onSetDynamicColor,
                 )
-                AboutSection(version = state.appVersion)
+                AboutSection(
+                    version = state.appVersion,
+                    expanded = openCard == SettingsCardId.ABOUT,
+                    onToggle = { toggle(SettingsCardId.ABOUT) },
+                )
                 Spacer(Modifier.height(BottomPadding))
             }
         }
     }
 }
 
+/** Identifies which card the accordion currently has open. */
+internal enum class SettingsCardId { DATA_SOURCE, LIVE_CARD, ISLAND, ALERTS, DEMO, APPEARANCE, ABOUT }
+
 private val ScreenPadding = 16.dp
-private val SectionGap = 20.dp
+private val SectionGap = 10.dp
 private val BottomPadding = 32.dp
 
 // ---- previews -----------------------------------------------------------------------

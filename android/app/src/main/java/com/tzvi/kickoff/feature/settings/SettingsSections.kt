@@ -87,13 +87,28 @@ import kotlin.math.roundToInt
 internal fun LiveCardSection(
     style: LiveCardStyle,
     status: LiveUpdateStatus,
+    expanded: Boolean,
+    onToggle: () -> Unit,
     onSelectStyle: (LiveCardStyle) -> Unit,
     onOpenPromotionSettings: () -> Unit,
     onPreviewCard: () -> Unit,
     onDismissPreview: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SettingsGroup(title = "Live card", modifier = modifier) {
+    SettingsCard(
+        title = "Live card",
+        icon = Icons.Outlined.Bolt,
+        summary = if (status.reachesAmbientSurfaces) {
+            "Reaches the lock screen and the always-on display"
+        } else {
+            "Inside the notification shade only"
+        },
+        badge = style.label.uppercase(),
+        highlighted = status.reachesAmbientSurfaces,
+        expanded = expanded,
+        onToggle = onToggle,
+        modifier = modifier,
+    ) {
         Column(
             modifier = Modifier.padding(horizontal = GroupPadding),
             verticalArrangement = Arrangement.spacedBy(RowGap),
@@ -220,6 +235,8 @@ private fun StyleExplanation(option: LiveCardStyle, selected: Boolean, modifier:
 internal fun AlertsSection(
     settings: AppSettings,
     access: NotificationAccess,
+    expanded: Boolean,
+    onToggle: () -> Unit,
     onSetGoals: (Boolean) -> Unit,
     onSetCards: (Boolean) -> Unit,
     onSetSubstitutions: (Boolean) -> Unit,
@@ -229,7 +246,15 @@ internal fun AlertsSection(
     onRequestNotifications: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SettingsGroup(title = "Alerts", modifier = modifier) {
+    SettingsCard(
+        title = "Alerts",
+        icon = Icons.Outlined.Schedule,
+        summary = alertsSummary(settings, access),
+        highlighted = !access.granted,
+        expanded = expanded,
+        onToggle = onToggle,
+        modifier = modifier,
+    ) {
         if (!access.granted) {
             Notice(
                 text = "Notifications are switched off for Kickoff, so none of these alerts " +
@@ -325,12 +350,23 @@ private fun PreMatchLeadRow(minutes: Int, onCommit: (Int) -> Unit, modifier: Mod
 internal fun IslandSection(
     status: IslandStatus,
     cutout: IslandCutout,
+    expanded: Boolean,
+    onToggle: () -> Unit,
     onSetEnabled: (Boolean) -> Unit,
     onGrantOverlayPermission: () -> Unit,
     onCalibrateCutout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SettingsGroup(title = "Dynamic Island", modifier = modifier) {
+    SettingsCard(
+        title = "Dynamic Island",
+        icon = Icons.Outlined.Layers,
+        summary = islandSummary(status, cutout),
+        badge = if (status.floatingEnabled) "ON" else null,
+        highlighted = status.floatingEnabled,
+        expanded = expanded,
+        onToggle = onToggle,
+        modifier = modifier,
+    ) {
         SettingsNavigationRow(
             title = "Calibrate around the camera",
             subtitle = if (cutout.enabled) {
@@ -423,6 +459,8 @@ private fun SettingsNavigationRow(
 internal fun DataSourceSection(
     form: DataSourceForm,
     pushEnabled: Boolean,
+    expanded: Boolean,
+    onToggle: () -> Unit,
     onApiKeyChange: (String) -> Unit,
     onToggleApiKeyVisibility: () -> Unit,
     onSaveApiKey: () -> Unit,
@@ -433,7 +471,19 @@ internal fun DataSourceSection(
 ) {
     val uriHandler = LocalUriHandler.current
 
-    SettingsGroup(title = "Data source", modifier = modifier) {
+    SettingsCard(
+        title = "Data source",
+        icon = Icons.Outlined.Link,
+        summary = if (form.hasSource) {
+            "Fetching through ${form.activeSourceName}"
+        } else {
+            "Nothing configured - no fixtures can be fetched"
+        },
+        highlighted = !form.hasSource,
+        expanded = expanded,
+        onToggle = onToggle,
+        modifier = modifier,
+    ) {
         Column(
             modifier = Modifier.padding(horizontal = GroupPadding),
             verticalArrangement = Arrangement.spacedBy(RowGap),
@@ -546,11 +596,21 @@ internal fun DataSourceSection(
 internal fun AppearanceSection(
     settings: AppSettings,
     dynamicColorAvailable: Boolean,
+    expanded: Boolean,
+    onToggle: () -> Unit,
     onSelectTheme: (AppSettings.DarkThemePreference) -> Unit,
     onSetDynamicColor: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SettingsGroup(title = "Appearance", modifier = modifier) {
+    SettingsCard(
+        title = "Appearance",
+        icon = Icons.Outlined.Palette,
+        summary = "${settings.darkTheme.label} theme" +
+            if (settings.useDynamicColor) ", wallpaper colours" else "",
+        expanded = expanded,
+        onToggle = onToggle,
+        modifier = modifier,
+    ) {
         ChoiceRow(
             options = AppSettings.DarkThemePreference.entries,
             selected = settings.darkTheme,
@@ -584,8 +644,20 @@ internal fun AppearanceSection(
 // ---- 6. about -----------------------------------------------------------------------
 
 @Composable
-internal fun AboutSection(version: String, modifier: Modifier = Modifier) {
-    SettingsGroup(title = "About", modifier = modifier) {
+internal fun AboutSection(
+    version: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SettingsCard(
+        title = "About",
+        icon = Icons.Outlined.Info,
+        summary = "Kickoff $version",
+        expanded = expanded,
+        onToggle = onToggle,
+        modifier = modifier,
+    ) {
         Row(
             modifier = Modifier.padding(horizontal = GroupPadding, vertical = TightGap),
             verticalAlignment = Alignment.CenterVertically,
@@ -616,29 +688,6 @@ internal fun AboutSection(version: String, modifier: Modifier = Modifier) {
 }
 
 // ---- shared pieces ------------------------------------------------------------------
-
-@Composable
-internal fun SettingsGroup(
-    title: String,
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        SectionHeader(title = title, modifier = Modifier.padding(horizontal = GroupPadding))
-        Card(
-            shape = KickoffShapes.large,
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(
-                modifier = Modifier.padding(vertical = GroupPadding),
-                content = content,
-            )
-        }
-    }
-}
 
 @Composable
 private fun SettingsToggleRow(
@@ -750,6 +799,39 @@ private const val API_FOOTBALL_URL = "https://dashboard.api-football.com/"
 
 private const val LEAD_STEPS = (PRE_MATCH_LEAD_MAX - PRE_MATCH_LEAD_MIN) / PRE_MATCH_LEAD_STEP - 1
 
+
+// ---- closed-card summaries ----------------------------------------------------------
+//
+// A collapsed card is only worth collapsing if its one line answers the question that
+// brought you here. These say what the section is doing right now, not what it is for.
+
+private fun alertsSummary(settings: AppSettings, access: NotificationAccess): String {
+    if (!access.granted) return "Notifications are off, so none of these fire"
+    val on = buildList {
+        if (settings.notifyGoals) add("goals")
+        if (settings.notifyCards) add("cards")
+        if (settings.notifyKickoffAndFullTime) add("kick-off")
+        if (settings.notifyLineups) add("line-ups")
+        if (settings.notifySubstitutions) add("subs")
+    }
+    if (on.isEmpty()) return "Everything silent - the card still updates in place"
+    return on.joinToString(", ").replaceFirstChar { it.uppercase() } +
+        " \u00b7 ${settings.preMatchLeadMinutes} min before"
+}
+
+private fun islandSummary(status: IslandStatus, cutout: IslandCutout): String = when {
+    !status.overlayPermissionGranted -> "Needs the display-over-other-apps permission"
+    !status.floatingEnabled -> "Off"
+    cutout.enabled -> "Floating, wrapped around a ${cutout.diameterDp} dp camera"
+    else -> "Floating below the status bar - not calibrated yet"
+}
+
+private fun demoSummary(demo: DemoStatus): String = when {
+    demo.simulating -> "Simulating \u00b7 ${demo.minute}' \u00b7 ${demo.scoreLabel}"
+    demo.enabled -> "Real clubs, invented fixtures"
+    else -> "Off - the app is using your own source"
+}
+
 private val GroupPadding = 16.dp
 private val RowGap = 12.dp
 private val TightGap = 6.dp
@@ -768,6 +850,8 @@ private val StatusIconSize = 16.dp
 @Composable
 internal fun DemoSection(
     demo: DemoStatus,
+    expanded: Boolean,
+    onToggle: () -> Unit,
     onSetDemoMode: (Boolean) -> Unit,
     onPreMatch: () -> Unit,
     onLive: () -> Unit,
@@ -775,7 +859,16 @@ internal fun DemoSection(
     onToggleSimulation: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SettingsGroup(title = "Demo", modifier = modifier) {
+    SettingsCard(
+        title = "Demo",
+        icon = Icons.Outlined.SportsSoccer,
+        summary = demoSummary(demo),
+        badge = if (demo.enabled) "ON" else null,
+        highlighted = demo.enabled,
+        expanded = expanded,
+        onToggle = onToggle,
+        modifier = modifier,
+    ) {
         Column(
             modifier = Modifier.padding(horizontal = GroupPadding),
             verticalArrangement = Arrangement.spacedBy(RowGap),

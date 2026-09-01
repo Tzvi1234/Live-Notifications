@@ -3,14 +3,17 @@ package com.tzvi.kickoff.feature.onboarding
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +27,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import com.tzvi.kickoff.core.model.League
 import com.tzvi.kickoff.core.model.Team
 import com.tzvi.kickoff.ui.component.MetaChip
@@ -54,17 +61,73 @@ internal object OnboardingSpacing {
 
 private val RAIL_HEIGHT = 4.dp
 
+/** Title and one line of explanation, resolved per step because SETUP changes with the pick. */
+internal data class StepCopy(val title: String, val subtitle: String)
+
+internal fun copyFor(step: OnboardingStep, state: OnboardingUiState): StepCopy = when (step) {
+    OnboardingStep.WELCOME -> StepCopy("Kickoff", "")
+
+    OnboardingStep.SOURCE -> StepCopy(
+        title = "Where do scores come from?",
+        subtitle = "Kickoff has no feed of its own. Pick one.",
+    )
+
+    // The only step whose heading depends on an answer: it is showing one thing, and it
+    // should say which thing rather than make you remember what you tapped.
+    OnboardingStep.SETUP -> when (state.chosenSource) {
+        ConfiguredSource.DEMO -> StepCopy(
+            title = "Demo data it is",
+            subtitle = "Real clubs and crests, fixtures invented around right now.",
+        )
+
+        ConfiguredSource.API_FOOTBALL -> StepCopy(
+            title = "Paste your key",
+            subtitle = "The one on your API-Football dashboard, under Account.",
+        )
+
+        ConfiguredSource.BACKEND -> StepCopy(
+            title = "Point at your backend",
+            subtitle = "The address Render gave your deployment.",
+        )
+
+        else -> StepCopy(
+            title = "Nothing picked yet",
+            subtitle = "Go back one step and choose how Kickoff should fetch.",
+        )
+    }
+
+    OnboardingStep.LEAGUES -> StepCopy(
+        title = "Pick your competitions",
+        subtitle = "This decides which squads the next step offers.",
+    )
+
+    OnboardingStep.TEAMS -> StepCopy(
+        title = "Pick the teams you follow",
+        subtitle = "Every match they play gets a live card of its own.",
+    )
+
+    OnboardingStep.ALERTS -> StepCopy(
+        title = "Turn the live card on",
+        subtitle = "One notification per match that keeps editing itself.",
+    )
+
+    OnboardingStep.READY -> StepCopy(
+        title = "That's everything",
+        subtitle = "Here is what Kickoff will do from now on.",
+    )
+}
+
 /**
  * The fixed frame above the pager: how far along you are, what this step is called, what
  * it wants, and what it has so far.
  *
  * It sits outside the pager on purpose. Headings that scroll with their page leave the
- * user staring at a text field or a grid with nothing naming it, which is most of what
- * made the flow hard to read.
+ * user staring at a text field or a grid with nothing naming it.
  */
 @Composable
 internal fun StepHeader(
     step: OnboardingStep,
+    copy: StepCopy,
     status: String?,
     modifier: Modifier = Modifier,
 ) {
@@ -105,7 +168,7 @@ internal fun StepHeader(
         Spacer(Modifier.height(2.dp))
 
         Text(
-            text = step.title,
+            text = copy.title,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -113,7 +176,7 @@ internal fun StepHeader(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = step.subtitle,
+            text = copy.subtitle,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             // Pinned to two lines so the header is the same height on every step and the
@@ -126,9 +189,9 @@ internal fun StepHeader(
 }
 
 /**
- * Four segments, one per step that asks for something. Segments read as progress at a
- * glance in a way a row of identical dots does not, and it lives at the top where a
- * progress bar belongs rather than fighting the buttons at the bottom.
+ * One segment per step that asks for something. Segments read as progress at a glance in
+ * a way a row of identical dots does not, and it lives at the top where a progress bar
+ * belongs rather than fighting the buttons at the bottom.
  */
 @Composable
 private fun StepProgress(step: OnboardingStep, modifier: Modifier = Modifier) {
@@ -166,6 +229,49 @@ private fun StepProgress(step: OnboardingStep, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * Deals the page's blocks in, one after another, the first time it is arrived at.
+ *
+ * A page that appears all at once reads as a form. Dealt in, it reads as something being
+ * laid out for you - and the eye lands on the first block rather than on the whole page.
+ * Once dealt, a page stays dealt: swiping back and forth must not re-run the sequence.
+ */
+@Composable
+internal fun StaggeredEntrance(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.(EntranceScope) -> Unit,
+) {
+    var dealt by remember { mutableStateOf(false) }
+    if (visible) dealt = true
+    Column(modifier = modifier) { content(EntranceScope(dealt)) }
+}
+
+/** Hands each block its own delay; index 0 arrives first. */
+internal class EntranceScope(private val dealt: Boolean) {
+    @Composable
+    fun Block(index: Int, content: @Composable () -> Unit) {
+        AnimatedVisibility(
+            visible = dealt,
+            enter = fadeIn(tween(Motion.Duration.MEDIUM, delayMillis = index * STAGGER_MS)) +
+                slideInVertically(
+                    animationSpec = tween(
+                        Motion.Duration.LONG,
+                        delayMillis = index * STAGGER_MS,
+                        easing = Motion.Easings.emphasised,
+                    ),
+                    initialOffsetY = { it / 5 },
+                ),
+            // Nothing leaves: the page is clipped away by the pager itself.
+            exit = fadeOut(tween(0)),
+        ) {
+            content()
+        }
+    }
+}
+
+private const val STAGGER_MS = 70
+
 /** An icon plus a line of copy, used for the welcome page's three promises. */
 @Composable
 internal fun FeatureLine(
@@ -190,27 +296,39 @@ internal fun FeatureLine(
 }
 
 /**
- * Content parallax: a page's contents trail the page itself, so a swipe reads as one
- * object moving rather than two panes swapping.
+ * The swipe, with depth.
  *
- * `clip` is what makes it safe. A graphicsLayer does not clip by default, so translating
- * a page's contents sideways lets the page *next door* - laid out just off-screen - paint
- * its heading and cards into the visible edge, which is exactly the mess it looked like.
- * Clipping confines every page's drawing to its own slot.
+ * The page's contents trail the page itself and tip slightly away from you as they go, so
+ * a swipe reads as one deck of cards turning rather than two flat panes swapping. The
+ * rotation is small on purpose - past a few degrees it stops looking like depth and starts
+ * looking like a broken transform.
+ *
+ * `clip` is what makes it safe. A graphicsLayer does not clip by default, so translating a
+ * page's contents sideways lets the page next door - laid out just off-screen - paint into
+ * the visible edge. Clipping confines every page's drawing to its own slot.
  */
 internal fun Modifier.pageMotion(pagerState: PagerState, page: Int): Modifier =
     graphicsLayer {
         // Read inside the layer block, not in composition: the offset changes every frame
         // of a drag, and a composition-time read would re-run the whole page for each one.
         val offset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+        val distance = abs(offset).coerceIn(0f, 1f)
+
         clip = true
+        cameraDistance = 14f * density
         translationX = size.width * offset * CONTENT_LAG
+        rotationY = offset * -TILT_DEGREES
+        val scale = lerp(1f, REAR_SCALE, distance)
+        scaleX = scale
+        scaleY = scale
         // Fully transparent one page out: even if a future layout change defeats the clip,
         // a neighbouring page has nothing left to paint into the margin.
-        alpha = (1f - abs(offset)).coerceIn(0f, 1f)
+        alpha = 1f - distance
     }
 
 private const val CONTENT_LAG = 0.16f
+private const val TILT_DEGREES = 9f
+private const val REAR_SCALE = 0.88f
 
 /** Sample content for the @Preview functions in this package. */
 internal object OnboardingSamples {
@@ -233,6 +351,10 @@ internal object OnboardingSamples {
 @Composable
 private fun StepHeaderPreview() {
     KickoffTheme {
-        StepHeader(step = OnboardingStep.TEAMS, status = "3 PICKED")
+        StepHeader(
+            step = OnboardingStep.TEAMS,
+            copy = copyFor(OnboardingStep.TEAMS, OnboardingUiState()),
+            status = "3 PICKED",
+        )
     }
 }

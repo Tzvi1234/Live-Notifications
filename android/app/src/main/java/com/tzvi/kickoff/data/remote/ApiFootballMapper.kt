@@ -16,7 +16,13 @@ import com.tzvi.kickoff.data.remote.api.ApiFootballService
 import com.tzvi.kickoff.data.remote.dto.EventResponse
 import com.tzvi.kickoff.data.remote.dto.FixtureResponse
 import com.tzvi.kickoff.data.remote.dto.LeagueCatalogueResponse
+import com.tzvi.kickoff.data.remote.dto.FixturePlayersResponse
+import com.tzvi.kickoff.data.remote.dto.PlayerFixtureStatsDto
+import com.tzvi.kickoff.data.remote.dto.PlayerProfileDto
+import com.tzvi.kickoff.core.model.PlayerMatchStats
+import com.tzvi.kickoff.core.model.PlayerProfile
 import com.tzvi.kickoff.data.remote.dto.LineupPlayerDto
+import com.tzvi.kickoff.data.remote.dto.SquadPlayerDto
 import com.tzvi.kickoff.data.remote.dto.LineupResponse
 import com.tzvi.kickoff.data.remote.dto.StatisticsResponse
 import com.tzvi.kickoff.data.remote.dto.TeamCatalogueResponse
@@ -217,5 +223,86 @@ object ApiFootballMapper {
         } else {
             name.take(3).uppercase()
         }
+    }
+
+    // ---- players -----------------------------------------------------------------
+
+    /**
+     * One entry per player across both sides, keyed by id.
+     *
+     * The provider nests the stat block in a one-element list even for a single fixture,
+     * and a player with no id at all cannot be looked up later, so both are dropped here
+     * rather than defended against at every call site.
+     */
+    fun playersInMatch(teams: List<FixturePlayersResponse>): Map<Int, PlayerMatchStats> =
+        teams.asSequence()
+            .flatMap { it.players.asSequence() }
+            .mapNotNull { entry ->
+                val id = entry.player?.id ?: return@mapNotNull null
+                val stats = entry.statistics.firstOrNull() ?: return@mapNotNull null
+                id to playerStats(stats)
+            }
+            .toMap()
+
+    private fun playerStats(dto: PlayerFixtureStatsDto) = PlayerMatchStats(
+        minutes = dto.games?.minutes,
+        number = dto.games?.number,
+        position = dto.games?.position,
+        rating = dto.games?.rating,
+        captain = dto.games?.captain == true,
+        startedOnBench = dto.games?.substitute == true,
+        goals = dto.goals?.total,
+        assists = dto.goals?.assists,
+        conceded = dto.goals?.conceded,
+        saves = dto.goals?.saves,
+        shotsTotal = dto.shots?.total,
+        shotsOnTarget = dto.shots?.on,
+        passesTotal = dto.passes?.total,
+        passesKey = dto.passes?.key,
+        passAccuracy = dto.passes?.accuracy,
+        tackles = dto.tackles?.total,
+        interceptions = dto.tackles?.interceptions,
+        duelsTotal = dto.duels?.total,
+        duelsWon = dto.duels?.won,
+        dribbleAttempts = dto.dribbles?.attempts,
+        dribblesSuccessful = dto.dribbles?.success,
+        dribblesPast = dto.dribbles?.past,
+        foulsDrawn = dto.fouls?.drawn,
+        foulsCommitted = dto.fouls?.committed,
+        yellowCards = dto.cards?.yellow,
+        redCards = dto.cards?.red,
+        offsides = dto.offsides,
+        penaltiesScored = dto.penalty?.scored,
+        penaltiesMissed = dto.penalty?.missed,
+        penaltiesSaved = dto.penalty?.saved,
+    )
+
+    fun playerProfile(dto: PlayerProfileDto): PlayerProfile = PlayerProfile(
+        firstName = dto.firstname,
+        lastName = dto.lastname,
+        age = dto.age,
+        birthDate = dto.birth?.date,
+        birthPlace = listOfNotNull(dto.birth?.place, dto.birth?.country)
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString(", "),
+        nationality = dto.nationality,
+        height = dto.height,
+        weight = dto.weight,
+        position = dto.position,
+        number = dto.number,
+    )
+
+    /** A roster row without an id cannot open a sheet or a photo, so it is dropped. */
+    fun squadMember(dto: SquadPlayerDto): LineupPlayer? {
+        val id = dto.id ?: return null
+        return LineupPlayer(
+            id = id,
+            name = dto.name ?: "Player $id",
+            number = dto.number,
+            position = dto.position,
+            gridRow = null,
+            gridColumn = null,
+            photoUrl = dto.photo ?: ApiFootballService.playerPhotoUrl(id),
+        )
     }
 }

@@ -12,12 +12,6 @@
 
     <!-- Live card -->
     <string name="live_kickoff_in">Kick-off in %1$s</string>
-    <string name="live_lineups_pending">Line-ups drop about an hour before kick-off</string>
     <string name="live_starting_soon">Starting soon</string>
     <string name="action_stop_following">Stop following</string>
-    <string name="action_open_match">Open</string>
-
-    <string name="promotion_disabled_title">Live Updates are switched off</string>
-    <string name="promotion_disabled_body">Turn on promoted notifications so the score can appear in the status bar and on your lock screen.</string>
-    <string name="promotion_open_settings">Open settings</string>
 </resources>

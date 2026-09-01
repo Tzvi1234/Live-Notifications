@@ -9,6 +9,8 @@ import com.tzvi.kickoff.core.model.MatchLineups
 import com.tzvi.kickoff.core.model.MatchPhase
 import com.tzvi.kickoff.core.model.MatchSide
 import com.tzvi.kickoff.core.model.MatchStatistics
+import com.tzvi.kickoff.core.model.PlayerMatchStats
+import com.tzvi.kickoff.core.model.PlayerProfile
 import com.tzvi.kickoff.core.model.Score
 import com.tzvi.kickoff.core.model.Team
 import com.tzvi.kickoff.core.model.TeamLineup
@@ -95,6 +97,10 @@ object DemoCatalogue {
 
     fun teamsIn(leagueId: Int): List<Team> =
         teams.filter { leagueByTeam[it.id]?.id == leagueId }
+
+    /** The roster the team sheet lists: the demo XI, since the demo carries no bench. */
+    fun squad(teamId: Int): List<LineupPlayer> =
+        teams.firstOrNull { it.id == teamId }?.let { squadFor(it).startingXi }.orEmpty()
 
     /** Negative ids: a demo fixture can never be confused with a real one. */
     const val LIVE_MATCH_ID = -101L
@@ -270,8 +276,17 @@ object DemoCatalogue {
             column = if (row == lastRow) column + 1 else 1
             lastRow = row
             LineupPlayer(
-                id = null, name = name, number = index + 1,
-                position = null, gridRow = row, gridColumn = column,
+                // Negative and derived from the team, so a demo id can never collide with
+                // a real API-Football one and the tap-through has something to key on.
+                // photoUrl stays null on purpose: real headshots are addressed by the
+                // provider's own player ids, and inventing one would show a real face
+                // under the wrong name.
+                id = demoPlayerId(team.id, index),
+                name = name,
+                number = index + 1,
+                position = positionFor(row),
+                gridRow = row,
+                gridColumn = column,
             )
         }
         return TeamLineup(
@@ -304,4 +319,72 @@ object DemoCatalogue {
             MatchStatistics.XG to "0.96",
         ),
     )
+
+    /** Stable, negative, and unique per team+slot. */
+    fun demoPlayerId(teamId: Int, index: Int): Int = -(teamId * 100 + index + 1)
+
+    private fun positionFor(row: Int): String = when (row) {
+        1 -> "G"
+        2 -> "D"
+        3 -> "M"
+        else -> "F"
+    }
+
+    /** A plausible identity for a demo player, stable per id like everything else here. */
+    fun playerProfile(playerId: Int): PlayerProfile {
+        val seed = (playerId * 2654435761L).toInt() and 0x7FFFFFFF
+        fun pick(shift: Int, bound: Int) = (seed shr shift) % bound
+        return PlayerProfile(
+            age = 20 + pick(3, 15),
+            nationality = listOf(
+                "England", "Spain", "France", "Brazil", "Germany",
+                "Argentina", "Portugal", "Netherlands",
+            )[pick(6, 8)],
+            height = "${170 + pick(9, 26)} cm",
+            weight = "${66 + pick(12, 22)} kg",
+        )
+    }
+
+    /**
+     * A plausible match line, derived from the id rather than drawn at random so the same
+     * player reads the same every time the sheet is opened.
+     */
+    fun playerStats(playerId: Int, minute: Int): PlayerMatchStats {
+        val seed = (playerId * 2654435761L).toInt() and 0x7FFFFFFF
+        fun pick(shift: Int, bound: Int) = ((seed shr shift) % bound).let { if (it < 0) -it else it }
+        val keeper = playerId % 100 == 1
+        val rating = 6.0 + pick(3, 30) / 10.0
+        return PlayerMatchStats(
+            minutes = minute.coerceIn(0, 90),
+            number = pick(11, 11) + 1,
+            position = if (keeper) "G" else listOf("D", "M", "F")[pick(5, 3)],
+            rating = String.format(java.util.Locale.US, "%.1f", rating),
+            captain = pick(17, 11) == 0,
+            startedOnBench = false,
+            goals = if (keeper) null else pick(7, 8).takeIf { it < 2 },
+            assists = if (keeper) null else pick(9, 9).takeIf { it < 2 },
+            conceded = if (keeper) pick(13, 3) else null,
+            saves = if (keeper) pick(15, 6) else null,
+            shotsTotal = if (keeper) null else pick(2, 5),
+            shotsOnTarget = if (keeper) null else pick(4, 3),
+            passesTotal = 18 + pick(6, 60),
+            passesKey = pick(8, 4),
+            passAccuracy = "${72 + pick(10, 24)}%",
+            tackles = pick(12, 5),
+            interceptions = pick(14, 4),
+            duelsTotal = 4 + pick(16, 12),
+            duelsWon = pick(18, 8),
+            dribbleAttempts = pick(20, 6),
+            dribblesSuccessful = pick(22, 4),
+            dribblesPast = pick(1, 3),
+            foulsDrawn = pick(19, 4),
+            foulsCommitted = pick(21, 4),
+            yellowCards = pick(23, 12).takeIf { it < 2 } ?: 0,
+            redCards = 0,
+            offsides = if (keeper) null else pick(24, 4),
+            penaltiesScored = 0,
+            penaltiesMissed = 0,
+            penaltiesSaved = if (keeper) 0 else null,
+        )
+    }
 }

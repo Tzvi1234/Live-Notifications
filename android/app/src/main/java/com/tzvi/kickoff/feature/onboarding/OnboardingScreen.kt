@@ -143,7 +143,11 @@ fun OnboardingScreen(
                     },
                     label = "step-header",
                 ) { current ->
-                    StepHeader(step = current, status = state.statusFor(current))
+                    StepHeader(
+                        step = current,
+                        copy = copyFor(current, state),
+                        status = state.statusFor(current),
+                    )
                 }
             }
 
@@ -153,50 +157,74 @@ fun OnboardingScreen(
                 pageSpacing = OnboardingSpacing.screen,
                 beyondViewportPageCount = 1,
             ) { page ->
+                val pageStep = OnboardingStep.at(page)
                 Box(
                     Modifier
                         .fillMaxSize()
                         .pageMotion(pagerState, page),
                 ) {
-                    when (OnboardingStep.at(page)) {
-                        OnboardingStep.WELCOME -> WelcomePage(
-                            onGetStarted = { goTo(OnboardingStep.CONNECT.ordinal) },
-                        )
+                    StaggeredEntrance(
+                        visible = pagerState.currentPage == page,
+                        modifier = Modifier.fillMaxSize(),
+                    ) { entrance ->
+                        when (pageStep) {
+                            OnboardingStep.WELCOME -> WelcomePage(
+                                onGetStarted = { goTo(OnboardingStep.SOURCE.ordinal) },
+                            )
 
-                        OnboardingStep.CONNECT -> ConnectPage(
-                            state = state,
-                            onApiKeyChange = viewModel::onApiKeyChange,
-                            onSaveApiKey = viewModel::saveApiKey,
-                            onBackendUrlChange = viewModel::onBackendUrlChange,
-                            onSaveBackendUrl = viewModel::saveBackendUrl,
-                            onUseDemo = viewModel::useDemoData,
-                            onStopDemo = viewModel::stopUsingDemoData,
-                            onSkip = { goTo(OnboardingStep.LEAGUES.ordinal) },
-                        )
+                            OnboardingStep.SOURCE -> SourcePage(
+                                state = state,
+                                entrance = entrance,
+                                onChoose = { chosen ->
+                                    viewModel.chooseSource(chosen)
+                                    // Picking is the whole job of this page, so it hands
+                                    // straight over to the one page that choice needs.
+                                    goTo(OnboardingStep.SETUP.ordinal)
+                                },
+                            )
 
-                        OnboardingStep.LEAGUES -> LeaguesPage(
-                            state = state,
-                            onToggleLeague = viewModel::toggleLeague,
-                            onRetry = { viewModel.loadLeagues(force = true) },
-                            onFixSource = { goTo(OnboardingStep.CONNECT.ordinal) },
-                        )
+                            OnboardingStep.SETUP -> SetupPage(
+                                state = state,
+                                entrance = entrance,
+                                onApiKeyChange = viewModel::onApiKeyChange,
+                                onSaveApiKey = viewModel::saveApiKey,
+                                onBackendUrlChange = viewModel::onBackendUrlChange,
+                                onSaveBackendUrl = viewModel::saveBackendUrl,
+                                onBackToChoice = { goTo(OnboardingStep.SOURCE.ordinal) },
+                            )
 
-                        OnboardingStep.TEAMS -> TeamsPage(
-                            state = state,
-                            onQueryChange = viewModel::onTeamQueryChange,
-                            onToggleTeam = viewModel::toggleTeam,
-                            onRemoveTeam = viewModel::removeTeam,
-                            onRetry = { viewModel.loadTeams(force = true) },
-                            onFixSource = { goTo(OnboardingStep.CONNECT.ordinal) },
-                        )
+                            OnboardingStep.LEAGUES -> LeaguesPage(
+                                state = state,
+                                onToggleLeague = viewModel::toggleLeague,
+                                onRetry = { viewModel.loadLeagues(force = true) },
+                                onFixSource = { goTo(OnboardingStep.SOURCE.ordinal) },
+                            )
 
-                        OnboardingStep.NOTIFICATIONS -> NotificationsPage(
-                            state = state,
-                            onRequestPermission = {
-                                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            },
-                            onOpenSystemSettings = { openNotificationSettings(context) },
-                        )
+                            OnboardingStep.TEAMS -> TeamsPage(
+                                state = state,
+                                onQueryChange = viewModel::onTeamQueryChange,
+                                onToggleTeam = viewModel::toggleTeam,
+                                onRemoveTeam = viewModel::removeTeam,
+                                onRetry = { viewModel.loadTeams(force = true) },
+                                onFixSource = { goTo(OnboardingStep.SOURCE.ordinal) },
+                            )
+
+                            OnboardingStep.ALERTS -> AlertsPage(
+                                state = state,
+                                entrance = entrance,
+                                onRequestPermission = {
+                                    permissionLauncher.launch(
+                                        Manifest.permission.POST_NOTIFICATIONS,
+                                    )
+                                },
+                                onOpenSystemSettings = { openNotificationSettings(context) },
+                            )
+
+                            OnboardingStep.READY -> ReadyPage(
+                                state = state,
+                                entrance = entrance,
+                            )
+                        }
                     }
                 }
             }
@@ -206,7 +234,7 @@ fun OnboardingScreen(
                 state = state,
                 onBack = { goTo(pagerState.currentPage - 1) },
                 onNext = {
-                    if (step == OnboardingStep.NOTIFICATIONS) {
+                    if (step == OnboardingStep.READY) {
                         viewModel.finish()
                     } else {
                         goTo(pagerState.currentPage + 1)
@@ -234,7 +262,7 @@ private fun OnboardingFooter(
 ) {
     // The welcome page carries its own "Get started", so its footer is empty space.
     val showButtons = step != OnboardingStep.WELCOME
-    val isLast = step == OnboardingStep.NOTIFICATIONS
+    val isLast = step == OnboardingStep.READY
     val blockedReason = state.blockedReason(step)
 
     Column(modifier = modifier.fillMaxWidth()) {

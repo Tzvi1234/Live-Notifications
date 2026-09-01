@@ -1,7 +1,10 @@
 package com.tzvi.kickoff.data.repository
 
 import com.tzvi.kickoff.core.model.League
+import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
+import com.tzvi.kickoff.core.model.PlayerMatchStats
+import com.tzvi.kickoff.core.model.PlayerProfile
 import com.tzvi.kickoff.core.model.Team
 import com.tzvi.kickoff.data.remote.ApiFootballMapper
 import com.tzvi.kickoff.data.remote.api.ApiFootballService
@@ -32,13 +35,32 @@ class ApiFootballDataSource @Inject constructor(
     }
 
     override suspend fun teams(leagueId: Int?, season: Int?, query: String?): List<Team> {
-        val response = service.teams(
-            league = leagueId,
-            season = season ?: leagueId?.let { ApiFootballMapper.currentSeason() },
-            search = query?.takeIf { it.length >= 3 },
-        ).requireOk()
-        return response.response.map(ApiFootballMapper::team)
+        val requested = season ?: leagueId?.let { ApiFootballMapper.currentSeason() }
+        val first = runCatching { teamsForSeason(leagueId, requested, query) }
+
+        // The free plan serves the catalogue but refuses current-season data - the error
+        // arrives as an HTTP 200 with a "plan" note, or as an empty list. Leagues load and
+        // teams don't, which looks like a broken app when it is actually a priced key. An
+        // older season answers on every plan, and club ids are stable across seasons, so
+        // the browse list it produces is the same clubs a current key would list.
+        val fallbackWorthTrying = leagueId != null &&
+            requested != null &&
+            requested > FREE_PLAN_LAST_SEASON &&
+            (first.isFailure || first.getOrThrow().isEmpty())
+        if (!fallbackWorthTrying) return first.getOrThrow()
+
+        return runCatching { teamsForSeason(leagueId, FREE_PLAN_LAST_SEASON, query) }
+            .getOrNull()
+            ?.takeIf { it.isNotEmpty() }
+            ?: first.getOrThrow()
     }
+
+    private suspend fun teamsForSeason(leagueId: Int?, season: Int?, query: String?): List<Team> =
+        service.teams(
+            league = leagueId,
+            season = season,
+            search = query?.takeIf { it.length >= 3 },
+        ).requireOk().response.map(ApiFootballMapper::team)
 
     override suspend fun fixturesOn(date: LocalDate): List<Match> =
         service.fixtures(date = date.format(DATE)).requireOk()
@@ -106,6 +128,9 @@ class ApiFootballDataSource @Inject constructor(
     }
 
     private companion object {
+        /** The newest season API-Football's free plan is known to answer for. */
+        const val FREE_PLAN_LAST_SEASON = 2023
+
         val DATE: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE
         const val MAX_TEAMS_PER_REFRESH = 8
 
@@ -129,4 +154,20 @@ class ApiFootballDataSource @Inject constructor(
             4,    // Euro Championship
         )
     }
+
+    override suspend fun playersInMatch(matchId: Long): Map<Int, PlayerMatchStats> =
+        ApiFootballMapper.playersInMatch(service.fixturePlayers(matchId).requireOk().response)
+
+    override suspend fun squad(teamId: Int): List<LineupPlayer> =
+        service.squad(teamId).requireOk().response
+            .firstOrNull()
+            ?.players
+            ?.mapNotNull(ApiFootballMapper::squadMember)
+            .orEmpty()
+
+    override suspend fun playerProfile(playerId: Int): PlayerProfile? =
+        service.playerProfile(playerId).requireOk().response
+            .firstOrNull()
+            ?.player
+            ?.let(ApiFootballMapper::playerProfile)
 }
