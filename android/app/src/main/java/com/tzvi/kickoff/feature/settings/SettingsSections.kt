@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,6 +15,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.CenterFocusStrong
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Groups
@@ -72,6 +75,7 @@ import com.tzvi.kickoff.core.model.AppSettings
 import com.tzvi.kickoff.core.model.LiveCardStyle
 import com.tzvi.kickoff.ui.component.KickoffLogo
 import com.tzvi.kickoff.ui.component.SectionHeader
+import com.tzvi.kickoff.core.model.IslandCutout
 import com.tzvi.kickoff.ui.component.SettingsRow
 import com.tzvi.kickoff.ui.theme.KickoffShapes
 import com.tzvi.kickoff.ui.theme.KickoffTheme
@@ -320,11 +324,26 @@ private fun PreMatchLeadRow(minutes: Int, onCommit: (Int) -> Unit, modifier: Mod
 @Composable
 internal fun IslandSection(
     status: IslandStatus,
+    cutout: IslandCutout,
     onSetEnabled: (Boolean) -> Unit,
     onGrantOverlayPermission: () -> Unit,
+    onCalibrateCutout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     SettingsGroup(title = "Dynamic Island", modifier = modifier) {
+        SettingsNavigationRow(
+            title = "Calibrate around the camera",
+            subtitle = if (cutout.enabled) {
+                "Wrapping a ${cutout.diameterDp} dp hole at " +
+                    "${(cutout.centerXFraction * 100).roundToInt()}% across, " +
+                    "${cutout.centerYDp} dp down."
+            } else {
+                "Line a ring up with your camera and the island puts the score on one " +
+                    "side of it and the clock on the other."
+            },
+            icon = Icons.Outlined.CenterFocusStrong,
+            onClick = onCalibrateCutout,
+        )
         SettingsToggleRow(
             title = "Float over other apps",
             subtitle = "Keeps the live island on screen while you are somewhere else.",
@@ -350,6 +369,51 @@ internal fun IslandSection(
                 }
             }
         }
+    }
+}
+
+/** A settings row that opens a screen of its own rather than flipping a switch. */
+@Composable
+private fun SettingsNavigationRow(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = GroupPadding, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 

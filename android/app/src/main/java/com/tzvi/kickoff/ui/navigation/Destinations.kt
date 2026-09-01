@@ -18,6 +18,7 @@ object Routes {
     const val TEAMS = "teams"
     const val CALENDAR = "calendar"
     const val SETTINGS = "settings"
+    const val ISLAND_CALIBRATION = "island-calibration"
 
     const val MATCH_DETAIL = "match/{matchId}"
     fun matchDetail(matchId: Long) = "match/$matchId"

@@ -4,16 +4,46 @@ import com.tzvi.kickoff.core.model.League
 import com.tzvi.kickoff.core.model.Team
 import java.net.URI
 
-/** The pages of the flow, in the order they are swiped through. */
-enum class OnboardingStep {
-    WELCOME,
-    CONNECT,
-    LEAGUES,
-    TEAMS,
-    NOTIFICATIONS,
+/**
+ * The pages of the flow, in the order they are swiped through.
+ *
+ * Each step carries its own heading. The page bodies used to print their own, which meant
+ * a scrolling page could push its title off the top and leave the user looking at controls
+ * with nothing naming them; now one fixed header above the pager reads this instead.
+ */
+enum class OnboardingStep(
+    val title: String,
+    val subtitle: String,
+) {
+    WELCOME(
+        title = "Kickoff",
+        subtitle = "",
+    ),
+    CONNECT(
+        title = "Choose where scores come from",
+        subtitle = "Pick one of the three below. Settings can change it later.",
+    ),
+    LEAGUES(
+        title = "Pick your competitions",
+        subtitle = "This only decides which squads the next step offers.",
+    ),
+    TEAMS(
+        title = "Pick the teams you follow",
+        subtitle = "Every match these teams play gets a live card.",
+    ),
+    NOTIFICATIONS(
+        title = "Turn the live card on",
+        subtitle = "One notification per match that keeps editing itself.",
+    ),
     ;
 
+    /** 1-based position among the four steps that ask for something; welcome is 0. */
+    val number: Int get() = ordinal
+
     companion object {
+        /** Everything after the welcome splash: the steps the header and progress count. */
+        val counted: List<OnboardingStep> = entries.drop(1)
+
         fun at(index: Int): OnboardingStep = entries[index.coerceIn(entries.indices)]
     }
 }
@@ -91,6 +121,39 @@ data class OnboardingUiState(
                 option.team.shortName.contains(query, ignoreCase = true) ||
                 option.league?.name?.contains(query, ignoreCase = true) == true
         }
+    }
+
+    /** The chip in the step header: what this step has to show for itself so far. */
+    fun statusFor(step: OnboardingStep): String? = when (step) {
+        OnboardingStep.WELCOME -> null
+        OnboardingStep.CONNECT -> when (source) {
+            ConfiguredSource.NONE -> null
+            ConfiguredSource.API_FOOTBALL -> "API KEY"
+            ConfiguredSource.BACKEND -> "BACKEND"
+            ConfiguredSource.DEMO -> "DEMO DATA"
+        }
+
+        OnboardingStep.LEAGUES -> selectedLeagueIds.size.takeIf { it > 0 }?.let { "$it PICKED" }
+        OnboardingStep.TEAMS -> selected.size.takeIf { it > 0 }?.let { "$it PICKED" }
+        OnboardingStep.NOTIFICATIONS -> if (notificationsGranted) "ALLOWED" else null
+    }
+
+    /**
+     * Why Next is greyed out, in the footer beside it. A disabled button with no reason
+     * next to it is the single most confusing thing a wizard can do.
+     */
+    fun blockedReason(step: OnboardingStep): String? = when (step) {
+        OnboardingStep.LEAGUES ->
+            "Pick at least one competition".takeIf { selectedLeagueIds.isEmpty() }
+
+        OnboardingStep.TEAMS -> "Pick at least one team".takeIf { selected.isEmpty() }
+        OnboardingStep.NOTIFICATIONS -> when {
+            saving -> "Saving your choices"
+            selected.isEmpty() -> "Go back and pick a team"
+            else -> null
+        }
+
+        else -> null
     }
 
     fun canAdvanceFrom(step: OnboardingStep): Boolean = when (step) {

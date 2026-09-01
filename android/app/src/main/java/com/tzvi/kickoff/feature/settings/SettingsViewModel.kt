@@ -109,13 +109,17 @@ class SettingsViewModel @Inject constructor(
         )
     }
 
+    // Six sources, and `combine` is only typed up to five: pairing the two island-side
+    // flows keeps the destructured lambda instead of an untyped Array<Any>.
+    private val demoAndCutout = combine(demo, settingsRepository.islandCutout, ::Pair)
+
     val uiState: StateFlow<SettingsUiState> = combine(
         stored,
         activeSourceName,
         session,
         editor,
-        demo,
-    ) { current, sourceName, device, form, demoStatus ->
+        demoAndCutout,
+    ) { current, sourceName, device, form, (demoStatus, cutout) ->
         val loaded = current as? Stored.Loaded
         SettingsUiState(
             isLoading = false,
@@ -128,6 +132,7 @@ class SettingsViewModel @Inject constructor(
                 overlayPermissionGranted = device.overlayPermissionGranted,
                 floatingEnabled = device.floatingIslandEnabled,
             ),
+            islandCutout = cutout,
             dataSource = DataSourceForm(
                 apiKeyInput = form.apiKeyInput ?: loaded?.apiKey.orEmpty(),
                 apiKeyStored = !loaded?.apiKey.isNullOrBlank(),

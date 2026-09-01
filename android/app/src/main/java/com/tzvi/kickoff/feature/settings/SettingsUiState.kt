@@ -1,6 +1,7 @@
 package com.tzvi.kickoff.feature.settings
 
 import com.tzvi.kickoff.core.model.AppSettings
+import com.tzvi.kickoff.core.model.IslandCutout
 import com.tzvi.kickoff.core.model.LiveCardStyle
 
 /**
@@ -65,6 +66,7 @@ data class SettingsUiState(
     val liveUpdate: LiveUpdateStatus = LiveUpdateStatus(),
     val notifications: NotificationAccess = NotificationAccess(),
     val island: IslandStatus = IslandStatus(),
+    val islandCutout: IslandCutout = IslandCutout.Unset,
     val dataSource: DataSourceForm = DataSourceForm(),
     val demo: DemoStatus = DemoStatus(),
     val appVersion: String = "",

@@ -44,7 +44,7 @@ import com.tzvi.kickoff.ui.motion.containerTransform
 import com.tzvi.kickoff.ui.theme.KickoffTheme
 
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onCalibrateCutout: () -> Unit) {
     val viewModel: SettingsViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -97,6 +97,7 @@ fun SettingsScreen(onBack: () -> Unit) {
         onGrantOverlayPermission = {
             runCatching { context.startActivity(viewModel.overlayPermissionIntent()) }
         },
+        onCalibrateCutout = onCalibrateCutout,
         onApiKeyChange = viewModel::onApiKeyChange,
         onToggleApiKeyVisibility = viewModel::toggleApiKeyVisibility,
         onSaveApiKey = viewModel::saveApiKey,
@@ -133,6 +134,7 @@ internal fun SettingsContent(
     onRequestNotifications: () -> Unit,
     onSetFloatingIsland: (Boolean) -> Unit,
     onGrantOverlayPermission: () -> Unit,
+    onCalibrateCutout: () -> Unit,
     onApiKeyChange: (String) -> Unit,
     onToggleApiKeyVisibility: () -> Unit,
     onSaveApiKey: () -> Unit,
@@ -231,8 +233,10 @@ internal fun SettingsContent(
                 )
                 IslandSection(
                     status = state.island,
+                    cutout = state.islandCutout,
                     onSetEnabled = onSetFloatingIsland,
                     onGrantOverlayPermission = onGrantOverlayPermission,
+                    onCalibrateCutout = onCalibrateCutout,
                 )
                 DataSourceSection(
                     form = state.dataSource,
@@ -287,6 +291,7 @@ private fun SettingsPreview(state: SettingsUiState) {
             onRequestNotifications = {},
             onSetFloatingIsland = {},
             onGrantOverlayPermission = {},
+            onCalibrateCutout = {},
             onApiKeyChange = {},
             onToggleApiKeyVisibility = {},
             onSaveApiKey = {},

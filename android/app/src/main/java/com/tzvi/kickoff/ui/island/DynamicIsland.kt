@@ -4,12 +4,14 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
@@ -17,11 +19,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,12 +41,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tzvi.kickoff.core.model.IslandCutout
 import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.ui.component.CrestImage
 import com.tzvi.kickoff.ui.component.LivePill
@@ -74,6 +82,16 @@ fun DynamicIsland(
     onOpenMatch: (Long) -> Unit,
     modifier: Modifier = Modifier,
     onDismiss: (() -> Unit)? = null,
+    cutout: IslandCutout = IslandCutout.Unset,
+    /**
+     * Where the camera falls inside this composable's own coordinates. Null means the
+     * container has already centred the island on it - which is what the overlay window
+     * does while collapsed, because a full-width window at the top of the screen would
+     * swallow every swipe meant for the notification shade.
+     */
+    cameraCenterX: Dp? = null,
+    /** Distance from this composable's top edge to the top of the pill. */
+    pillTop: Dp = 0.dp,
 ) {
     // AnimatedVisibility keeps composing its content through the exit animation, by which
     // time `activity` is already null. Holding the last non-null value lets the island
@@ -94,6 +112,20 @@ fun DynamicIsland(
         modifier = modifier,
     ) {
         val shown = retained ?: return@AnimatedVisibility
+
+        if (cutout.enabled) {
+            CalibratedIsland(
+                activity = shown,
+                expanded = expanded,
+                cutout = cutout,
+                cameraCenterX = cameraCenterX,
+                pillTop = pillTop,
+                onToggle = onToggle,
+                onOpenMatch = { onOpenMatch(shown.match.id) },
+                onDismiss = onDismiss,
+            )
+            return@AnimatedVisibility
+        }
 
         val corner by animateDpAsState(
             targetValue = if (expanded) 30.dp else 24.dp,
@@ -147,6 +179,252 @@ fun DynamicIsland(
                 } else {
                     IslandCompact(activity = shown)
                 }
+            }
+        }
+    }
+}
+
+/**
+ * The island as a bar that straddles the camera.
+ *
+ * The hole splits the top row in two: home crest and score to its left, clock and away
+ * crest to its right, with a gap the exact width of the calibrated circle in between.
+ * Tapping grows the same bar into a full-width card - the top row stays where it is and
+ * the detail unrolls beneath it, so the score never jumps.
+ */
+@Composable
+private fun CalibratedIsland(
+    activity: LiveActivity.MatchActivity,
+    expanded: Boolean,
+    cutout: IslandCutout,
+    cameraCenterX: Dp?,
+    pillTop: Dp,
+    onToggle: () -> Unit,
+    onOpenMatch: () -> Unit,
+    onDismiss: (() -> Unit)?,
+) {
+    val gap = cutout.clearanceDp.dp
+    val collapsedWidth = SIDE_WIDTH * 2 + gap
+
+    // Fill the width only when this composable is doing the positioning. Left to wrap,
+    // it measures to the pill, which is what keeps the overlay window pill-sized.
+    BoxWithConstraints(if (cameraCenterX == null) Modifier else Modifier.fillMaxWidth()) {
+        val fullWidth = maxWidth
+        val camera = cameraCenterX ?: (collapsedWidth / 2)
+
+        val pillWidth by animateDpAsState(
+            targetValue = if (expanded) fullWidth else collapsedWidth,
+            animationSpec = Motion.dpSpring(),
+            label = "island-width",
+        )
+        val pillX by animateDpAsState(
+            targetValue = if (expanded) {
+                0.dp
+            } else {
+                // Clamped so a corner cutout cannot push the pill off the screen; the gap
+                // follows the clamp, so the hole stays uncovered either way.
+                (camera - collapsedWidth / 2)
+                    .coerceIn(0.dp, (fullWidth - collapsedWidth).coerceAtLeast(0.dp))
+            },
+            animationSpec = Motion.dpSpring(),
+            label = "island-x",
+        )
+        val corner by animateDpAsState(
+            targetValue = if (expanded) 30.dp else COLLAPSED_HEIGHT / 2,
+            animationSpec = spring(dampingRatio = 0.7f, stiffness = 400f),
+            label = "island-corner",
+        )
+
+        Box(
+            modifier = Modifier
+                // Lambda overload: pillX springs on every frame, and the value overload
+                // would recompose the whole island for each one.
+                .offset { IntOffset(pillX.roundToPx(), pillTop.roundToPx()) }
+                .width(pillWidth)
+                .shadow(
+                    elevation = if (expanded) 18.dp else 10.dp,
+                    shape = RoundedCornerShape(corner),
+                    clip = false,
+                )
+                .clip(RoundedCornerShape(corner))
+                .background(IslandInk)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onToggle,
+                ),
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                CutoutRow(
+                    activity = activity,
+                    leftWidth = (camera - pillX - gap / 2).coerceAtLeast(0.dp),
+                    gap = gap,
+                )
+                AnimatedVisibility(
+                    visible = expanded,
+                    enter = expandVertically(Motion.sizeSpring()) +
+                        fadeIn(tween(Motion.Duration.MEDIUM, delayMillis = 60)),
+                    exit = shrinkVertically(Motion.sizeSpring()) +
+                        fadeOut(tween(Motion.Duration.SHORT)),
+                ) {
+                    IslandDetails(
+                        activity = activity,
+                        onOpenMatch = onOpenMatch,
+                        onDismiss = onDismiss,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The one row that has to dodge the camera: score on the left of it, clock on the right. */
+@Composable
+private fun CutoutRow(
+    activity: LiveActivity.MatchActivity,
+    leftWidth: Dp,
+    gap: Dp,
+) {
+    val match = activity.match
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(COLLAPSED_HEIGHT),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(leftWidth)
+                .clipToBounds()
+                .padding(start = 16.dp),
+            contentAlignment = Alignment.CenterEnd,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                CrestImage(match.home.crestUrl, match.home.code, size = 20.dp)
+                Text(
+                    text = scoreLabel(activity),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                )
+            }
+        }
+        Spacer(Modifier.width(gap))
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clipToBounds()
+                .padding(end = 16.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                CrestImage(match.away.crestUrl, match.away.code, size = 20.dp)
+                Text(
+                    text = clockLabel(activity),
+                    color = IslandMuted,
+                    style = KickoffTextStyles.clock,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+/** Everything the expanded card adds under the row that straddles the camera. */
+@Composable
+private fun IslandDetails(
+    activity: LiveActivity.MatchActivity,
+    onOpenMatch: () -> Unit,
+    onDismiss: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val match = activity.match
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = match.leagueName,
+                color = IslandMuted,
+                style = KickoffTextStyles.badge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (match.isLive) LivePill()
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IslandTeam(
+                crestUrl = match.home.crestUrl,
+                code = match.home.code,
+                name = match.home.name,
+                modifier = Modifier.weight(1f),
+            )
+            IslandTeam(
+                crestUrl = match.away.crestUrl,
+                code = match.away.code,
+                name = match.away.name,
+                modifier = Modifier.weight(1f),
+                trailing = true,
+            )
+        }
+
+        activity.latestEvent?.let { event ->
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(IslandStrip)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = event.minuteLabel,
+                    color = IslandAccent,
+                    style = KickoffTextStyles.clock,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = event.headline(),
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            IslandButton(
+                label = "Open match",
+                onClick = onOpenMatch,
+                modifier = Modifier.weight(1f),
+                filled = true,
+            )
+            if (onDismiss != null) {
+                IslandButton(label = "Hide", onClick = onDismiss, modifier = Modifier.weight(1f))
             }
         }
     }
@@ -344,6 +622,12 @@ private fun clockLabel(activity: LiveActivity.MatchActivity): String {
 }
 
 private val KICKOFF_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+/** The height of the bar that straddles the camera, in both states. */
+internal val COLLAPSED_HEIGHT = 44.dp
+
+/** Each side of the gap while collapsed. Equal halves keep the hole exactly centred. */
+private val SIDE_WIDTH = 92.dp
 
 // The island is always dark, in both themes: it imitates the hardware cutout it sits
 // next to, and a light pill floating over a light app has no edge to read against.

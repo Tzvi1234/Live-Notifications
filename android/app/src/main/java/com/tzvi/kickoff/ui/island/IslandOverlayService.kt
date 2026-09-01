@@ -15,9 +15,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
@@ -27,12 +30,15 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.tzvi.kickoff.MainActivity
+import com.tzvi.kickoff.core.model.IslandCutout
 import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.repository.SettingsRepository
 import com.tzvi.kickoff.ui.theme.KickoffTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -63,6 +69,7 @@ class IslandOverlayService :
 
     private var windowManager: WindowManager? = null
     private var overlayView: ComposeView? = null
+    private var cutout: IslandCutout = IslandCutout.Unset
 
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val viewModelStore: ViewModelStore get() = store
@@ -87,7 +94,12 @@ class IslandOverlayService :
                 stopSelf()
                 return START_NOT_STICKY
             }
-            else -> showOverlay()
+            // The calibration decides the window's own geometry, so it has to be read
+            // before the window is added rather than observed from inside the content.
+            else -> lifecycleScope.launch {
+                cutout = settings.islandCutout.first()
+                showOverlay()
+            }
         }
         return START_STICKY
     }
@@ -137,6 +149,10 @@ class IslandOverlayService :
                     DynamicIsland(
                         activity = activity,
                         expanded = expanded,
+                        cutout = cutout,
+                        // Collapsed, the window itself is centred on the hole and only as
+                        // wide as the pill, so the content must not offset itself again.
+                        cameraCenterX = if (expanded) cameraCenterXDp() else null,
                         onToggle = {
                             expanded = !expanded
                             // A collapsed pill must not swallow taps meant for the app
@@ -179,14 +195,54 @@ class IslandOverlayService :
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = OVERLAY_TOP_MARGIN_PX
+            if (cutout.enabled) {
+                // Anchored to the left edge and moved by hand, because the hole is not
+                // necessarily in the middle of the display.
+                gravity = Gravity.TOP or Gravity.START
+                x = if (expanded) 0 else collapsedLeftPx()
+                y = pillTopPx()
+            } else {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                y = OVERLAY_TOP_MARGIN_PX
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 // Sit beside the camera cutout rather than being pushed below it.
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
+
+    // ---- calibrated geometry -------------------------------------------------------
+    //
+    // A collapsed island keeps its window pill-sized. A full-width window pinned to the
+    // top of the screen would take every touch in the status-bar strip with it, and the
+    // user would lose the notification shade for as long as a match was live.
+
+    private fun screenWidthPx(): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            windowManager?.currentWindowMetrics?.bounds?.width()
+                ?.takeIf { it > 0 }
+                ?.let { return it }
+        }
+        return resources.displayMetrics.widthPixels
+    }
+
+    private fun density(): Float = resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
+
+    private fun collapsedWidthPx(): Int =
+        ((SIDE_WIDTH_DP * 2 + cutout.clearanceDp) * density()).toInt()
+
+    private fun collapsedLeftPx(): Int {
+        val width = collapsedWidthPx()
+        val camera = (screenWidthPx() * cutout.centerXFraction).toInt()
+        return (camera - width / 2).coerceIn(0, (screenWidthPx() - width).coerceAtLeast(0))
+    }
+
+    private fun pillTopPx(): Int =
+        ((cutout.centerYDp - COLLAPSED_HEIGHT_DP / 2f) * density()).toInt().coerceAtLeast(0)
+
+    /** Where the hole falls inside a full-width window: only meaningful when expanded. */
+    private fun cameraCenterXDp(): Dp = (screenWidthPx() * cutout.centerXFraction / density()).dp
 
     override fun onDestroy() {
         overlayView?.let { view ->
@@ -202,6 +258,8 @@ class IslandOverlayService :
     companion object {
         private const val ACTION_HIDE = "com.tzvi.kickoff.action.HIDE_ISLAND"
         private const val OVERLAY_TOP_MARGIN_PX = 24
+        private const val SIDE_WIDTH_DP = 92
+        private const val COLLAPSED_HEIGHT_DP = 44
 
         fun canDrawOverlay(context: Context): Boolean = Settings.canDrawOverlays(context)
 

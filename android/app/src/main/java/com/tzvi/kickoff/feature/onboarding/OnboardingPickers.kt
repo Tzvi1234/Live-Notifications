@@ -75,28 +75,9 @@ internal fun LeaguesPage(
 ) {
     val leaguesFailure = state.leaguesFailure
 
+    // The title, the count and "pick at least one" all live in the fixed frame now, so the
+    // page itself is nothing but the grid - one job per screen region.
     Column(modifier = modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier.padding(horizontal = OnboardingSpacing.screen),
-            verticalArrangement = Arrangement.spacedBy(OnboardingSpacing.tight),
-        ) {
-            PageHeading(
-                title = "Which competitions?",
-                body = "This only decides which squads the next step offers you. Following " +
-                    "a team matters more than following a league.",
-            )
-            Text(
-                text = if (state.selectedLeagueIds.isEmpty()) {
-                    "Pick at least one to continue."
-                } else {
-                    "${state.selectedLeagueIds.size} selected"
-                },
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        Spacer(Modifier.height(OnboardingSpacing.tight))
-
         when {
             state.leaguesPending -> LoadingState(
                 modifier = Modifier.weight(1f),
@@ -117,6 +98,7 @@ internal fun LeaguesPage(
                 contentPadding = PaddingValues(
                     start = OnboardingSpacing.screen,
                     end = OnboardingSpacing.screen,
+                    top = 2.dp,
                     bottom = OnboardingSpacing.block,
                 ),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -218,15 +200,12 @@ internal fun TeamsPage(
     val teamsFailure = state.teamsFailure
 
     Column(modifier = modifier.fillMaxSize()) {
+        // Picked teams then the search box, both pinned above the list: the two things you
+        // act on stay put while the list under them scrolls.
         Column(
             modifier = Modifier.padding(horizontal = OnboardingSpacing.screen),
             verticalArrangement = Arrangement.spacedBy(OnboardingSpacing.tight),
         ) {
-            PageHeading(
-                title = "Who do you follow?",
-                body = "Every match these teams play gets a live card. One is enough to " +
-                    "start; the Teams screen can change the list at any point.",
-            )
             AnimatedVisibility(
                 visible = chosen.isNotEmpty(),
                 enter = expandVertically(Motion.sizeSpring()) +
@@ -294,6 +273,7 @@ internal fun TeamsPage(
                 contentPadding = PaddingValues(
                     start = OnboardingSpacing.screen - 12.dp,
                     end = OnboardingSpacing.screen - 12.dp,
+                    top = 4.dp,
                     bottom = OnboardingSpacing.block,
                 ),
             ) {

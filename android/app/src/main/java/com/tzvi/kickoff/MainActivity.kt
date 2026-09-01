@@ -3,8 +3,10 @@ package com.tzvi.kickoff
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.WindowManager
 import android.view.animation.AccelerateInterpolator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -30,6 +32,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         enableEdgeToEdge()
+        // The island lays itself out around the camera hole, which means its window has to
+        // be allowed up into the row the hole is in rather than being pushed under it.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
         super.onCreate(savedInstanceState)
 
         deepLink = intent?.data

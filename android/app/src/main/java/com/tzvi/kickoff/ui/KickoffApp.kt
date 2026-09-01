@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.Icon
@@ -27,12 +28,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.tzvi.kickoff.AppUiState
+import com.tzvi.kickoff.ui.island.COLLAPSED_HEIGHT
 import com.tzvi.kickoff.ui.island.DynamicIsland
 import com.tzvi.kickoff.ui.motion.Motion
 import com.tzvi.kickoff.ui.navigation.KickoffNavHost
@@ -126,9 +131,23 @@ fun KickoffApp(
         }
 
         val islandActivity = state.liveActivity?.takeUnless { islandDismissed }
+        val cutout = state.islandCutout
+        // Calibrated, the island places itself against the display's own top edge, so it
+        // takes the full width and no status-bar inset; uncalibrated it floats as before.
+        val islandModifier = if (cutout.enabled) {
+            Modifier.align(Alignment.TopStart).fillMaxWidth()
+        } else {
+            Modifier
+                .align(Alignment.TopCenter)
+                .padding(WindowInsets.statusBars.asPaddingValues())
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+        }
         DynamicIsland(
             activity = islandActivity,
             expanded = islandExpanded,
+            cutout = cutout,
+            cameraCenterX = windowWidth() * cutout.centerXFraction,
+            pillTop = (cutout.centerYDp.dp - COLLAPSED_HEIGHT / 2).coerceAtLeast(0.dp),
             onToggle = { islandExpanded = !islandExpanded },
             onOpenMatch = { matchId ->
                 islandExpanded = false
@@ -138,10 +157,20 @@ fun KickoffApp(
                 islandExpanded = false
                 islandDismissed = true
             },
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(WindowInsets.statusBars.asPaddingValues())
-                .padding(horizontal = 12.dp, vertical = 4.dp),
+            modifier = islandModifier,
         )
     }
+}
+
+/**
+ * The width of the window the island is drawn in.
+ *
+ * `Configuration.screenWidthDp` is the display's, which is a different number in split
+ * screen and in a freeform window - and the camera's position has to be expressed in the
+ * coordinates the island actually lays out in.
+ */
+@Composable
+private fun windowWidth(): Dp {
+    val width = LocalWindowInfo.current.containerSize.width
+    return with(LocalDensity.current) { width.toDp() }
 }

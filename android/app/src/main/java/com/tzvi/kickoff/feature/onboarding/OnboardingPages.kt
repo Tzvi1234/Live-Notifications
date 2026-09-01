@@ -3,6 +3,7 @@ package com.tzvi.kickoff.feature.onboarding
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -121,20 +122,29 @@ internal fun ConnectPage(
             .padding(horizontal = OnboardingSpacing.screen),
         verticalArrangement = Arrangement.spacedBy(OnboardingSpacing.block),
     ) {
-        PageHeading(
-            title = "Where do the scores come from?",
-            body = "Kickoff has no feed of its own. Pick one of these two - Settings can " +
-                "change it later.",
-        )
+        // Demo first: it is the only one that needs nothing from the user, so it is the
+        // shortest route to seeing what the app actually does.
+        SourceCard(
+            icon = Icons.Outlined.PlayCircleOutline,
+            title = "Demo data",
+            badge = "NO SIGN-UP",
+            active = state.source == ConfiguredSource.DEMO,
+            body = "Real clubs and real crests, fixtures generated around right now, and a " +
+                "match you can watch play out in three minutes. Switch to a real source " +
+                "whenever you like.",
+        ) {
+            if (state.demoEnabled) {
+                OutlinedButton(onClick = onStopDemo) { Text("Turn the demo off") }
+            } else {
+                Button(onClick = onUseDemo) { Text("Use demo data") }
+            }
+        }
 
         SourceCard(
             icon = Icons.Outlined.Key,
-            title = "An API-Football key",
-            status = when {
-                !state.apiKeySaved -> null
-                state.source == ConfiguredSource.API_FOOTBALL -> "IN USE"
-                else -> "SAVED"
-            },
+            title = "Your API-Football key",
+            badge = "FREE TIER",
+            active = state.source == ConfiguredSource.API_FOOTBALL,
             body = "Paste the key from your API-Football dashboard. The free tier allows " +
                 "100 requests a day, which is fine for a handful of teams and will not " +
                 "survive constant refreshing.",
@@ -159,9 +169,9 @@ internal fun ConnectPage(
                     Text("Where do I get one?")
                 }
             }
-            if (state.apiKeySaved && state.backendSaved) {
+            if (state.apiKeySaved && state.source != ConfiguredSource.API_FOOTBALL) {
                 Text(
-                    text = "A backend is set too, and it takes priority while it is there.",
+                    text = "Saved, but something above it is in use right now.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -170,8 +180,9 @@ internal fun ConnectPage(
 
         SourceCard(
             icon = Icons.Outlined.Link,
-            title = "A Kickoff backend",
-            status = if (state.backendSaved) "IN USE" else null,
+            title = "Your own Kickoff backend",
+            badge = "BEST FOR LIVE",
+            active = state.source == ConfiguredSource.BACKEND,
             body = "Point at your own deployment. It holds the provider key, polls matches " +
                 "for you, and is the only option that can push a goal to the phone instead " +
                 "of waiting for the next poll.",
@@ -201,51 +212,37 @@ internal fun ConnectPage(
             }
         }
 
-        SourceCard(
-            icon = Icons.Outlined.PlayCircleOutline,
-            title = "Just look around",
-            status = if (state.demoEnabled) "IN USE" else null,
-            body = "Real clubs and real crests, with fixtures generated around right now " +
-                "and a match you can watch play out in three minutes. Nothing to sign up " +
-                "for, and you can switch to a real source later.",
-        ) {
-            if (state.demoEnabled) {
-                OutlinedButton(onClick = onStopDemo) { Text("Turn the demo off") }
-            } else {
-                Button(onClick = onUseDemo) { Text("Use demo data") }
-            }
-        }
-
         AnimatedVisibility(visible = !state.hasSource, enter = fadeIn(), exit = fadeOut()) {
-            Card(
-                shape = KickoffShapes.medium,
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                ),
+            // Quiet on purpose. This was a filled green panel, which made the thing you are
+            // least likely to want the loudest object on the page.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(
-                    modifier = Modifier.padding(OnboardingSpacing.card),
-                    verticalArrangement = Arrangement.spacedBy(OnboardingSpacing.tight),
-                ) {
-                    Text(
-                        text = "You can skip this, but the next step has nothing to list " +
-                            "until one of the two is set.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
-                    TextButton(onClick = onSkip) { Text("Skip for now") }
-                }
+                Text(
+                    text = "Not now? The next step will have nothing to list until one of " +
+                        "these is set.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onSkip) { Text("Skip") }
             }
         }
         Spacer(Modifier.height(OnboardingSpacing.block))
     }
 }
 
+/**
+ * One of the three ways to feed the app. The card that is actually serving requests is
+ * outlined and says so, so "which of these am I on?" is answerable without reading.
+ */
 @Composable
 private fun SourceCard(
     icon: ImageVector,
     title: String,
-    status: String?,
+    badge: String,
+    active: Boolean,
     body: String,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
@@ -254,8 +251,17 @@ private fun SourceCard(
         modifier = modifier.fillMaxWidth(),
         shape = KickoffShapes.medium,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = if (active) {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            },
         ),
+        border = if (active) {
+            BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+        } else {
+            null
+        },
     ) {
         Column(
             modifier = Modifier.padding(OnboardingSpacing.card),
@@ -275,7 +281,15 @@ private fun SourceCard(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                 )
-                if (status != null) MetaChip(text = status)
+                if (active) {
+                    MetaChip(
+                        text = "IN USE",
+                        container = MaterialTheme.colorScheme.primary,
+                        content = MaterialTheme.colorScheme.onPrimary,
+                    )
+                } else {
+                    MetaChip(text = badge)
+                }
             }
             Text(
                 text = body,
@@ -301,14 +315,6 @@ internal fun NotificationsPage(
             .padding(horizontal = OnboardingSpacing.screen),
         verticalArrangement = Arrangement.spacedBy(OnboardingSpacing.block),
     ) {
-        PageHeading(
-            title = "The live card",
-            body = "An hour before kick-off Kickoff posts one notification per match and " +
-                "keeps editing it: the countdown becomes the lineups, then the scoreline, " +
-                "then the full-time summary. Only goals, red cards and full time make a " +
-                "sound - everything else updates silently.",
-        )
-
         Card(
             shape = KickoffShapes.medium,
             colors = CardDefaults.cardColors(
