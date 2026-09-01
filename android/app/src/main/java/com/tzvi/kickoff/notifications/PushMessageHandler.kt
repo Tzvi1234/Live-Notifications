@@ -114,9 +114,15 @@ class PushMessageHandler @Inject constructor(
         val type = data["type"]?.let { raw ->
             runCatching { MatchEventType.valueOf(raw) }.getOrNull()
         } ?: return null
-        val eventId = data["eventId"] ?: MatchEvent.key(
-            matchId, type, data["minute"]?.toIntOrNull(), null, data["player"],
-        )
+        // The server normally sends the id it already deduped on. Without one, the
+        // minute is the only discriminator the payload carries, so it goes in the key -
+        // a re-push of a corrected minute is a duplicate we would rather show twice than
+        // a second goal we swallow.
+        val eventId = data["eventId"]
+            ?: buildString {
+                append(matchId).append(":push:").append(type.name).append(':')
+                append(data["minute"].orEmpty()).append(':').append(data["player"].orEmpty())
+            }
         val side = runCatching { MatchSide.valueOf(data["side"].orEmpty()) }
             .getOrDefault(MatchSide.NEUTRAL)
         return MatchEvent(

@@ -12,6 +12,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response, type Router } from 'express';
 
 import type { ApiDeps } from './deps.js';
+import type { ProviderQuota } from '../provider/apiFootball.js';
 import { isPushEnabled } from '../push/fcm.js';
 import { notFound, serviceUnavailable, unauthorized } from './validation.js';
 
@@ -50,11 +51,17 @@ export function createAdminRouter(deps: ApiDeps): Router {
       uptimeSeconds: Math.round(process.uptime()),
       store: deps.store.kind,
       pushEnabled: isPushEnabled(),
+      auth: {
+        // Named after the env vars, so an operator reading this knows which one to set.
+        clerk: deps.config.hasClerk ? 'configured' : 'unset (CLERK_SECRET_KEY)',
+        networklessVerification: deps.config.clerkJwtKey !== undefined,
+      },
       provider: {
         name: deps.config.providerName,
         // Two different ceilings: `quota` is what the provider last reported in its rate-limit
-        // headers, `budget` is this process's own local counter, deliberately set lower.
-        quota: deps.provider.getQuota(),
+        // headers — daily AND per-minute, plus when the minute window is expected to roll
+        // over — and `budget` is this process's own local counter, deliberately set lower.
+        quota: describeQuota(deps.provider.getQuota()),
         budget: { ...budget, resetsAt: budget.resetsAt.toISOString() },
       },
       poller: deps.poller?.getStatus() ?? { enabled: false, reason: 'POLL_ENABLED is false' },
@@ -72,6 +79,16 @@ export function createAdminRouter(deps: ApiDeps): Router {
   });
 
   return router;
+}
+
+/** Epoch millis are unreadable in an operator's terminal; everything else passes through. */
+function describeQuota(quota: ProviderQuota): Record<string, unknown> {
+  const { minuteWindowResetsAt, ...rest } = quota;
+  return {
+    ...rest,
+    minuteWindowResetsAt:
+      minuteWindowResetsAt === undefined ? null : new Date(minuteWindowResetsAt).toISOString(),
+  };
 }
 
 /**

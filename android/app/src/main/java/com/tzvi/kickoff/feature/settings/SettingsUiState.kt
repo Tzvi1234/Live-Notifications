@@ -27,11 +27,6 @@ data class NotificationAccess(
     val requestSpent: Boolean = false,
 )
 
-data class IslandStatus(
-    val overlayPermissionGranted: Boolean = false,
-    val floatingEnabled: Boolean = false,
-)
-
 data class DataSourceForm(
     val apiKeyInput: String = "",
     val apiKeyStored: Boolean = false,
@@ -49,14 +44,23 @@ data class DataSourceForm(
     }
 }
 
+/** What the demo panel is doing right now. */
+data class DemoStatus(
+    val enabled: Boolean = false,
+    val simulating: Boolean = false,
+    val minute: Int = 0,
+    val scoreLabel: String = "0 – 0",
+    val lastEvent: String? = null,
+)
+
 data class SettingsUiState(
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
     val settings: AppSettings = AppSettings(),
     val liveUpdate: LiveUpdateStatus = LiveUpdateStatus(),
     val notifications: NotificationAccess = NotificationAccess(),
-    val island: IslandStatus = IslandStatus(),
     val dataSource: DataSourceForm = DataSourceForm(),
+    val demo: DemoStatus = DemoStatus(),
     val appVersion: String = "",
     /** Material You only exists from Android 12; below that the switch is inert. */
     val dynamicColorAvailable: Boolean = true,
@@ -67,9 +71,10 @@ data class SettingsUiState(
 /** The word on the segmented button. */
 val LiveCardStyle.label: String
     get() = when (this) {
-        LiveCardStyle.AUTO -> "Auto"
-        LiveCardStyle.RICH -> "Rich"
+        LiveCardStyle.AUTO -> "Clock"
+        LiveCardStyle.RICH -> "Commentary"
         LiveCardStyle.PLAIN -> "Plain"
+        LiveCardStyle.SCOREBOARD -> "Scoreboard"
     }
 
 /**
@@ -81,16 +86,20 @@ val LiveCardStyle.label: String
 val LiveCardStyle.explanation: String
     get() = when (this) {
         LiveCardStyle.AUTO ->
-            "Prefers a promoted Live Update - the only kind of notification that reaches " +
-                "the status-bar chip, the lock screen and, where the hardware supports it, " +
-                "the always-on display. Falls back to Rich where promotion is unavailable."
+            "The match clock as a bar: two halves, a mark at every goal, and the ball on " +
+                "the current minute. Crests sit at either end in the shade."
         LiveCardStyle.RICH ->
-            "Draws a full scoreboard with crests inside the shade. A custom layout is never " +
-                "promoted, so this trades away the chip, the lock-screen card and the " +
-                "always-on display."
+            "The last five things that happened, newest first. Long text is the only kind " +
+                "Android carries onto the always-on display in full, so this is the one to " +
+                "pick if the lock screen is where you actually read it."
         LiveCardStyle.PLAIN ->
-            "The system's own template. Nothing custom is drawn and no promotion is asked " +
-                "for, which makes it the most predictable of the three."
+            "The system's own template with nothing requested. The most predictable " +
+                "option, and the only one that never asks to be promoted."
+        LiveCardStyle.SCOREBOARD ->
+            "A dark score card drawn by hand: crest, giant score, crest, like the iOS " +
+                "widget. The looks come at a documented price - Android refuses to " +
+                "promote custom layouts, so this one stays in the shade and on the " +
+                "lock screen and never reaches the chip or the always-on display."
     }
 
 val AppSettings.DarkThemePreference.label: String

@@ -6,8 +6,8 @@ import java.time.Instant
  * The single state object a Live Update is rendered from.
  *
  * Everything the notification layer needs is resolved into this before it touches
- * NotificationCompat, so that the football pipeline, the calendar pipeline and an
- * FCM push all converge on one renderer with one set of eligibility rules.
+ * NotificationCompat, so that the poller, the foreground service and an FCM push all
+ * converge on one renderer with one set of eligibility rules.
  */
 sealed interface LiveActivity {
     /** Stable per activity: also the notification id (via [notificationId]) and the FGS key. */
@@ -44,22 +44,6 @@ sealed interface LiveActivity {
 
         companion object {
             fun matchKey(matchId: Long) = "match:$matchId"
-        }
-    }
-
-    /** A calendar event, from its reminder lead time until it ends. */
-    data class CalendarActivity(
-        val event: CalendarEvent,
-        val stage: Stage,
-    ) : LiveActivity {
-        override val key: String get() = eventKey(event.eventId, event.instanceStart.toEpochMilli())
-        override val startsAt: Instant get() = event.instanceStart
-        override val endsAt: Instant get() = event.instanceEnd
-
-        enum class Stage { UPCOMING, IN_PROGRESS, ENDED }
-
-        companion object {
-            fun eventKey(eventId: Long, startMillis: Long) = "event:$eventId:$startMillis"
         }
     }
 }

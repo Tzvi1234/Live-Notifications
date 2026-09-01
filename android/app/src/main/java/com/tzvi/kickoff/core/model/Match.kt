@@ -25,6 +25,29 @@ data class League(
     val logoUrl: String?,
     val season: Int,
     val type: String? = null,
+    val coverage: LeagueCoverage = LeagueCoverage(),
+)
+
+/**
+ * What the provider actually has for this competition this season.
+ *
+ * The reason it exists: line-ups are published for the Premier League and simply do not
+ * exist for the Israel State Cup, and both came back as an empty array. The screen said
+ * "the line-up isn't out yet" in both cases and then went on saying it forever. These
+ * flags are what let it say "this competition doesn't carry line-ups" instead - which is
+ * the difference between a bug and a fact about the data.
+ *
+ * Everything defaults to true so an unknown competition behaves as it did before: hopeful,
+ * and corrected by reality rather than by a guess.
+ */
+data class LeagueCoverage(
+    val lineups: Boolean = true,
+    val events: Boolean = true,
+    val fixtureStatistics: Boolean = true,
+    val playerStatistics: Boolean = true,
+    val standings: Boolean = true,
+    val injuries: Boolean = true,
+    val predictions: Boolean = true,
 )
 
 /**
@@ -43,12 +66,23 @@ enum class MatchPhase {
     EXTRA_TIME,
     PENALTIES,
     BREAK_TIME,
+
+    /**
+     * In progress, half unknown.
+     *
+     * Some competitions on API-Football report `LIVE` instead of `1H`/`2H`. It used to
+     * fall through to [UNKNOWN], which is not live - so the match never reached the live
+     * list, the poller dropped back to its pre-match cadence and the card never updated
+     * for the entire ninety minutes.
+     */
+    IN_PLAY,
     FINISHED,
     UNKNOWN;
 
     val isLive: Boolean
         get() = this == FIRST_HALF || this == SECOND_HALF || this == EXTRA_TIME ||
-            this == PENALTIES || this == HALF_TIME || this == BREAK_TIME
+            this == PENALTIES || this == HALF_TIME || this == BREAK_TIME ||
+            this == IN_PLAY
 
     val isFinished: Boolean get() = this == FINISHED
 
@@ -60,6 +94,7 @@ enum class MatchPhase {
             "HT" -> HALF_TIME
             "2H" -> SECOND_HALF
             "ET", "P" -> if (code == "P") PENALTIES else EXTRA_TIME
+            "LIVE" -> IN_PLAY
             "BT" -> BREAK_TIME
             "SUSP", "INT" -> BREAK_TIME
             "FT", "AET", "PEN" -> FINISHED

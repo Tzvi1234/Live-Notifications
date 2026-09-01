@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The minute pill between the two scores, as on Android's own sports card. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/notif_surface_variant" />
     <corners android:radius="10dp" />
-    <solid android:color="#33FFFFFF" />
 </shape>

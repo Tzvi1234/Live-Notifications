@@ -1,10 +1,10 @@
-# Kickoff — Render Blueprint
+# matchUP — Render Blueprint
 # =============================================================================
 # Apply with: Render Dashboard -> New -> Blueprint -> pick this repository.
 #
 # Why there is no free tier in this file
 # -------------------------------------
-# Kickoff needs a process that is awake whenever a tracked match is in play. Render's free
+# matchUP needs a process that is awake whenever a tracked match is in play. Render's free
 # offering cannot provide one:
 #
 #   * A free **web service spins down after 15 minutes without inbound traffic** and takes
@@ -104,6 +104,21 @@ services:
       - key: FIREBASE_SERVICE_ACCOUNT_B64
         sync: false
       - key: FIREBASE_PROJECT_ID
+        sync: false
+
+      # --- Clerk ------------------------------------------------------------------------
+      # All three are optional: without CLERK_SECRET_KEY the service still boots and serves
+      # fixtures, devices and notifications, and only /v1/me and /v1/groups/* answer 503.
+      # sync: false => prompted when the blueprint is applied, never stored in git.
+      - key: CLERK_SECRET_KEY
+        sync: false
+      # A client credential, served to the app by GET /v1/config. Not a secret, but left
+      # unsynced so the two Clerk keys are entered together and cannot drift apart.
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      # Clerk dashboard -> API keys -> Show JWT public key (PEM). Makes session verification
+      # networkless; without it every authenticated request calls Clerk before it is served.
+      - key: CLERK_JWT_KEY
         sync: false
 
       # --- Poller ---------------------------------------------------------------------

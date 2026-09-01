@@ -1,6 +1,7 @@
 package com.tzvi.kickoff.feature.teams
 
 import com.tzvi.kickoff.core.model.League
+import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchPhase
 import com.tzvi.kickoff.core.model.Team
@@ -41,8 +42,15 @@ data class TeamSheetState(
     val leagueId: Int? = null,
     val leagueName: String? = null,
     val isFavourite: Boolean = false,
+    /** Kick-offs still to come, soonest first. */
     val fixtures: List<Match> = emptyList(),
+    /** Matches already played, most recent first. */
+    val results: List<Match> = emptyList(),
     val fixturesLoading: Boolean = false,
+    /** The club's fixtures could not be fetched; the sheet says so rather than looking empty. */
+    val fixturesFailed: Boolean = false,
+    val squad: List<LineupPlayer> = emptyList(),
+    val squadLoading: Boolean = false,
 )
 
 data class TeamsUiState(

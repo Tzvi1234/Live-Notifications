@@ -4,25 +4,64 @@ import com.tzvi.kickoff.core.model.League
 import com.tzvi.kickoff.core.model.Team
 import java.net.URI
 
-/** The pages of the flow, in the order they are swiped through. */
+/**
+ * The pages of the flow, in the order they are swiped through.
+ *
+ * Each step carries its own heading. The page bodies used to print their own, which meant
+ * a scrolling page could push its title off the top and leave the user looking at controls
+ * with nothing naming them; now one fixed header above the pager reads this instead.
+ */
 enum class OnboardingStep {
+    /** The splash. Owns the whole screen and is the one step the frame folds away for. */
     WELCOME,
-    CONNECT,
+
+    /**
+     * Where the football comes from, and the one input the answer might need.
+     *
+     * It used to be two pages, the second of which asked for the backend's address. The
+     * address is not a question any more - every build ships pointed at one - so the only
+     * thing left to type is an API-Football key, and that belongs under the tile that asks
+     * for it rather than on a page of its own.
+     */
+    SOURCE,
+
     LEAGUES,
     TEAMS,
-    NOTIFICATIONS,
+    ALERTS,
+
+    /** The closing beat: what was picked, and what happens from here. */
+    READY,
     ;
 
+    /** 1-based position among the steps that ask for something; welcome is 0. */
+    val number: Int get() = ordinal
+
     companion object {
+        /** Everything after the welcome splash: the steps the header and progress count. */
+        val counted: List<OnboardingStep> = entries.drop(1)
+
         fun at(index: Int): OnboardingStep = entries[index.coerceIn(entries.indices)]
     }
 }
 
 /** Which source will actually serve requests, given what has been saved. */
-enum class ConfiguredSource { NONE, API_FOOTBALL, BACKEND }
+enum class ConfiguredSource { NONE, API_FOOTBALL, BACKEND, DEMO }
 
 /** Why a catalogue fetch produced nothing. Each case gets its own copy on screen. */
 enum class CatalogueFailure { NO_SOURCE, UNREACHABLE, EMPTY }
+
+/**
+ * A failure plus what the source actually said.
+ *
+ * The kind alone drove the copy for a long time, and it hid the one sentence that made
+ * a problem fixable: "leagues load, teams do not" reads as a broken app until you can
+ * see the provider answering "your plan does not include this season".
+ */
+data class CatalogueError(
+    val kind: CatalogueFailure,
+    /** Verbatim from the provider or the transport. Null when there was nothing to say. */
+    val detail: String? = null,
+)
 
 /** A selectable team, carrying the league it came from so the favourite keeps that link. */
 data class TeamOption(val team: Team, val league: League?)
@@ -33,15 +72,30 @@ data class OnboardingUiState(
     val backendUrlInput: String = "",
     val backendUrlError: String? = null,
     val backendSaved: Boolean = false,
+    /** True while a key or URL is being tried against the real thing. */
+    val checkingSource: Boolean = false,
+    /** What the probe said, good or bad, so the answer lands where the value was typed. */
+    val sourceCheck: String? = null,
+    val sourceCheckFailed: Boolean = false,
+    val demoEnabled: Boolean = false,
+    /**
+     * Whether a session exists.
+     *
+     * The server tile is only offered to somebody who has one: it is a shared deployment
+     * on one API key, and the predictions it exists for cannot work anonymously either.
+     */
+    val hasAccount: Boolean = false,
+    /** What was tapped on the SOURCE step - which is not yet what is configured. */
+    val chosenSource: ConfiguredSource? = null,
 
     val leaguesLoading: Boolean = false,
     val leagues: List<League> = emptyList(),
-    val leaguesFailure: CatalogueFailure? = null,
+    val leaguesFailure: CatalogueError? = null,
     val selectedLeagueIds: Set<Int> = emptySet(),
 
     val teamsLoading: Boolean = false,
     val teams: List<TeamOption> = emptyList(),
-    val teamsFailure: CatalogueFailure? = null,
+    val teamsFailure: CatalogueError? = null,
     /** The league set [teams] was fetched for; re-entering the page must not refetch. */
     val teamsLoadedFor: Set<Int>? = null,
     val teamQuery: String = "",
@@ -61,6 +115,7 @@ data class OnboardingUiState(
      */
     val source: ConfiguredSource
         get() = when {
+            demoEnabled -> ConfiguredSource.DEMO
             backendSaved -> ConfiguredSource.BACKEND
             apiKeySaved -> ConfiguredSource.API_FOOTBALL
             else -> ConfiguredSource.NONE
@@ -91,13 +146,59 @@ data class OnboardingUiState(
         }
     }
 
+    /** The chip in the step header: what this step has to show for itself so far. */
+    fun statusFor(step: OnboardingStep): String? = when (step) {
+        OnboardingStep.WELCOME, OnboardingStep.READY -> null
+        OnboardingStep.SOURCE -> when (source) {
+            ConfiguredSource.NONE -> null
+            ConfiguredSource.API_FOOTBALL -> "API KEY"
+            ConfiguredSource.BACKEND -> "BACKEND"
+            ConfiguredSource.DEMO -> "DEMO DATA"
+        }
+
+        OnboardingStep.LEAGUES -> selectedLeagueIds.size.takeIf { it > 0 }?.let { "$it PICKED" }
+        OnboardingStep.TEAMS -> selected.size.takeIf { it > 0 }?.let { "$it PICKED" }
+        OnboardingStep.ALERTS -> if (notificationsGranted) "ALLOWED" else null
+    }
+
+    /**
+     * Why Next is greyed out, in the footer beside it. A disabled button with no reason
+     * next to it is the single most confusing thing a wizard can do.
+     */
+    fun blockedReason(step: OnboardingStep): String? = when (step) {
+        OnboardingStep.SOURCE -> when {
+            chosenSource == null -> "Pick one of the three"
+            // The server and the demo need nothing typed, so this can only ever be the key.
+            chosenSource == ConfiguredSource.API_FOOTBALL && !apiKeySaved ->
+                "Save your key to continue"
+            else -> null
+        }
+
+        OnboardingStep.LEAGUES ->
+            "Pick at least one competition".takeIf { selectedLeagueIds.isEmpty() }
+
+        OnboardingStep.TEAMS -> "Pick at least one team".takeIf { selected.isEmpty() }
+        OnboardingStep.READY -> when {
+            saving -> "Saving your choices"
+            selected.isEmpty() -> "Go back and pick a team"
+            else -> null
+        }
+
+        else -> null
+    }
+
     fun canAdvanceFrom(step: OnboardingStep): Boolean = when (step) {
         OnboardingStep.WELCOME -> true
-        // Deliberately skippable: the leagues page says plainly what skipping costs.
-        OnboardingStep.CONNECT -> true
+        // The server is already configured and the demo configures itself the moment it
+        // is picked, so this only ever blocks on a key that has not been saved yet.
+        OnboardingStep.SOURCE ->
+            chosenSource != null &&
+                (chosenSource != ConfiguredSource.API_FOOTBALL || apiKeySaved)
+
         OnboardingStep.LEAGUES -> selectedLeagueIds.isNotEmpty()
         OnboardingStep.TEAMS -> selected.isNotEmpty()
-        OnboardingStep.NOTIFICATIONS -> selected.isNotEmpty() && !saving
+        OnboardingStep.ALERTS -> true
+        OnboardingStep.READY -> selected.isNotEmpty() && !saving
     }
 
     /** The furthest page a swipe may settle on, given what has been filled in so far. */

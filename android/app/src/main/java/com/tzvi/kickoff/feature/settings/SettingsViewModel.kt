@@ -11,13 +11,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tzvi.kickoff.BuildConfig
 import com.tzvi.kickoff.core.model.AppSettings
+import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.core.model.LiveCardStyle
 import com.tzvi.kickoff.data.repository.FootballRepository
+import com.tzvi.kickoff.data.local.KickoffDatabase
 import com.tzvi.kickoff.data.repository.SettingsRepository
+import com.tzvi.kickoff.di.IoDispatcher
+import kotlinx.coroutines.CoroutineDispatcher
+import com.tzvi.kickoff.data.demo.DemoCatalogue
 import com.tzvi.kickoff.notifications.LiveCardPreview
+import com.tzvi.kickoff.notifications.MatchSimulator
 import com.tzvi.kickoff.notifications.LiveUpdateCapability
 import com.tzvi.kickoff.notifications.MatchNotificationBuilder
-import com.tzvi.kickoff.ui.island.IslandOverlayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -55,6 +60,9 @@ class SettingsViewModel @Inject constructor(
     private val footballRepository: FootballRepository,
     private val capability: LiveUpdateCapability,
     private val liveCardPreview: LiveCardPreview,
+    private val simulator: MatchSimulator,
+    private val database: KickoffDatabase,
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
 
     /**
@@ -91,23 +99,35 @@ class SettingsViewModel @Inject constructor(
             if (credentials == null) DataSourceForm.NO_SOURCE else footballRepository.sourceName()
         }
 
+    /** Demo mode and the simulator's progress, folded into one value for the panel. */
+    private val demo: Flow<DemoStatus> = combine(
+        settingsRepository.demoMode,
+        simulator.state,
+    ) { enabled, run ->
+        DemoStatus(
+            enabled = enabled,
+            simulating = run.running,
+            minute = run.minute,
+            scoreLabel = "${run.score.home} – ${run.score.away}",
+            lastEvent = run.lastEvent,
+        )
+    }
+
     val uiState: StateFlow<SettingsUiState> = combine(
         stored,
         activeSourceName,
         session,
         editor,
-    ) { current, sourceName, device, form ->
+        demo,
+    ) { current, sourceName, device, form, demoStatus ->
         val loaded = current as? Stored.Loaded
         SettingsUiState(
             isLoading = false,
             errorMessage = (current as? Stored.Failed)?.message,
             settings = loaded?.settings ?: AppSettings(),
             liveUpdate = device.liveUpdate,
+            demo = demoStatus,
             notifications = device.notifications,
-            island = IslandStatus(
-                overlayPermissionGranted = device.overlayPermissionGranted,
-                floatingEnabled = device.floatingIslandEnabled,
-            ),
             dataSource = DataSourceForm(
                 apiKeyInput = form.apiKeyInput ?: loaded?.apiKey.orEmpty(),
                 apiKeyStored = !loaded?.apiKey.isNullOrBlank(),
@@ -159,22 +179,6 @@ class SettingsViewModel @Inject constructor(
         // has to offer the settings screen instead of asking again.
         session.update {
             it.copy(notifications = NotificationAccess(granted = granted, requestSpent = !granted))
-        }
-    }
-
-    // ---- dynamic island ------------------------------------------------------
-
-    fun setFloatingIslandEnabled(enabled: Boolean) {
-        val granted = IslandOverlayService.canDrawOverlay(context)
-        if (enabled && !granted) {
-            session.update {
-                it.copy(overlayPermissionGranted = false, floatingIslandEnabled = false)
-            }
-            return
-        }
-        if (enabled) IslandOverlayService.show(context) else IslandOverlayService.hide(context)
-        session.update {
-            it.copy(overlayPermissionGranted = granted, floatingIslandEnabled = enabled)
         }
     }
 
@@ -250,18 +254,76 @@ class SettingsViewModel @Inject constructor(
 
     private fun previewMessage(rendering: MatchNotificationBuilder.Rendering?): String =
         when (rendering) {
-            MatchNotificationBuilder.Rendering.PROMOTED ->
-                "Posted as a Live Update - check the status bar and lock screen."
-            MatchNotificationBuilder.Rendering.RICH ->
-                "Posted as the rich scoreboard. It will not appear in the status bar or on the always-on display."
+            MatchNotificationBuilder.Rendering.CLOCK ->
+                "Posted as a Live Update with the match clock - check the status bar chip, " +
+                    "the lock screen and the always-on display."
+            MatchNotificationBuilder.Rendering.COMMENTARY ->
+                "Posted as a Live Update with the commentary block. Its text is the only " +
+                    "kind that reaches the always-on display in full."
             MatchNotificationBuilder.Rendering.PLAIN ->
                 "Posted using the plain system template."
+            MatchNotificationBuilder.Rendering.SCOREBOARD ->
+                "Posted as the scoreboard card. It lives in the shade and on the lock " +
+                    "screen; Android never promotes custom layouts, so no chip and no " +
+                    "always-on display - that is this style's trade."
             // A refused post and a post throttled behind the previous one are
             // indistinguishable from here, so the copy has to cover both.
             null ->
-                "Nothing was posted. Check that notifications are allowed for Kickoff, " +
+                "Nothing was posted. Check that notifications are allowed for matchUP, " +
                     "and give the last card a couple of seconds before asking again."
         }
+
+    // ---- demo ----------------------------------------------------------------
+
+    fun setDemoMode(enabled: Boolean) {
+        viewModelScope.launch {
+            if (!enabled) simulator.stop()
+            settingsRepository.setDemoMode(enabled)
+            if (enabled) seedDemoFavourites()
+            reloads.update { it + 1 }
+            editor.update {
+                it.copy(
+                    message = if (enabled) {
+                        "Demo data is on. Fixtures, teams and the live card are generated."
+                    } else {
+                        "Demo data is off."
+                    },
+                )
+            }
+        }
+    }
+
+    /**
+     * Gives the demo something to be about. Without a follow list every screen is a valid
+     * but empty state, which is the one thing a demo must not open on.
+     */
+    private suspend fun seedDemoFavourites() {
+        if (footballRepository.favouriteIdsNow().isNotEmpty()) return
+        footballRepository.setFavourites(
+            listOf(
+                DemoCatalogue.arsenal to DemoCatalogue.premierLeague,
+                DemoCatalogue.barcelona to DemoCatalogue.laLiga,
+                DemoCatalogue.liverpool to DemoCatalogue.premierLeague,
+                DemoCatalogue.bayern to DemoCatalogue.bundesliga,
+            ),
+        )
+    }
+
+    fun toggleSimulation() {
+        if (uiState.value.demo.simulating) simulator.stop() else simulator.start()
+    }
+
+    fun showPreMatchCard() = preview(LiveActivity.MatchActivity.Stage.PRE_MATCH)
+    fun showLiveCard() = preview(LiveActivity.MatchActivity.Stage.LIVE)
+    fun showFullTimeCard() = preview(LiveActivity.MatchActivity.Stage.FULL_TIME)
+
+    private fun preview(stage: LiveActivity.MatchActivity.Stage) {
+        viewModelScope.launch {
+            val style = uiState.value.settings.liveCardStyle
+            val rendering = runCatching { liveCardPreview.show(style, stage) }.getOrNull()
+            editor.update { it.copy(message = previewMessage(rendering)) }
+        }
+    }
 
     fun dismissMessage() {
         editor.update { it.copy(message = null) }
@@ -283,11 +345,34 @@ class SettingsViewModel @Inject constructor(
     /** Null when this build has no promoted-notification settings activity to open. */
     fun promotionSettingsIntent(): Intent? = promotionSettings
 
-    fun overlayPermissionIntent(): Intent = IslandOverlayService.permissionIntent(context)
-
     fun notificationSettingsIntent(): Intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
         .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    /**
+     * Burn it all down, then start the app again from its first screen.
+     *
+     * The process is killed on purpose rather than navigated: singletons, caches, the
+     * foreground service and the overlay all hold state that a wipe under their feet
+     * would turn into undefined behaviour. A clean process against empty storage is the
+     * only "back to the beginning" that actually is.
+     */
+    fun eraseEverything() {
+        viewModelScope.launch(ioDispatcher) {
+            runCatching { simulator.stop() }
+            runCatching {
+                context.getSystemService(android.app.NotificationManager::class.java)
+                    ?.cancelAll()
+            }
+            runCatching { database.clearAllTables() }
+            runCatching { settingsRepository.eraseEverything() }
+
+            val restart = Intent(context, com.tzvi.kickoff.MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            context.startActivity(restart)
+            Runtime.getRuntime().exit(0)
+        }
+    }
 
     // ---- internals -----------------------------------------------------------
 
@@ -301,7 +386,6 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun readSession(previous: Session? = null): Session {
-        val overlayGranted = IslandOverlayService.canDrawOverlay(context)
         return Session(
             liveUpdate = LiveUpdateStatus(
                 supportsProgressStyle = capability.supportsProgressStyle,
@@ -313,9 +397,6 @@ class SettingsViewModel @Inject constructor(
                 granted = hasNotificationPermission(),
                 requestSpent = previous?.notifications?.requestSpent == true,
             ),
-            overlayPermissionGranted = overlayGranted,
-            // Losing the grant while the app was away also takes the overlay down.
-            floatingIslandEnabled = previous?.floatingIslandEnabled == true && overlayGranted,
         )
     }
 
@@ -343,8 +424,6 @@ class SettingsViewModel @Inject constructor(
     private data class Session(
         val liveUpdate: LiveUpdateStatus,
         val notifications: NotificationAccess,
-        val overlayPermissionGranted: Boolean,
-        val floatingIslandEnabled: Boolean,
     )
 
     private data class Editor(

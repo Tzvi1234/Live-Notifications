@@ -1,4 +1,4 @@
-# Deploying Kickoff
+# Deploying matchUP
 
 Everything you need to get the backend live on Render and the app talking to it, with the
 exact name of every environment variable and where each value comes from.
@@ -85,6 +85,10 @@ repository root — that is where Render looks for a Blueprint by default.
 
 `DATABASE_URL` is wired automatically from `kickoff-db` — you do not set it by hand.
 
+The two services are still named `kickoff-api` and `kickoff-db` even though the app is now
+matchUP. Renaming a Render service changes its `.onrender.com` hostname, which is the
+address already baked into every installed build — so the names stay put.
+
 ### 3c. Upload the Firebase service account as a Secret File
 
 Do **not** paste the service-account JSON into an ordinary environment variable: the PEM
@@ -134,6 +138,26 @@ Set these on the **kickoff-api** service (**Environment → Environment Variable
 | `DATABASE_URL` | Wired from `kickoff-db` by the blueprint's `fromDatabase` block. |
 | `NODE_VERSION` | Set to `22` by the blueprint. It outranks every other source, so pinning it here stops Render resolving `engines: ">=22"` to a newer major than `@types/node` describes. |
 
+### Accounts and the prediction game (set these to enable them)
+
+All three are optional and the service boots without them. Leave them unset and matchUP
+works exactly as before: football, notifications and push, with no accounts and no game.
+
+| Name | Where the value comes from | Example |
+|---|---|---|
+| `CLERK_SECRET_KEY` | [Clerk dashboard](https://dashboard.clerk.com/) → your app → **API keys** → Secret key. Never leaves the server. | `sk_test_…` |
+| `CLERK_PUBLISHABLE_KEY` | Same page, **Publishable key**. Safe to expose — the app fetches it from `GET /v1/config` so the APK does not have to ship it. | `pk_test_…` |
+| `CLERK_JWT_KEY` | Same app → **API keys → Show JWT public key → PEM**. Optional, and worth setting: it lets the server verify a session without a round trip to Clerk on every request. Paste it with real newlines or with `\n` — both are handled. | `-----BEGIN PUBLIC KEY-----…` |
+
+The game also needs a real database. `predictionGame` in `GET /v1/config` stays `false`
+unless **both** Clerk and `DATABASE_URL` are present, because the in-memory fallback store
+would lose every guess on the next deploy — better to say the game is off than to let
+people play one that forgets.
+
+In the Clerk dashboard you also need to switch on the sign-in methods you want under
+**User & authentication → Email, phone, username**. matchUP uses email + password and the
+email verification code; nothing else is required.
+
 ### Push (set these to enable FCM)
 
 | Name | Where the value comes from | Example |
@@ -154,7 +178,7 @@ Set these on the **kickoff-api** service (**Environment → Environment Variable
 | `POLL_IDLE_INTERVAL_SECONDS` | `300` | Cadence when nothing is live. Keeps the quota for match days. |
 | `PREMATCH_LEAD_MINUTES` | `60` | How early the pre-match card and the line-up fetch start. |
 | `DAILY_REQUEST_BUDGET` | `7500` | **Set this to your API-Football plan's daily quota.** The poller refuses to exceed it and backs off instead of being cut off. Free = `100`. |
-| `FEATURED_LEAGUE_IDS` | `39,140,135,78,61,2,3,88,94,203,383,253,71,128` | Competitions offered during onboarding. See §6 for the ids. |
+| `FEATURED_LEAGUE_IDS` | `39,40,41,42,45,48,528,383,382,384,385,140,135,78,61,88,94,203,253,71,128,2,3,848,531,5,1,4,15` | Competitions offered during onboarding. See §6 for the ids. |
 | `CACHE_TTL_SECONDS` | `60` | TTL for catalogue and fixtures-by-date responses. Live calls are never cached. |
 | `ADMIN_TOKEN` | *(unset)* | When set, guards `/v1/admin/*` (quota, poller status, manual poll trigger) behind `Authorization: Bearer <token>`. Leave unset to disable those routes. |
 
@@ -164,31 +188,61 @@ Set these on the **kickoff-api** service (**Environment → Environment Variable
 
 Two ways:
 
+**Nothing, if you are running the shipped build.** Every build carries a default backend
+URL, baked in at compile time. Change it for your own fork with
+`-Pkickoff.backendUrl=https://<your-service>.onrender.com`, or set the same key in
+`local.properties`.
+
 **In the app** — Settings → *Data source* → **Backend URL**, paste
-`https://<your-service>.onrender.com`, save. The app registers its FCM token and pushes its
-subscriptions immediately.
+`https://<your-service>.onrender.com`, save. The app checks the address before storing it,
+then registers its FCM token and pushes its subscriptions.
 
-**During onboarding** — step 2 offers the same field.
-
-You can also leave the backend blank and paste an API-Football key instead; the app then
-talks to the provider directly, with no push. If both are set, the backend wins.
+**Going direct instead** — Settings → *Data source* → **Use API-Football directly**, then
+paste your own key. No push, and no prediction game: a guess nobody else can see needs
+somewhere that is not the guesser's own phone to live.
 
 ---
 
 ## 6. Useful API-Football league ids
 
+**England**
+
 | Id | Competition | Id | Competition |
 |---|---|---|---|
-| 39 | Premier League | 2 | UEFA Champions League |
-| 140 | La Liga | 3 | UEFA Europa League |
-| 135 | Serie A | 88 | Eredivisie |
-| 78 | Bundesliga | 94 | Primeira Liga |
-| 61 | Ligue 1 | 203 | Süper Lig |
-| 383 | Ligat ha'Al (Israel) | 253 | Major League Soccer |
+| 39 | Premier League | 45 | FA Cup |
+| 40 | Championship | 48 | League Cup (Carabao) |
+| 41 | League One | 528 | Community Shield |
+| 42 | League Two | 43 | National League |
+
+**Israel**
+
+| Id | Competition | Id | Competition |
+|---|---|---|---|
+| 383 | Ligat ha'Al | 384 | State Cup |
+| 382 | Liga Leumit | 385 | Toto Cup Ligat Al |
+
+**Elsewhere, and international**
+
+| Id | Competition | Id | Competition |
+|---|---|---|---|
+| 140 | La Liga | 2 | UEFA Champions League |
+| 135 | Serie A | 3 | UEFA Europa League |
+| 78 | Bundesliga | 848 | UEFA Conference League |
+| 61 | Ligue 1 | 531 | UEFA Super Cup |
+| 88 | Eredivisie | 5 | UEFA Nations League |
+| 94 | Primeira Liga | 1 | World Cup |
+| 203 | Süper Lig | 4 | Euro Championship |
+| 253 | Major League Soccer | 15 | FIFA Club World Cup |
 | 71 | Brasileirão Série A | 128 | Liga Profesional (Argentina) |
-| 1 | World Cup | 4 | Euro Championship |
 
 Full list: `GET /leagues` with your key, or the app's onboarding screen.
+
+**Not every competition carries everything.** `GET /leagues` returns a per-season
+`coverage` object saying whether that competition has line-ups, events, statistics and
+predictions at all — matchUP reads it and tells the user rather than showing an empty
+screen. Worth knowing before you promise line-ups for a cup: Ligat ha'Al is fully covered,
+the Israel State and Toto Cups carry events and line-ups but no table or statistics, and
+the FA Cup carries everything except the table and injuries.
 
 ---
 
@@ -229,7 +283,7 @@ active.
 **No notifications while the phone is idle.**
 High-priority data messages do wake a dozing device, but FCM audits this over a rolling
 7-day window and demotes an app instance whose high-priority messages do not consistently
-produce a visible notification. Kickoff posts a notification for every push it receives,
+produce a visible notification. matchUP posts a notification for every push it receives,
 which keeps it on the right side of that audit — but a device that has had notifications
 disabled for the app will be silently demoted.
 

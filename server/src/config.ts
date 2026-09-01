@@ -37,6 +37,17 @@ export interface KickoffConfig {
 
   readonly adminToken?: string | undefined;
   readonly cacheTtlSeconds: number;
+
+  readonly clerkSecretKey?: string | undefined;
+  readonly clerkPublishableKey?: string | undefined;
+  readonly clerkJwtKey?: string | undefined;
+  /**
+   * Whether the authenticated surface (/v1/me, /v1/groups/*) can answer at all. The secret
+   * key alone decides it: CLERK_JWT_KEY only makes verification networkless, and the
+   * publishable key is for the client. All three are optional so an instance configured for
+   * nothing but live notifications still boots; `requireUser` answers 503 when this is false.
+   */
+  readonly hasClerk: boolean;
 }
 
 const DEFAULT_FEATURED_LEAGUE_IDS = '39,140,135,78,61,2,3,88,94,203,383,253,71,128';
@@ -151,6 +162,7 @@ export function loadConfig(env: Env = process.env): KickoffConfig {
   // match, which is why DAILY_REQUEST_BUDGET sits well under the plan limit rather than at it.
   const dailyRequestBudget = readInt(env, 'DAILY_REQUEST_BUDGET', 7500, 100, 10_000_000);
 
+  const clerkSecretKey = raw(env, 'CLERK_SECRET_KEY');
   const databaseUrl = raw(env, 'DATABASE_URL');
   const googleApplicationCredentials = raw(env, 'GOOGLE_APPLICATION_CREDENTIALS');
   const firebaseServiceAccountB64 = raw(env, 'FIREBASE_SERVICE_ACCOUNT_B64');
@@ -190,7 +202,23 @@ export function loadConfig(env: Env = process.env): KickoffConfig {
 
     adminToken: raw(env, 'ADMIN_TOKEN'),
     cacheTtlSeconds: readInt(env, 'CACHE_TTL_SECONDS', 60, 0, 86_400),
+
+    clerkSecretKey,
+    clerkPublishableKey: raw(env, 'CLERK_PUBLISHABLE_KEY'),
+    clerkJwtKey: readClerkJwtKey(env),
+    hasClerk: clerkSecretKey !== undefined,
   });
+}
+
+/**
+ * Clerk prints the JWKS public key as a PEM block. Copied out of the dashboard through a
+ * shell or a Render form it usually arrives with its newlines escaped as the two characters
+ * `\n`, which the verifier reads as part of the base64 body and rejects with nothing more
+ * useful than "invalid key". Unescaping here is the difference between a working deploy and
+ * a paste that looks right.
+ */
+function readClerkJwtKey(env: Env): string | undefined {
+  return raw(env, 'CLERK_JWT_KEY')?.replace(/\\n/g, '\n');
 }
 
 /**

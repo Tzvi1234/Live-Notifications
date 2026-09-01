@@ -1,22 +1,24 @@
 package com.tzvi.kickoff.ui.navigation
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Casino
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.SportsSoccer
-import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.SportsSoccer
 import androidx.compose.ui.graphics.vector.ImageVector
 
 object Routes {
+    const val AUTH = "auth"
+    const val PROFILE = "profile"
     const val ONBOARDING = "onboarding"
     const val TODAY = "today"
     const val MATCHES = "matches"
     const val TEAMS = "teams"
-    const val CALENDAR = "calendar"
+    const val PREDICT = "predict"
     const val SETTINGS = "settings"
 
     const val MATCH_DETAIL = "match/{matchId}"
@@ -29,7 +31,13 @@ object Routes {
     const val ARG_TEAM_ID = "teamId"
 }
 
-/** The four top-level destinations that appear in the navigation bar. */
+/**
+ * The four top-level destinations in the navigation bar.
+ *
+ * Three of them answer "what is happening": today, the full fixture list, the clubs
+ * behind it. Predict is the fourth because it is the one worth opening when there is no
+ * match on at all.
+ */
 enum class TopLevelDestination(
     val route: String,
     val label: String,
@@ -39,5 +47,5 @@ enum class TopLevelDestination(
     TODAY(Routes.TODAY, "Today", Icons.Filled.Home, Icons.Outlined.Home),
     MATCHES(Routes.MATCHES, "Matches", Icons.Filled.SportsSoccer, Icons.Outlined.SportsSoccer),
     TEAMS(Routes.TEAMS, "Teams", Icons.Filled.Groups, Icons.Outlined.Groups),
-    CALENDAR(Routes.CALENDAR, "Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth),
+    PREDICT(Routes.PREDICT, "Predict", Icons.Filled.Casino, Icons.Outlined.Casino),
 }

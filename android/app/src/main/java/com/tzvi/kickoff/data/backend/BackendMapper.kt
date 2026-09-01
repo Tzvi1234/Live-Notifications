@@ -1,6 +1,11 @@
 package com.tzvi.kickoff.data.backend
 
 import com.tzvi.kickoff.core.model.League
+import com.tzvi.kickoff.core.model.PlayerMatchStats
+import com.tzvi.kickoff.core.model.PlayerProfile
+import com.tzvi.kickoff.core.model.TeamForm
+import com.tzvi.kickoff.core.model.MatchPrediction
+import com.tzvi.kickoff.core.model.LeagueCoverage
 import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
@@ -34,6 +39,98 @@ object BackendMapper {
         logoUrl = json.logoUrl,
         season = json.season,
         type = json.type,
+        // An older server that does not send coverage gets the optimistic default, which
+        // is how the app behaved before the field existed.
+        coverage = json.coverage?.let {
+            LeagueCoverage(
+                lineups = it.lineups,
+                events = it.events,
+                fixtureStatistics = it.fixtureStatistics,
+                playerStatistics = it.playerStatistics,
+                standings = it.standings,
+                injuries = it.injuries,
+                predictions = it.predictions,
+            )
+        } ?: LeagueCoverage(),
+    )
+
+    fun squadMember(json: SquadPlayerJson) = LineupPlayer(
+        id = json.id,
+        name = json.name,
+        number = json.number,
+        position = json.position,
+        // A squad member has no place on a pitch diagram; the grid is what separates one
+        // from a player who is actually named in a line-up.
+        gridRow = null,
+        gridColumn = null,
+        photoUrl = json.photoUrl,
+    )
+
+    fun playerProfile(json: PlayerProfileJson) = PlayerProfile(
+        firstName = json.firstName,
+        lastName = json.lastName,
+        age = json.age,
+        birthDate = json.birthDate,
+        birthPlace = json.birthPlace,
+        nationality = json.nationality,
+        height = json.height,
+        weight = json.weight,
+        position = json.position,
+        number = json.number,
+    )
+
+    fun playerStats(json: PlayerMatchStatsJson) = PlayerMatchStats(
+        minutes = json.minutes,
+        number = json.number,
+        position = json.position,
+        rating = json.rating,
+        captain = json.captain,
+        startedOnBench = json.startedOnBench,
+        goals = json.goals,
+        assists = json.assists,
+        conceded = json.conceded,
+        saves = json.saves,
+        shotsTotal = json.shotsTotal,
+        shotsOnTarget = json.shotsOnTarget,
+        passesTotal = json.passesTotal,
+        passesKey = json.passesKey,
+        passAccuracy = json.passAccuracy,
+        tackles = json.tackles,
+        interceptions = json.interceptions,
+        duelsTotal = json.duelsTotal,
+        duelsWon = json.duelsWon,
+        dribbleAttempts = json.dribbleAttempts,
+        dribblesPast = json.dribblesPast,
+        dribblesSuccessful = json.dribblesSuccessful,
+        foulsDrawn = json.foulsDrawn,
+        foulsCommitted = json.foulsCommitted,
+        yellowCards = json.yellowCards,
+        redCards = json.redCards,
+        offsides = json.offsides,
+        penaltiesScored = json.penaltiesScored,
+        penaltiesMissed = json.penaltiesMissed,
+        penaltiesSaved = json.penaltiesSaved,
+    )
+
+    fun prediction(json: PredictionJson): MatchPrediction? = MatchPrediction(
+        homePercent = json.homePercent,
+        drawPercent = json.drawPercent,
+        awayPercent = json.awayPercent,
+        advice = json.advice,
+        winnerName = json.winnerName,
+        winnerComment = json.winnerComment,
+        goalsLine = json.goalsLine,
+        homeForm = json.homeForm?.let(::teamForm),
+        awayForm = json.awayForm?.let(::teamForm),
+    ).takeIf { it.hasNumbers }
+
+    private fun teamForm(json: TeamFormJson) = TeamForm(
+        recentResults = json.recentResults,
+        attackRating = json.attackRating,
+        defenceRating = json.defenceRating,
+        goalsForAverage = json.goalsForAverage,
+        goalsAgainstAverage = json.goalsAgainstAverage,
+        cleanSheets = json.cleanSheets,
     )
 
     fun match(json: MatchJson) = Match(

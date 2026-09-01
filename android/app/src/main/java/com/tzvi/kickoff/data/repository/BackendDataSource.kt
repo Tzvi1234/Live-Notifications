@@ -2,6 +2,10 @@ package com.tzvi.kickoff.data.repository
 
 import com.tzvi.kickoff.core.model.League
 import com.tzvi.kickoff.core.model.Match
+import com.tzvi.kickoff.core.model.PlayerProfile
+import com.tzvi.kickoff.core.model.PlayerMatchStats
+import com.tzvi.kickoff.core.model.MatchPrediction
+import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Team
 import com.tzvi.kickoff.data.backend.BackendMapper
 import com.tzvi.kickoff.data.backend.KickoffBackendService
@@ -10,14 +14,14 @@ import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 /**
- * Talks to the Kickoff backend, which polls the provider once for everybody and pushes
+ * Talks to the matchUP backend, which polls the provider once for everybody and pushes
  * deltas over FCM. This is the production path.
  */
 class BackendDataSource @Inject constructor(
     private val service: KickoffBackendService,
 ) : FootballDataSource {
 
-    override val name: String = "Kickoff backend"
+    override val name: String = "matchUP backend"
 
     override suspend fun leagues(featuredOnly: Boolean): List<League> =
         service.leagues(featured = featuredOnly.takeIf { it }).leagues.map(BackendMapper::league)
@@ -42,6 +46,29 @@ class BackendDataSource @Inject constructor(
         service.liveFixtures(
             teamIds = teamIds.takeIf { it.isNotEmpty() }?.joinToString(","),
         ).matches.map(BackendMapper::match)
+
+    override suspend fun teamFixtures(teamId: Int, last: Int, next: Int): List<Match> =
+        service.teamFixtures(
+            teamId = teamId,
+            last = last.takeIf { it > 0 },
+            next = next.takeIf { it > 0 },
+        ).matches.map(BackendMapper::match)
+
+    override suspend fun squad(teamId: Int): List<LineupPlayer> =
+        service.squad(teamId).players.map(BackendMapper::squadMember)
+
+    override suspend fun playerProfile(playerId: Int): PlayerProfile? =
+        service.player(playerId).let(BackendMapper::playerProfile)
+
+    override suspend fun playersInMatch(matchId: Long): Map<Int, PlayerMatchStats> =
+        service.matchPlayers(matchId).players
+            .mapNotNull { (id, stats) ->
+                id.toIntOrNull()?.let { it to BackendMapper.playerStats(stats) }
+            }
+            .toMap()
+
+    override suspend fun predictions(matchId: Long): MatchPrediction? =
+        BackendMapper.prediction(service.predictions(matchId))
 
     override suspend fun matchDetail(matchId: Long): MatchDetail {
         val detail = service.match(matchId)

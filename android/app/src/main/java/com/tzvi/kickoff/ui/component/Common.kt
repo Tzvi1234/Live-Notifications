@@ -58,8 +58,8 @@ fun SectionHeader(
  * The empty state.
  *
  * Every distinct reason a list can be empty gets its own copy and its own action -
- * "no permission", "no calendars", "nothing today" and "nothing configured" look
- * identical to the code and completely different to the user.
+ * "nothing today", "no teams yet" and "nothing configured" look identical to the code
+ * and completely different to the user.
  */
 @Composable
 fun EmptyState(

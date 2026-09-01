@@ -7,15 +7,19 @@
  *   live poll        86400 / 30            = 2880 requests/day
  *   pre-match sweep  (1-2) * 288           =  288-576/day  (one `/fixtures?date=` per UTC
  *                                             day the lead window touches, every 5 minutes)
- *   per match        1 `/fixtures/events` per tick per *subscribed* live match, plus one
- *                    `/fixtures/lineups` per match, plus one `/fixtures?id=` when a match
- *                    drops off the live list and its final state has to be fetched.
+ *   per match        one `/fixtures/lineups` per match, plus one `/fixtures?id=` when a
+ *                    match drops off the live list and its final state has to be fetched.
+ *   settlement       one `/fixtures?id=` per finished fixture somebody predicted on.
  *
- * The per-match term is the one that can run away, so a match nobody is subscribed to is
- * never fetched at all: with three subscribed matches live for two hours a day that term is
- * ~720 requests, and the whole day lands comfortably under DAILY_REQUEST_BUDGET (7500).
- * When no subscribed match is in play the cadence drops to POLL_IDLE_INTERVAL_SECONDS,
- * which costs 288 live polls a day instead of 2880.
+ * The per-match term used to be dominated by a `/fixtures/events` call per tick per live
+ * match. It is not any more: `live=all` returns each fixture's `events` INLINE, so the diff
+ * is computed from the live poll's own response and costs nothing extra, and `/fixtures?id=`
+ * carries events, lineups, statistics and players inline as well. The separate endpoints
+ * are now a fallback for a response that did not include the section.
+ *
+ * A match nobody is subscribed to is still never fetched at all. When no subscribed match
+ * is in play the cadence drops to POLL_IDLE_INTERVAL_SECONDS, which costs 288 live polls a
+ * day instead of 2880.
  *
  * Two invariants hold this together:
  *  - only the leader-lock holder polls, because Render overlaps instances across a deploy;
@@ -32,6 +36,7 @@ import {
   type ApiFixture,
 } from '../provider/apiFootball.js';
 import { toEvents, toLineups, toMatch } from '../provider/mapper.js';
+import type { ApiEvent, ApiLineup } from '../provider/apiFootball.js';
 import { sendToTokens, type SendResult } from '../push/fcm.js';
 import { eventPayload, tickPayload, type PushMessage } from '../push/payload.js';
 import type { PushTarget, Store } from '../store/index.js';
@@ -41,6 +46,7 @@ import {
   type MatchEventJson,
   type MatchEventType,
   type MatchJson,
+  type ScoreJson,
   type SubscriptionPreferences,
   type TrackedMatchState,
 } from '../types.js';
@@ -73,6 +79,23 @@ const MAX_RESOLVE_ATTEMPTS = 3;
 
 /** A follower re-checks for leadership at least this often, so a deploy takeover is quick. */
 const LEADER_RETRY_MS = 60_000;
+
+/**
+ * How long after kick-off a fixture is first asked for its result. No match ends sooner, so
+ * a shorter grace would only spend a request on a fixture that is still being played.
+ */
+const SETTLE_GRACE_MINUTES = 105;
+
+/**
+ * How far back the settlement sweep looks. Past this a fixture the provider never resolved —
+ * cancelled, or an id withdrawn — is given up on rather than costing one request per tick
+ * forever. Its predictions simply stay unscored, which counts as zero on the leaderboard;
+ * nothing is deleted and nothing is scored wrongly.
+ */
+const SETTLE_WINDOW_DAYS = 7;
+
+/** Ceiling on the settlement sweep's cost per tick; a backlog drains oldest first. */
+const MAX_SETTLE_PER_TICK = 10;
 
 const MIN_LEADER_LEASE_MS = 60_000;
 
@@ -115,6 +138,8 @@ export interface TickSummary {
   durablePushes: number;
   tickPushes: number;
   prunedTokens: number;
+  /** Prediction rows scored this tick, across every group. */
+  settledPredictions: number;
   errors: number;
   /** True when the daily budget is spent and the tick did no provider work at all. */
   quotaBlocked: boolean;
@@ -183,6 +208,16 @@ export function utcDatesInWindow(startMs: number, endMs: number): string[] {
   const first = utcDate(startMs);
   const last = utcDate(endMs);
   return first === last ? [first] : [first, last];
+}
+
+/**
+ * The result a prediction is scored against. `goals` is the 90-minute (plus stoppage) score
+ * and is what the game means by a scoreline: a tie decided on penalties was a draw, and
+ * scoring a "correct outcome" off the shoot-out would contradict the card the app displayed
+ * all match. A finished fixture with no goals block at all is 0-0, which is a real result.
+ */
+function finalScore(match: MatchJson): ScoreJson {
+  return match.score ?? { home: 0, away: 0 };
 }
 
 function lineupsEvent(matchId: number, formations: string): MatchEventJson {
@@ -304,6 +339,7 @@ export class LivePoller {
       durablePushes: 0,
       tickPushes: 0,
       prunedTokens: 0,
+      settledPredictions: 0,
       errors: 0,
       quotaBlocked: false,
       durationMs: 0,
@@ -327,6 +363,7 @@ export class LivePoller {
       ['live poll', () => this.#pollLive(context)],
       ['resolve departed fixtures', () => this.#resolveDeparted(context)],
       ['pre-match sweep', () => this.#preMatchSweep(context)],
+      ['settle predictions', () => this.#settlePredictions(context)],
     ];
 
     let stageFailed = false;
@@ -361,11 +398,13 @@ export class LivePoller {
       durablePushes: summary.durablePushes,
       tickPushes: summary.tickPushes,
       prunedTokens: summary.prunedTokens,
+      settledPredictions: summary.settledPredictions,
       errors: summary.errors,
       durationMs: summary.durationMs,
     };
     // A quiet tick every 30 seconds is noise at info level; anything that moved is not.
-    if (summary.durablePushes > 0 || summary.errors > 0) this.#logger.info('poll tick', line);
+    if (summary.durablePushes > 0 || summary.settledPredictions > 0 || summary.errors > 0)
+      this.#logger.info('poll tick', line);
     else this.#logger.debug('poll tick', line);
 
     return summary;
@@ -482,14 +521,17 @@ export class LivePoller {
       try {
         const targets = await this.#store.tokensForMatch(match);
         if (targets.length === 0) {
-          // Nobody is listening: no events call, no state row, no cost — and no marker left
+          // Nobody is listening: no detail call, no state row, no cost — and no marker left
           // behind either, since nothing else ever revisits a fixture dropped here.
           this.#tracked.delete(match.id);
           this.#lineupAttempts.delete(match.id);
           continue;
         }
         this.#tracked.set(match.id, { match, missedTicks: 0 });
-        await this.#processMatch(match, targets, context);
+        // `raw` is carried through, not just `match`: `live=all` returns each fixture's
+        // events inline, and using them is what makes a tick cost one request in total
+        // instead of one per live match on top.
+        await this.#processMatch(match, raw, targets, context);
       } catch (error) {
         // One match's failure must never cost the other forty their notifications; a spent
         // budget is the exception, because every later call in the tick would fail too.
@@ -524,7 +566,9 @@ export class LivePoller {
         }
 
         const targets = await this.#store.tokensForMatch(match);
-        if (targets.length > 0) await this.#processMatch(match, targets, context);
+        // A by-id fetch carries events, lineups and statistics inline, so the final tick of
+        // a match costs the one request that discovered it had ended.
+        if (targets.length > 0) await this.#processMatch(match, raw, targets, context);
 
         if (isTerminalPhase(match.phase) || tracked.missedTicks >= MAX_RESOLVE_ATTEMPTS) {
           this.#tracked.delete(matchId);
@@ -547,11 +591,17 @@ export class LivePoller {
 
   async #processMatch(
     match: MatchJson,
+    raw: ApiFixture | undefined,
     targets: PushTarget[],
     context: TickContext,
   ): Promise<void> {
     const previous = await this.#store.getMatchState(match.id);
-    const events: MatchEventJson[] = toEvents(match.id, match.home.id, await this.#client.events(match.id));
+    // Inline when the response carried it (`live=all` and `?id=` both do), one request only
+    // when it did not. An absent key and an empty array are different answers here: `[]` is
+    // "this match has had no incidents yet", which is the correct diff input and must not
+    // trigger a fetch.
+    const rawEvents: ApiEvent[] = raw?.events ?? (await this.#client.events(match.id));
+    const events: MatchEventJson[] = toEvents(match.id, match.home.id, rawEvents);
     const diff = diffMatch(previous, match, events);
     context.summary.newEvents += diff.newEvents.length;
 
@@ -571,7 +621,7 @@ export class LivePoller {
       }
     }
 
-    const lineupsSent = await this.#maybeDeliverLineups(match, targets, previous, context, notified);
+    const lineupsSent = await this.#maybeDeliverLineups(match, raw, targets, previous, context, notified);
 
     const clockChanged = previous?.elapsed !== match.elapsed;
     if (diff.phaseChanged || diff.scoreChanged || clockChanged || previous === undefined) {
@@ -676,6 +726,7 @@ export class LivePoller {
    */
   async #maybeDeliverLineups(
     match: MatchJson,
+    raw: ApiFixture | undefined,
     targets: PushTarget[],
     previous: TrackedMatchState | undefined,
     context: TickContext,
@@ -691,14 +742,21 @@ export class LivePoller {
 
     const recipients = targets.filter((target) => target.preferences.lineups);
     if (recipients.length === 0) return false;
-    if (!this.#mayFetchLineups(match.id)) return false;
-    this.#lineupAttempts.set(match.id, this.#now());
 
-    const raw = await this.#client.lineups(match.id);
+    // Inline where the response carried it. `/fixtures?id=` does; `live=all` and the
+    // pre-match sweep's `?date=` do not, and those are the paths that still pay for a
+    // `/fixtures/lineups` call — throttled, because a sheet is published on no schedule and
+    // re-asking every tick until it appears is the expensive way to wait.
+    let rawLineups: ApiLineup[] | undefined = raw?.lineups ?? undefined;
+    if (rawLineups === undefined) {
+      if (!this.#mayFetchLineups(match.id)) return false;
+      this.#lineupAttempts.set(match.id, this.#now());
+      rawLineups = await this.#client.lineups(match.id);
+    }
     // Empty until the teams are announced, which is not an error and not a state change.
-    if (raw.length === 0) return false;
+    if (rawLineups.length === 0) return false;
 
-    const { homeLineup, awayLineup } = toLineups(match.home.id, raw);
+    const { homeLineup, awayLineup } = toLineups(match.home.id, rawLineups);
     const formations = [homeLineup?.formation, awayLineup?.formation].filter(
       (formation): formation is string => typeof formation === 'string' && formation.length > 0,
     );
@@ -774,6 +832,9 @@ export class LivePoller {
         );
         const lineupsSent = await this.#maybeDeliverLineups(
           match,
+          // `/fixtures?date=` carries no lineups block, so this path always falls back to
+          // the dedicated call; passing the raw fixture anyway would only look like it did.
+          undefined,
           due,
           previous,
           context,
@@ -801,6 +862,85 @@ export class LivePoller {
       candidates,
       leadMinutes,
     });
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Prediction settlement                                                   */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Scores the prediction game's fixtures once they are over.
+   *
+   * This is where a group's fixtures join what the poller tracks. They cannot ride on the
+   * live poll: `tokensForMatch` answers with device tokens, and a group member who wants a
+   * leaderboard has not necessarily subscribed a device to any of its teams — so a match
+   * somebody predicted on may never be tracked, may never be pushed about, and would never
+   * be scored. The settlement queue is therefore driven by the predictions themselves:
+   * `fixturesAwaitingSettlement` asks which fixtures have unscored rows and have had time
+   * to finish, and each one costs a single `/fixtures?id=` whose result is written back by
+   * `settleFixture`.
+   *
+   * Three outcomes per fixture, and only the first one scores anything:
+   *   FINISHED             -> score every unsettled row against the final result;
+   *   postponed/rescheduled -> move the kick-off snapshot, which re-opens predictions and
+   *                            takes it out of this queue until the new date;
+   *   still in play         -> leave it; the next tick asks again.
+   */
+  async #settlePredictions(context: TickContext): Promise<void> {
+    const now = this.#now();
+    const fixtureIds = await this.#store.fixturesAwaitingSettlement(
+      new Date(now - SETTLE_WINDOW_DAYS * DAY_MS),
+      new Date(now - SETTLE_GRACE_MINUTES * MINUTE_MS),
+      MAX_SETTLE_PER_TICK,
+    );
+    if (fixtureIds.length === 0) return;
+
+    for (const fixtureId of fixtureIds) {
+      try {
+        const [raw] = await this.#client.fixtures({ id: fixtureId });
+        if (raw === undefined) {
+          // The provider no longer knows the fixture. Nothing to score and nothing to move;
+          // the window bound in `fixturesAwaitingSettlement` retires it in a few days.
+          this.#logger.warn('predicted fixture is unknown to the provider', { fixtureId });
+          continue;
+        }
+
+        const match = toMatch(raw);
+        if (match.phase === 'FINISHED') {
+          const settled = await this.#store.settleFixture(fixtureId, finalScore(match));
+          context.summary.settledPredictions += settled;
+          if (settled > 0) {
+            this.#logger.info('predictions settled', {
+              fixtureId,
+              score: finalScore(match),
+              predictions: settled,
+            });
+          }
+          continue;
+        }
+
+        // A postponed match keeps its id and is given a new date; following that date is
+        // what lets the members predict on it again instead of being scored against a
+        // match that was never played.
+        const kickoffMs = match.kickoffAt * 1000;
+        if (kickoffMs > now) {
+          const moved = await this.#store.rescheduleFixture(fixtureId, new Date(kickoffMs));
+          if (moved > 0) {
+            this.#logger.info('predicted fixture rescheduled; predictions re-opened', {
+              fixtureId,
+              kickoffAt: match.kickoffAt,
+              predictions: moved,
+            });
+          }
+        }
+      } catch (error) {
+        // One fixture's failure must not cost the others their settlement; a spent budget
+        // is the exception, as everywhere else in the tick.
+        if (error instanceof QuotaExhaustedError) throw error;
+        context.summary.errors += 1;
+        this.#logger.error('settling a fixture failed', { fixtureId, error });
+      }
+    }
   }
 
   /* ---------------------------------------------------------------------- */

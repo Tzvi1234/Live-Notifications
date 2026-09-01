@@ -1,6 +1,12 @@
 package com.tzvi.kickoff.data.remote
 
 import com.tzvi.kickoff.core.model.League
+import com.tzvi.kickoff.data.remote.dto.PredictionTeamDto
+import com.tzvi.kickoff.data.remote.dto.PredictionResponse
+import com.tzvi.kickoff.core.model.TeamForm
+import com.tzvi.kickoff.core.model.MatchPrediction
+import com.tzvi.kickoff.data.remote.dto.CoverageDto
+import com.tzvi.kickoff.core.model.LeagueCoverage
 import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
@@ -16,7 +22,13 @@ import com.tzvi.kickoff.data.remote.api.ApiFootballService
 import com.tzvi.kickoff.data.remote.dto.EventResponse
 import com.tzvi.kickoff.data.remote.dto.FixtureResponse
 import com.tzvi.kickoff.data.remote.dto.LeagueCatalogueResponse
+import com.tzvi.kickoff.data.remote.dto.FixturePlayersResponse
+import com.tzvi.kickoff.data.remote.dto.PlayerFixtureStatsDto
+import com.tzvi.kickoff.data.remote.dto.PlayerProfileDto
+import com.tzvi.kickoff.core.model.PlayerMatchStats
+import com.tzvi.kickoff.core.model.PlayerProfile
 import com.tzvi.kickoff.data.remote.dto.LineupPlayerDto
+import com.tzvi.kickoff.data.remote.dto.SquadPlayerDto
 import com.tzvi.kickoff.data.remote.dto.LineupResponse
 import com.tzvi.kickoff.data.remote.dto.StatisticsResponse
 import com.tzvi.kickoff.data.remote.dto.TeamCatalogueResponse
@@ -45,18 +57,78 @@ object ApiFootballMapper {
 
     fun league(dto: LeagueCatalogueResponse): League? {
         val id = dto.league?.id ?: return null
-        val season = dto.seasons.firstOrNull { it.current }?.year
-            ?: dto.seasons.maxOfOrNull { it.year }
-            ?: currentSeason()
+        val season = dto.seasons.firstOrNull { it.current }
+            ?: dto.seasons.maxByOrNull { it.year }
         return League(
             id = id,
             name = dto.league.name ?: "League $id",
             countryName = dto.country?.name,
             logoUrl = dto.league.logo ?: ApiFootballService.leagueLogoUrl(id),
-            season = season,
+            season = season?.year ?: currentSeason(),
             type = dto.league.type,
+            coverage = coverage(season?.coverage),
         )
     }
+
+    /**
+     * Absent coverage means "we were not told", not "nothing is covered".
+     *
+     * The provider omits the block on some responses, and a competition that has not
+     * kicked off yet legitimately reports everything false. Treating either as "no
+     * line-ups here" would make the app announce a limitation that does not exist, so the
+     * optimistic default from [LeagueCoverage] stands until the API says otherwise.
+     */
+    private fun coverage(dto: CoverageDto?): LeagueCoverage {
+        if (dto == null) return LeagueCoverage()
+        val fixtures = dto.fixtures
+        return LeagueCoverage(
+            lineups = fixtures?.lineups ?: true,
+            events = fixtures?.events ?: true,
+            fixtureStatistics = fixtures?.statisticsFixtures ?: true,
+            playerStatistics = fixtures?.statisticsPlayers ?: true,
+            standings = dto.standings,
+            injuries = dto.injuries,
+            predictions = dto.predictions,
+        )
+    }
+
+    fun prediction(dto: PredictionResponse): MatchPrediction? {
+        val block = dto.predictions ?: return null
+        return MatchPrediction(
+            homePercent = block.percent?.home.toPercent(),
+            drawPercent = block.percent?.draw.toPercent(),
+            awayPercent = block.percent?.away.toPercent(),
+            advice = block.advice?.takeIf { it.isNotBlank() },
+            winnerName = block.winner?.name,
+            winnerComment = block.winner?.comment,
+            goalsLine = block.underOver?.takeIf { it.isNotBlank() },
+            homeForm = dto.teams?.home.toForm(),
+            awayForm = dto.teams?.away.toForm(),
+        ).takeIf { it.hasNumbers }
+    }
+
+    /** The provider sends "45%", not 45. */
+    private fun String?.toPercent(): Int? =
+        this?.trim()?.removeSuffix("%")?.trim()?.toIntOrNull()
+
+    private fun PredictionTeamDto?.toForm(): TeamForm? {
+        if (this == null) return null
+        val form = TeamForm(
+            // The season-long string is the useful one; last_5's is a five-game slice of
+            // the same thing and is dropped rather than shown twice.
+            recentResults = league?.form?.takeLast(RECENT_FORM_GAMES)?.takeIf { it.isNotBlank() },
+            attackRating = lastFive?.att,
+            defenceRating = lastFive?.defence,
+            goalsForAverage = league?.goals?.scored?.average?.total,
+            goalsAgainstAverage = league?.goals?.against?.average?.total,
+            cleanSheets = league?.cleanSheet?.total,
+        )
+        return form.takeIf {
+            it.recentResults != null || it.attackRating != null || it.goalsForAverage != null
+        }
+    }
+
+    private const val RECENT_FORM_GAMES = 6
 
     fun match(dto: FixtureResponse): Match {
         val status = dto.fixture.status
@@ -96,6 +168,10 @@ object ApiFootballMapper {
     fun events(matchId: Long, homeTeamId: Int, dtos: List<EventResponse>): List<MatchEvent> {
         var home = 0
         var away = 0
+        // How many incidents of this exact shape have already been seen in this match:
+        // the second goal by the same player gets occurrence 1, and stays occurrence 1
+        // however often its minute is revised.
+        val seen = mutableMapOf<String, Int>()
         return dtos.map { dto ->
             val type = eventType(dto.type, dto.detail)
             val teamId = dto.team?.id
@@ -105,16 +181,25 @@ object ApiFootballMapper {
                 else -> MatchSide.AWAY
             }
             if (type.isGoal) {
-                // An own goal is credited to the team that did *not* score it.
-                val creditHome = if (type == MatchEventType.OWN_GOAL) {
-                    side != MatchSide.HOME
-                } else {
-                    side == MatchSide.HOME
+                // An own goal is credited to the team that did *not* score it - but only
+                // when we know which team that was. An unattributed event is NEUTRAL, and
+                // `side != HOME` would silently hand it to the home team.
+                val creditHome = when {
+                    side == MatchSide.NEUTRAL -> null
+                    type == MatchEventType.OWN_GOAL -> side != MatchSide.HOME
+                    else -> side == MatchSide.HOME
                 }
-                if (creditHome) home++ else away++
+                when (creditHome) {
+                    true -> home++
+                    false -> away++
+                    null -> Unit
+                }
             }
+            val shape = "${type.name}:${teamId ?: -1}:${dto.player?.name.orEmpty()}"
+            val occurrence = seen.getOrDefault(shape, 0)
+            seen[shape] = occurrence + 1
             MatchEvent(
-                id = MatchEvent.key(matchId, type, dto.time?.elapsed, teamId, dto.player?.name),
+                id = MatchEvent.key(matchId, type, occurrence, teamId, dto.player?.name),
                 matchId = matchId,
                 type = type,
                 side = side,
@@ -143,7 +228,8 @@ object ApiFootballMapper {
                 else -> MatchEventType.GOAL
             }
             "card" -> when {
-                d.contains("second yellow") -> MatchEventType.SECOND_YELLOW
+                d.contains("second yellow") || d.contains("2nd yellow") ->
+                    MatchEventType.SECOND_YELLOW
                 d.contains("red") -> MatchEventType.RED_CARD
                 else -> MatchEventType.YELLOW_CARD
             }
@@ -217,5 +303,86 @@ object ApiFootballMapper {
         } else {
             name.take(3).uppercase()
         }
+    }
+
+    // ---- players -----------------------------------------------------------------
+
+    /**
+     * One entry per player across both sides, keyed by id.
+     *
+     * The provider nests the stat block in a one-element list even for a single fixture,
+     * and a player with no id at all cannot be looked up later, so both are dropped here
+     * rather than defended against at every call site.
+     */
+    fun playersInMatch(teams: List<FixturePlayersResponse>): Map<Int, PlayerMatchStats> =
+        teams.asSequence()
+            .flatMap { it.players.asSequence() }
+            .mapNotNull { entry ->
+                val id = entry.player?.id ?: return@mapNotNull null
+                val stats = entry.statistics.firstOrNull() ?: return@mapNotNull null
+                id to playerStats(stats)
+            }
+            .toMap()
+
+    private fun playerStats(dto: PlayerFixtureStatsDto) = PlayerMatchStats(
+        minutes = dto.games?.minutes,
+        number = dto.games?.number,
+        position = dto.games?.position,
+        rating = dto.games?.rating,
+        captain = dto.games?.captain == true,
+        startedOnBench = dto.games?.substitute == true,
+        goals = dto.goals?.total,
+        assists = dto.goals?.assists,
+        conceded = dto.goals?.conceded,
+        saves = dto.goals?.saves,
+        shotsTotal = dto.shots?.total,
+        shotsOnTarget = dto.shots?.on,
+        passesTotal = dto.passes?.total,
+        passesKey = dto.passes?.key,
+        passAccuracy = dto.passes?.accuracy,
+        tackles = dto.tackles?.total,
+        interceptions = dto.tackles?.interceptions,
+        duelsTotal = dto.duels?.total,
+        duelsWon = dto.duels?.won,
+        dribbleAttempts = dto.dribbles?.attempts,
+        dribblesSuccessful = dto.dribbles?.success,
+        dribblesPast = dto.dribbles?.past,
+        foulsDrawn = dto.fouls?.drawn,
+        foulsCommitted = dto.fouls?.committed,
+        yellowCards = dto.cards?.yellow,
+        redCards = dto.cards?.red,
+        offsides = dto.offsides,
+        penaltiesScored = dto.penalty?.scored,
+        penaltiesMissed = dto.penalty?.missed,
+        penaltiesSaved = dto.penalty?.saved,
+    )
+
+    fun playerProfile(dto: PlayerProfileDto): PlayerProfile = PlayerProfile(
+        firstName = dto.firstname,
+        lastName = dto.lastname,
+        age = dto.age,
+        birthDate = dto.birth?.date,
+        birthPlace = listOfNotNull(dto.birth?.place, dto.birth?.country)
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString(", "),
+        nationality = dto.nationality,
+        height = dto.height,
+        weight = dto.weight,
+        position = dto.position,
+        number = dto.number,
+    )
+
+    /** A roster row without an id cannot open a sheet or a photo, so it is dropped. */
+    fun squadMember(dto: SquadPlayerDto): LineupPlayer? {
+        val id = dto.id ?: return null
+        return LineupPlayer(
+            id = id,
+            name = dto.name ?: "Player $id",
+            number = dto.number,
+            position = dto.position,
+            gridRow = null,
+            gridColumn = null,
+            photoUrl = dto.photo ?: ApiFootballService.playerPhotoUrl(id),
+        )
     }
 }

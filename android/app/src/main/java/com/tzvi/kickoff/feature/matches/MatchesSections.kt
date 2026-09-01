@@ -173,6 +173,98 @@ internal fun MatchFilterRow(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun TimelineFilterRow(
+    selected: TimelineFilter,
+    onSelect: (TimelineFilter) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val options = TimelineFilter.entries
+    SingleChoiceSegmentedButtonRow(modifier = modifier.fillMaxWidth()) {
+        options.forEachIndexed { index, option ->
+            SegmentedButton(
+                selected = option == selected,
+                onClick = { onSelect(option) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                label = { Text(option.label, maxLines = 1) },
+            )
+        }
+    }
+}
+
+/** The date heading over one run of a followed team's fixtures. */
+@Composable
+internal fun TimelineHeader(section: TimelineSection, modifier: Modifier = Modifier) {
+    Text(
+        text = section.header,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp, bottom = 6.dp),
+    )
+}
+
+@Composable
+internal fun TimelineEmptyState(
+    reason: TimelineEmptyReason,
+    onRetry: () -> Unit,
+    onOpenTeams: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (reason) {
+        TimelineEmptyReason.NO_SOURCE -> EmptyState(
+            title = "No football source yet",
+            body = "matchUP isn't pointed at any data. Add your backend URL or an " +
+                "API-Football key in Settings and your teams' fixtures will fill in.",
+            icon = Icons.Outlined.CloudOff,
+            modifier = modifier,
+        )
+
+        TimelineEmptyReason.NO_FOLLOWED_TEAMS -> EmptyState(
+            title = "You don't follow any teams yet",
+            body = "Follow a few clubs and this becomes their whole season - what is " +
+                "coming and how it has gone.",
+            icon = Icons.Outlined.Groups,
+            actionLabel = "Pick teams",
+            onAction = onOpenTeams,
+            modifier = modifier,
+        )
+
+        TimelineEmptyReason.NOTHING_UPCOMING -> EmptyState(
+            title = "Nothing scheduled yet",
+            body = "Your teams have no fixture on the books. Switch to History for what " +
+                "they have already played.",
+            icon = Icons.Outlined.EventBusy,
+            actionLabel = "Refresh",
+            onAction = onRetry,
+            modifier = modifier,
+        )
+
+        TimelineEmptyReason.NO_HISTORY -> EmptyState(
+            title = "No results held yet",
+            body = "Nothing your teams have played is in the cache. Pull to fetch the " +
+                "last few months.",
+            icon = Icons.Outlined.EventBusy,
+            actionLabel = "Fetch history",
+            onAction = onRetry,
+            modifier = modifier,
+        )
+
+        TimelineEmptyReason.NOTHING_AT_ALL -> EmptyState(
+            title = "Nothing here yet",
+            body = "matchUP hasn't got any fixtures for your teams. Pull down and it " +
+                "will ask the source again.",
+            icon = Icons.Outlined.WifiOff,
+            actionLabel = "Try again",
+            onAction = onRetry,
+            modifier = modifier,
+        )
+    }
+}
+
 @Composable
 internal fun CompetitionHeader(group: CompetitionGroup, modifier: Modifier = Modifier) {
     Row(
@@ -247,7 +339,7 @@ internal fun FixturesEmptyState(
     when (reason) {
         MatchesEmptyReason.NO_SOURCE -> EmptyState(
             title = "No football source yet",
-            body = "Kickoff isn't pointed at any data. Add your backend URL or an " +
+            body = "matchUP isn't pointed at any data. Add your backend URL or an " +
                 "API-Football key in Settings and the schedule will fill itself in.",
             icon = Icons.Outlined.CloudOff,
             modifier = modifier,
@@ -264,7 +356,7 @@ internal fun FixturesEmptyState(
 
         MatchesEmptyReason.NO_FIXTURES -> EmptyState(
             title = "Nothing scheduled ${state.dateLabel}",
-            body = "No competition Kickoff can see has a fixture on this date. " +
+            body = "No competition matchUP can see has a fixture on this date. " +
                 "Pick another day on the strip above.",
             icon = Icons.Outlined.EventBusy,
             modifier = modifier,
@@ -288,7 +380,7 @@ internal fun FixturesEmptyState(
 
         MatchesEmptyReason.NO_TEAM_FIXTURES -> EmptyState(
             title = "None of your teams play ${state.dateLabel}",
-            body = "Kickoff is holding ${fixtureCount(state.dayMatchCount)} on this date " +
+            body = "matchUP is holding ${fixtureCount(state.dayMatchCount)} on this date " +
                 "from clubs you don't follow. Switch to All to see what else is on.",
             icon = Icons.Outlined.Groups,
             modifier = modifier,

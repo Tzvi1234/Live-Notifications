@@ -133,7 +133,12 @@ data class EventResponse(
 data class EventTimeDto(val elapsed: Int? = null, val extra: Int? = null)
 
 @Serializable
-data class PlayerRefDto(val id: Int? = null, val name: String? = null)
+data class PlayerRefDto(
+    val id: Int? = null,
+    val name: String? = null,
+    /** Only /fixtures/players sends this; event payloads carry no photo. */
+    val photo: String? = null,
+)
 
 // ---- lineups ----------------------------------------------------------------
 
@@ -230,4 +235,246 @@ data class SeasonDto(
     val start: String? = null,
     val end: String? = null,
     val current: Boolean = false,
+    val coverage: CoverageDto? = null,
 )
+
+/**
+ * Per-season coverage, which the provider nests under the season rather than the league -
+ * the same competition can carry line-ups one year and not the next.
+ */
+@Serializable
+data class CoverageDto(
+    val fixtures: FixtureCoverageDto? = null,
+    val standings: Boolean = false,
+    val players: Boolean = false,
+    val injuries: Boolean = false,
+    val predictions: Boolean = false,
+    val odds: Boolean = false,
+)
+
+@Serializable
+data class FixtureCoverageDto(
+    val events: Boolean = false,
+    val lineups: Boolean = false,
+    @SerialName("statistics_fixtures") val statisticsFixtures: Boolean = false,
+    @SerialName("statistics_players") val statisticsPlayers: Boolean = false,
+)
+
+// ---- players -------------------------------------------------------------------------
+
+@Serializable
+data class FixturePlayersResponse(
+    val team: TeamRefDto? = null,
+    val players: List<FixturePlayerDto> = emptyList(),
+)
+
+@Serializable
+data class FixturePlayerDto(
+    val player: PlayerRefDto? = null,
+    /** Exactly one element for a single fixture, but the provider still sends a list. */
+    val statistics: List<PlayerFixtureStatsDto> = emptyList(),
+)
+
+@Serializable
+data class PlayerFixtureStatsDto(
+    val games: PlayerGamesDto? = null,
+    val offsides: Int? = null,
+    val shots: PlayerShotsDto? = null,
+    val goals: PlayerGoalsDto? = null,
+    val passes: PlayerPassesDto? = null,
+    val tackles: PlayerTacklesDto? = null,
+    val duels: PlayerDuelsDto? = null,
+    val dribbles: PlayerDribblesDto? = null,
+    val fouls: PlayerFoulsDto? = null,
+    val cards: PlayerCardsDto? = null,
+    val penalty: PlayerPenaltyDto? = null,
+)
+
+@Serializable
+data class PlayerGamesDto(
+    val minutes: Int? = null,
+    val number: Int? = null,
+    val position: String? = null,
+    /** A string upstream ("6.3"), so it is kept as one rather than parsed and re-rendered. */
+    val rating: String? = null,
+    val captain: Boolean? = null,
+    val substitute: Boolean? = null,
+)
+
+@Serializable
+data class PlayerShotsDto(val total: Int? = null, val on: Int? = null)
+
+@Serializable
+data class PlayerGoalsDto(
+    val total: Int? = null,
+    val conceded: Int? = null,
+    val assists: Int? = null,
+    val saves: Int? = null,
+)
+
+/**
+ * `accuracy` is "68%" on this endpoint but a bare integer on the season-stats one, so it
+ * is typed as a string here and never shared with that parser.
+ */
+@Serializable
+data class PlayerPassesDto(
+    val total: Int? = null,
+    val key: Int? = null,
+    val accuracy: String? = null,
+)
+
+@Serializable
+data class PlayerTacklesDto(
+    val total: Int? = null,
+    val blocks: Int? = null,
+    val interceptions: Int? = null,
+)
+
+@Serializable
+data class PlayerDuelsDto(val total: Int? = null, val won: Int? = null)
+
+@Serializable
+data class PlayerDribblesDto(
+    val attempts: Int? = null,
+    val success: Int? = null,
+    /** How often the player was dribbled past, not how often they dribbled. */
+    val past: Int? = null,
+)
+
+@Serializable
+data class PlayerFoulsDto(val drawn: Int? = null, val committed: Int? = null)
+
+/** No `yellowred` key on this endpoint, unlike the season-statistics one. */
+@Serializable
+data class PlayerCardsDto(val yellow: Int? = null, val red: Int? = null)
+
+/** The provider's own misspelling of "committed" is load-bearing - do not correct it. */
+@Serializable
+data class PlayerPenaltyDto(
+    val won: Int? = null,
+    val commited: Int? = null,
+    val scored: Int? = null,
+    val missed: Int? = null,
+    val saved: Int? = null,
+)
+
+@Serializable
+data class PlayerProfileResponse(val player: PlayerProfileDto? = null)
+
+@Serializable
+data class PlayerProfileDto(
+    val id: Int? = null,
+    val name: String? = null,
+    val firstname: String? = null,
+    val lastname: String? = null,
+    val age: Int? = null,
+    val birth: PlayerBirthDto? = null,
+    val nationality: String? = null,
+    val height: String? = null,
+    val weight: String? = null,
+    val number: Int? = null,
+    val position: String? = null,
+    val photo: String? = null,
+)
+
+@Serializable
+data class PlayerBirthDto(
+    val date: String? = null,
+    val place: String? = null,
+    val country: String? = null,
+)
+
+@Serializable
+data class SquadResponse(
+    val team: TeamRefDto? = null,
+    /** Flat objects here, unlike lineups and fixture players - the provider's own shape. */
+    val players: List<SquadPlayerDto> = emptyList(),
+)
+
+@Serializable
+data class SquadPlayerDto(
+    val id: Int? = null,
+    val name: String? = null,
+    val age: Int? = null,
+    val number: Int? = null,
+    /** Long form on this endpoint: "Goalkeeper", "Defender", "Midfielder", "Attacker". */
+    val position: String? = null,
+    val photo: String? = null,
+)
+
+// ---- predictions -----------------------------------------------------------------------
+
+@Serializable
+data class PredictionResponse(
+    val predictions: PredictionBlockDto? = null,
+    val teams: PredictionTeamsDto? = null,
+)
+
+@Serializable
+data class PredictionBlockDto(
+    val winner: PredictionWinnerDto? = null,
+    @SerialName("win_or_draw") val winOrDraw: Boolean? = null,
+    @SerialName("under_over") val underOver: String? = null,
+    val advice: String? = null,
+    /** Strings with a per-cent sign on them - "45%" - not numbers. */
+    val percent: PredictionPercentDto? = null,
+)
+
+@Serializable
+data class PredictionWinnerDto(
+    val id: Int? = null,
+    val name: String? = null,
+    val comment: String? = null,
+)
+
+@Serializable
+data class PredictionPercentDto(
+    val home: String? = null,
+    val draw: String? = null,
+    val away: String? = null,
+)
+
+@Serializable
+data class PredictionTeamsDto(
+    val home: PredictionTeamDto? = null,
+    val away: PredictionTeamDto? = null,
+)
+
+@Serializable
+data class PredictionTeamDto(
+    val league: PredictionLeagueFormDto? = null,
+    @SerialName("last_5") val lastFive: PredictionLastFiveDto? = null,
+)
+
+@Serializable
+data class PredictionLeagueFormDto(
+    val form: String? = null,
+    @SerialName("clean_sheet") val cleanSheet: PredictionTotalsDto? = null,
+    val goals: PredictionGoalsDto? = null,
+)
+
+@Serializable
+data class PredictionLastFiveDto(
+    val form: String? = null,
+    val att: String? = null,
+    @SerialName("def") val defence: String? = null,
+)
+
+@Serializable
+data class PredictionTotalsDto(
+    val home: Int? = null,
+    val away: Int? = null,
+    val total: Int? = null,
+)
+
+@Serializable
+data class PredictionGoalsDto(
+    @SerialName("for") val scored: PredictionGoalSideDto? = null,
+    val against: PredictionGoalSideDto? = null,
+)
+
+@Serializable
+data class PredictionGoalSideDto(val average: PredictionAverageDto? = null)
+
+@Serializable
+data class PredictionAverageDto(val total: String? = null)

@@ -1,5 +1,5 @@
 /**
- * Wire and internal types for the Kickoff backend.
+ * Wire and internal types for the matchUP backend.
  *
  * The `*Json` shapes are the Android client contract (mirrored in
  * `android/app/src/main/java/com/tzvi/kickoff/data/backend/BackendDto.kt`). The app is
@@ -113,6 +113,26 @@ export interface TeamJson {
   venue?: string | undefined;
 }
 
+/**
+ * What the provider publishes for a competition's season, verbatim from `/leagues`.
+ *
+ * The client needs this to tell "this competition has no line-ups at all" from "the line-up
+ * for this fixture is not out yet" — two states that look identical from an empty section
+ * and which lead to opposite UI: a permanently hidden tab versus a "not published yet" note
+ * that is worth refreshing. Absent when the provider did not report a coverage block.
+ */
+export interface LeagueCoverageJson {
+  lineups: boolean;
+  events: boolean;
+  statisticsFixtures: boolean;
+  statisticsPlayers: boolean;
+  standings: boolean;
+  players: boolean;
+  injuries: boolean;
+  predictions: boolean;
+  odds: boolean;
+}
+
 export interface LeagueJson {
   id: number;
   name: string;
@@ -120,6 +140,8 @@ export interface LeagueJson {
   logoUrl?: string | undefined;
   season: number;
   type?: string | undefined;
+  /** For `season`, never for a different one; see `toLeague`. */
+  coverage?: LeagueCoverageJson | undefined;
 }
 
 export interface ScoreJson {
@@ -216,6 +238,254 @@ export interface HealthJson {
   version: string;
   provider: string;
   pollingEnabled: boolean;
+  /**
+   * Which store is actually serving.
+   *
+   * `memory` on a deployment that has DATABASE_URL set means the database is gone and
+   * this instance is running degraded - visible here rather than only in the logs,
+   * because "why did my group disappear" is asked long after the log has rotated.
+   */
+  store?: 'postgres' | 'memory' | undefined;
+  /** Last rate-limit headers the provider returned; undefined fields mean "not yet told". */
+  quota?: ProviderQuotaJson | undefined;
+}
+
+export interface ProviderQuotaJson {
+  dailyLimit?: number | undefined;
+  dailyRemaining?: number | undefined;
+  minuteLimit?: number | undefined;
+  minuteRemaining?: number | undefined;
+}
+
+/**
+ * Everything the app needs before a user has signed in, so the publishable key is fetched
+ * rather than baked into the APK: a Clerk instance can then be swapped without shipping a
+ * release. Public by definition — the *secret* key never appears in any response.
+ */
+export interface ClientConfigJson {
+  clerkPublishableKey?: string | undefined;
+  features: ClientFeaturesJson;
+}
+
+export interface ClientFeaturesJson {
+  /** False when the instance has no Clerk credentials; every authenticated route is 503. */
+  auth: boolean;
+  /** The prediction game needs both an account and a database that survives a restart. */
+  predictionGame: boolean;
+  push: boolean;
+  polling: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Accounts and the prediction game                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Epoch SECONDS everywhere below, matching `MatchJson.kickoffAt` and the client's
+ * `Instant.ofEpochSecond`. The internal records further down are millis, like `DeviceRecord`.
+ */
+export interface UserJson {
+  userId: string;
+  displayName?: string | undefined;
+  avatarUrl?: string | undefined;
+  createdAt: number;
+  lastSeenAt: number;
+}
+
+export interface GroupMemberJson {
+  userId: string;
+  displayName?: string | undefined;
+  avatarUrl?: string | undefined;
+  joinedAt: number;
+  isOwner: boolean;
+}
+
+export interface GroupJson {
+  id: number;
+  name: string;
+  ownerId: string;
+  /** Only ever sent to a member; it is the sole credential for joining. */
+  inviteCode: string;
+  leagueIds: number[];
+  teamIds: number[];
+  memberCount: number;
+  isOwner: boolean;
+  createdAt: number;
+}
+
+export interface GroupDetailJson extends GroupJson {
+  members: GroupMemberJson[];
+}
+
+export interface GroupListJson {
+  groups: GroupJson[];
+}
+
+export interface PredictionJson {
+  userId: string;
+  displayName?: string | undefined;
+  avatarUrl?: string | undefined;
+  home: number;
+  away: number;
+  /** Null until the poller settles the fixture; 3, 1 or 0 once it has. */
+  points?: number | undefined;
+  exact?: boolean | undefined;
+  /** Whether the predicted home-win / draw / away-win was right; true for an exact score too. */
+  correctOutcome?: boolean | undefined;
+  updatedAt: number;
+}
+
+export interface GroupFixtureJson {
+  match: MatchJson;
+  /** `kickoffAt <= now`: predictions are final and everyone's are visible. */
+  locked: boolean;
+  myPrediction?: PredictionJson | undefined;
+  /** Empty until kick-off — the store's query never returns another member's row before it. */
+  predictions: PredictionJson[];
+}
+
+export interface GroupFixtureListJson {
+  fixtures: GroupFixtureJson[];
+}
+
+export interface LeaderboardEntryJson {
+  userId: string;
+  displayName?: string | undefined;
+  avatarUrl?: string | undefined;
+  points: number;
+  /** Predictions that named the score exactly. */
+  exactCount: number;
+  /** Predictions that got home-win / draw / away-win right, the exact ones included. */
+  correctOutcomeCount: number;
+  /** Predictions the poller has scored, i.e. the denominator for the two counts above. */
+  settledCount: number;
+  /** 1-based, dense: two members on equal points share a rank. */
+  rank: number;
+}
+
+export interface LeaderboardJson {
+  groupId: number;
+  exactPoints: number;
+  outcomePoints: number;
+  entries: LeaderboardEntryJson[];
+}
+
+export interface ChatMessageJson {
+  id: number;
+  userId: string;
+  displayName?: string | undefined;
+  avatarUrl?: string | undefined;
+  text: string;
+  createdAt: number;
+}
+
+export interface ChatJson {
+  messages: ChatMessageJson[];
+  /** The window's lower bound, so the client can label "nothing said today". */
+  since: number;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Squads, players and pre-match predictions                                   */
+/* -------------------------------------------------------------------------- */
+
+export interface SquadPlayerJson {
+  id: number;
+  name: string;
+  number?: number | undefined;
+  position?: string | undefined;
+  age?: number | undefined;
+  photoUrl?: string | undefined;
+}
+
+export interface TeamSquadJson {
+  team: TeamJson;
+  players: SquadPlayerJson[];
+}
+
+export interface PlayerSeasonStatsJson {
+  leagueId?: number | undefined;
+  leagueName?: string | undefined;
+  teamId?: number | undefined;
+  teamName?: string | undefined;
+  season?: number | undefined;
+  appearances?: number | undefined;
+  lineups?: number | undefined;
+  minutes?: number | undefined;
+  goals?: number | undefined;
+  assists?: number | undefined;
+  yellowCards?: number | undefined;
+  redCards?: number | undefined;
+  rating?: string | undefined;
+}
+
+export interface PlayerProfileJson {
+  id: number;
+  name: string;
+  firstName?: string | undefined;
+  lastName?: string | undefined;
+  age?: number | undefined;
+  birthDate?: string | undefined;
+  birthPlace?: string | undefined;
+  nationality?: string | undefined;
+  height?: string | undefined;
+  weight?: string | undefined;
+  injured?: boolean | undefined;
+  photoUrl?: string | undefined;
+  statistics: PlayerSeasonStatsJson[];
+}
+
+export interface FixturePlayerJson {
+  id?: number | undefined;
+  name: string;
+  number?: number | undefined;
+  position?: string | undefined;
+  photoUrl?: string | undefined;
+  minutes?: number | undefined;
+  rating?: string | undefined;
+  captain?: boolean | undefined;
+  substitute?: boolean | undefined;
+  goals?: number | undefined;
+  assists?: number | undefined;
+  shotsTotal?: number | undefined;
+  shotsOn?: number | undefined;
+  passes?: number | undefined;
+  passAccuracy?: string | undefined;
+  tackles?: number | undefined;
+  duelsWon?: number | undefined;
+  yellowCards?: number | undefined;
+  redCards?: number | undefined;
+}
+
+export interface TeamFixturePlayersJson {
+  teamId: number;
+  teamName: string;
+  crestUrl?: string | undefined;
+  players: FixturePlayerJson[];
+}
+
+export interface MatchPlayersJson {
+  matchId: number;
+  home?: TeamFixturePlayersJson | undefined;
+  away?: TeamFixturePlayersJson | undefined;
+}
+
+/** Percentages arrive as "45%" strings and are passed through unparsed, like match stats. */
+export interface MatchPredictionJson {
+  matchId: number;
+  /** Provider's own call: the winning team, or absent when it predicts a draw. */
+  winnerTeamId?: number | undefined;
+  winnerName?: string | undefined;
+  winnerComment?: string | undefined;
+  advice?: string | undefined;
+  homePercent?: string | undefined;
+  drawPercent?: string | undefined;
+  awayPercent?: string | undefined;
+  goalsHome?: string | undefined;
+  goalsAway?: string | undefined;
+  /** Provider stat label -> value, same flattening as MatchDetailJson's stats maps. */
+  homeComparison: Record<string, string>;
+  awayComparison: Record<string, string>;
 }
 
 export interface RegisterDeviceRequest {
@@ -297,6 +567,70 @@ export interface SubscriptionRecord {
   leagueIds: number[];
   matchIds: number[];
   preferences: SubscriptionPreferences;
+}
+
+/** Epoch millis on every record below, matching `DeviceRecord`; the DTOs convert to seconds. */
+export interface UserRecord {
+  clerkUserId: string;
+  displayName?: string | undefined;
+  avatarUrl?: string | undefined;
+  createdAt: number;
+  lastSeenAt: number;
+}
+
+export interface GroupRecord {
+  id: number;
+  name: string;
+  ownerId: string;
+  inviteCode: string;
+  leagueIds: number[];
+  teamIds: number[];
+  memberCount: number;
+  createdAt: number;
+}
+
+export interface GroupMemberRecord {
+  userId: string;
+  displayName?: string | undefined;
+  avatarUrl?: string | undefined;
+  joinedAt: number;
+  isOwner: boolean;
+}
+
+export interface PredictionRecord {
+  groupId: number;
+  fixtureId: number;
+  userId: string;
+  displayName?: string | undefined;
+  avatarUrl?: string | undefined;
+  home: number;
+  away: number;
+  /** Epoch millis; the snapshot both the write lock and the read filter are decided by. */
+  kickoffAt: number;
+  points?: number | undefined;
+  exact?: boolean | undefined;
+  correctOutcome?: boolean | undefined;
+  updatedAt: number;
+}
+
+export interface LeaderboardRow {
+  userId: string;
+  displayName?: string | undefined;
+  avatarUrl?: string | undefined;
+  points: number;
+  exactCount: number;
+  correctOutcomeCount: number;
+  settledCount: number;
+}
+
+export interface GroupMessageRecord {
+  id: number;
+  groupId: number;
+  userId: string;
+  displayName?: string | undefined;
+  avatarUrl?: string | undefined;
+  text: string;
+  createdAt: number;
 }
 
 /* -------------------------------------------------------------------------- */

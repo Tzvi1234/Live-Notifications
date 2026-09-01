@@ -9,12 +9,14 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,45 +31,51 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.lerp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tzvi.kickoff.ui.component.KickoffLoader
 import com.tzvi.kickoff.ui.motion.Motion
-import com.tzvi.kickoff.ui.theme.KickoffShapeTokens
 import com.tzvi.kickoff.ui.theme.KickoffTheme
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 
-private val DOT_SIZE = 8.dp
-private val DOT_ACTIVE_WIDTH = 24.dp
-private val DOT_GAP = 6.dp
-private const val CONTENT_LAG = 0.18f
-private const val EDGE_ALPHA = 0.2f
-
+/**
+ * A fixed frame with one moving part.
+ *
+ * Header on top (where you are, what this step wants), pager in the middle (the controls
+ * for this step and nothing else), footer at the bottom (Back, Next, and the reason Next
+ * is greyed out when it is). Every step lands its content in the same place, so moving
+ * through the flow never asks the user to re-find anything.
+ */
 @Composable
 fun OnboardingScreen(
     onFinished: () -> Unit,
@@ -125,65 +133,103 @@ fun OnboardingScreen(
                 .systemBarsPadding()
                 .imePadding(),
         ) {
+            // The welcome splash is the one page that owns the whole screen, so the frame
+            // folds away for it rather than captioning a logo with "step 0".
+            AnimatedVisibility(
+                visible = step != OnboardingStep.WELCOME,
+                enter = expandVertically(Motion.sizeSpring()) +
+                    fadeIn(Motion.effects(Motion.Duration.MEDIUM)),
+                exit = shrinkVertically(Motion.sizeSpring()) +
+                    fadeOut(Motion.effects(Motion.Duration.SHORT)),
+            ) {
+                AnimatedContent(
+                    targetState = step,
+                    transitionSpec = {
+                        (fadeIn(Motion.effects(Motion.Duration.MEDIUM)) togetherWith
+                            fadeOut(Motion.effects(Motion.Duration.SHORT)))
+                            .using(SizeTransform(clip = false))
+                    },
+                    label = "step-header",
+                ) { current ->
+                    StepHeader(
+                        step = current,
+                        copy = copyFor(current, state),
+                        status = state.statusFor(current),
+                    )
+                }
+            }
+
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.weight(1f),
-                pageSpacing = 8.dp,
+                pageSpacing = OnboardingSpacing.screen,
                 beyondViewportPageCount = 1,
             ) { page ->
+                val pageStep = OnboardingStep.at(page)
                 Box(
                     Modifier
                         .fillMaxSize()
                         .pageMotion(pagerState, page),
                 ) {
-                    when (OnboardingStep.at(page)) {
-                        OnboardingStep.WELCOME -> WelcomePage(
-                            onGetStarted = { goTo(OnboardingStep.CONNECT.ordinal) },
-                        )
+                    StaggeredEntrance(
+                        visible = pagerState.currentPage == page,
+                        modifier = Modifier.fillMaxSize(),
+                    ) { entrance ->
+                        when (pageStep) {
+                            OnboardingStep.WELCOME -> WelcomePage(
+                                onGetStarted = { goTo(OnboardingStep.SOURCE.ordinal) },
+                            )
 
-                        OnboardingStep.CONNECT -> ConnectPage(
-                            state = state,
-                            onApiKeyChange = viewModel::onApiKeyChange,
-                            onSaveApiKey = viewModel::saveApiKey,
-                            onBackendUrlChange = viewModel::onBackendUrlChange,
-                            onSaveBackendUrl = viewModel::saveBackendUrl,
-                            onSkip = { goTo(OnboardingStep.LEAGUES.ordinal) },
-                        )
+                            OnboardingStep.SOURCE -> SourcePage(
+                                state = state,
+                                entrance = entrance,
+                                onChoose = viewModel::chooseSource,
+                                onApiKeyChange = viewModel::onApiKeyChange,
+                                onSaveApiKey = viewModel::saveApiKey,
+                            )
 
-                        OnboardingStep.LEAGUES -> LeaguesPage(
-                            state = state,
-                            onToggleLeague = viewModel::toggleLeague,
-                            onRetry = { viewModel.loadLeagues(force = true) },
-                            onFixSource = { goTo(OnboardingStep.CONNECT.ordinal) },
-                        )
+                            OnboardingStep.LEAGUES -> LeaguesPage(
+                                state = state,
+                                onToggleLeague = viewModel::toggleLeague,
+                                onRetry = { viewModel.loadLeagues(force = true) },
+                                onFixSource = { goTo(OnboardingStep.SOURCE.ordinal) },
+                            )
 
-                        OnboardingStep.TEAMS -> TeamsPage(
-                            state = state,
-                            onQueryChange = viewModel::onTeamQueryChange,
-                            onToggleTeam = viewModel::toggleTeam,
-                            onRemoveTeam = viewModel::removeTeam,
-                            onRetry = { viewModel.loadTeams(force = true) },
-                            onFixSource = { goTo(OnboardingStep.CONNECT.ordinal) },
-                        )
+                            OnboardingStep.TEAMS -> TeamsPage(
+                                state = state,
+                                onQueryChange = viewModel::onTeamQueryChange,
+                                onToggleTeam = viewModel::toggleTeam,
+                                onRemoveTeam = viewModel::removeTeam,
+                                onRetry = { viewModel.loadTeams(force = true) },
+                                onFixSource = { goTo(OnboardingStep.SOURCE.ordinal) },
+                            )
 
-                        OnboardingStep.NOTIFICATIONS -> NotificationsPage(
-                            state = state,
-                            onRequestPermission = {
-                                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            },
-                            onOpenSystemSettings = { openNotificationSettings(context) },
-                        )
+                            OnboardingStep.ALERTS -> AlertsPage(
+                                state = state,
+                                entrance = entrance,
+                                onRequestPermission = {
+                                    permissionLauncher.launch(
+                                        Manifest.permission.POST_NOTIFICATIONS,
+                                    )
+                                },
+                                onOpenSystemSettings = { openNotificationSettings(context) },
+                            )
+
+                            OnboardingStep.READY -> ReadyPage(
+                                state = state,
+                                entrance = entrance,
+                            )
+                        }
                     }
                 }
             }
 
-            OnboardingControls(
+            OnboardingFooter(
                 step = step,
                 state = state,
-                pagerState = pagerState,
                 onBack = { goTo(pagerState.currentPage - 1) },
                 onNext = {
-                    if (step == OnboardingStep.NOTIFICATIONS) {
+                    if (step == OnboardingStep.READY) {
                         viewModel.finish()
                     } else {
                         goTo(pagerState.currentPage + 1)
@@ -194,110 +240,82 @@ fun OnboardingScreen(
     }
 }
 
+/**
+ * Back on the left, the reason you cannot leave in the middle, Next on the right.
+ *
+ * The bar used to stack a row of dots underneath the two buttons in the same box, which
+ * is a lot of unexplained furniture for one strip; the progress rail in the header does
+ * that job now.
+ */
 @Composable
-private fun OnboardingControls(
+private fun OnboardingFooter(
     step: OnboardingStep,
     state: OnboardingUiState,
-    pagerState: PagerState,
     onBack: () -> Unit,
     onNext: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // The welcome page carries its own "Get started" button, so the bar there is dots only.
+    // The welcome page carries its own "Get started", so its footer is empty space.
     val showButtons = step != OnboardingStep.WELCOME
-    val isLast = step == OnboardingStep.NOTIFICATIONS
+    val isLast = step == OnboardingStep.READY
+    val blockedReason = state.blockedReason(step)
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = OnboardingSpacing.screen, vertical = 16.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        PageIndicator(pagerState = pagerState)
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+    Column(modifier = modifier.fillMaxWidth()) {
+        AnimatedVisibility(
+            visible = showButtons,
+            enter = fadeIn(Motion.effects(Motion.Duration.SHORT)),
+            exit = fadeOut(Motion.effects(Motion.Duration.SHORT)),
         ) {
-            AnimatedVisibility(
-                visible = showButtons,
-                enter = fadeIn(Motion.effects(Motion.Duration.SHORT)),
-                exit = fadeOut(Motion.effects(Motion.Duration.SHORT)),
-            ) {
-                TextButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text("Back")
-                }
-            }
-            AnimatedVisibility(
-                visible = showButtons,
-                enter = fadeIn(Motion.effects(Motion.Duration.SHORT)),
-                exit = fadeOut(Motion.effects(Motion.Duration.SHORT)),
-            ) {
-                Button(onClick = onNext, enabled = state.canAdvanceFrom(step)) {
-                    if (state.saving) {
-                        KickoffLoader(
-                            size = 18.dp,
-                            ringColor = MaterialTheme.colorScheme.onPrimary,
-                            panelColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.3f),
+            Column {
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHighest)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = OnboardingSpacing.screen, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onBack, modifier = Modifier.height(52.dp)) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
                         )
-                    } else {
-                        Text(if (isLast) "Finish" else "Next")
+                        Spacer(Modifier.width(6.dp))
+                        Text("Back")
+                    }
+
+                    Text(
+                        text = blockedReason.orEmpty(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = OnboardingSpacing.tight),
+                    )
+
+                    Button(
+                        onClick = onNext,
+                        enabled = state.canAdvanceFrom(step),
+                        modifier = Modifier
+                            .height(52.dp)
+                            .widthIn(min = 132.dp),
+                    ) {
+                        if (state.saving) {
+                            KickoffLoader(
+                                size = 18.dp,
+                                ringColor = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        } else {
+                            Text(if (isLast) "Finish" else "Next")
+                        }
                     }
                 }
             }
         }
+        // Keeps the splash's bottom edge from jumping when the buttons fade in.
+        if (!showButtons) Spacer(Modifier.height(24.dp))
     }
-}
-
-@Composable
-private fun PageIndicator(pagerState: PagerState, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(DOT_GAP),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        repeat(pagerState.pageCount) { index ->
-            val active = pagerState.currentPage == index
-            val width by animateDpAsState(
-                targetValue = if (active) DOT_ACTIVE_WIDTH else DOT_SIZE,
-                animationSpec = Motion.dpSpring(),
-                label = "indicator-width",
-            )
-            val color by animateColorAsState(
-                targetValue = if (active) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHighest
-                },
-                animationSpec = Motion.effects(Motion.Duration.SHORT),
-                label = "indicator-color",
-            )
-            Box(
-                Modifier
-                    .height(DOT_SIZE)
-                    .width(width)
-                    .clip(KickoffShapeTokens.pill)
-                    .background(color),
-            )
-        }
-    }
-}
-
-/**
- * The page content trails the swipe and fades towards the edges, so the five steps read
- * as one object sliding under the frame rather than as five separate screens.
- */
-private fun Modifier.pageMotion(pagerState: PagerState, page: Int): Modifier = graphicsLayer {
-    val offset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
-    translationX = size.width * offset * CONTENT_LAG
-    alpha = lerp(EDGE_ALPHA, 1f, 1f - abs(offset).coerceIn(0f, 1f))
 }
 
 private fun hasNotificationPermission(context: Context): Boolean =
@@ -313,14 +331,13 @@ private fun openNotificationSettings(context: Context) {
     runCatching { context.startActivity(intent) }
 }
 
-@Preview(name = "Controls - mid flow")
+@Preview(name = "Footer - blocked")
 @Composable
-private fun OnboardingControlsPreview() {
+private fun OnboardingFooterPreview() {
     KickoffTheme {
-        OnboardingControls(
+        OnboardingFooter(
             step = OnboardingStep.TEAMS,
             state = OnboardingUiState(),
-            pagerState = rememberPagerState(initialPage = 3) { OnboardingStep.entries.size },
             onBack = {},
             onNext = {},
         )

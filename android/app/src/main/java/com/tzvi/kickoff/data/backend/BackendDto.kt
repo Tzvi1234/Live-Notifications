@@ -3,7 +3,7 @@ package com.tzvi.kickoff.data.backend
 import kotlinx.serialization.Serializable
 
 /**
- * Wire shapes for the Kickoff backend (see `server/`).
+ * Wire shapes for the matchUP backend (see `server/`).
  *
  * The server does all the provider mapping, so these mirror the domain model almost
  * one-to-one and stay stable even if the underlying football provider is swapped out.
@@ -27,6 +27,19 @@ data class LeagueJson(
     val logoUrl: String? = null,
     val season: Int,
     val type: String? = null,
+    val coverage: LeagueCoverageJson? = null,
+)
+
+/** What the provider actually carries for this competition this season. */
+@Serializable
+data class LeagueCoverageJson(
+    val lineups: Boolean = true,
+    val events: Boolean = true,
+    val fixtureStatistics: Boolean = true,
+    val playerStatistics: Boolean = true,
+    val standings: Boolean = true,
+    val injuries: Boolean = true,
+    val predictions: Boolean = true,
 )
 
 @Serializable
@@ -150,4 +163,128 @@ data class HealthJson(
     val version: String? = null,
     val provider: String? = null,
     val pollingEnabled: Boolean = false,
+)
+
+@Serializable
+data class SquadJson(val players: List<SquadPlayerJson> = emptyList())
+
+@Serializable
+data class SquadPlayerJson(
+    val id: Int? = null,
+    val name: String,
+    val number: Int? = null,
+    val position: String? = null,
+    val photoUrl: String? = null,
+)
+
+/** Mirrors [com.tzvi.kickoff.core.model.PlayerProfile] field for field. */
+
+@Serializable
+data class PlayerProfileJson(
+    val firstName: String? = null,
+    val lastName: String? = null,
+    val age: Int? = null,
+    val birthDate: String? = null,
+    val birthPlace: String? = null,
+    val nationality: String? = null,
+    val height: String? = null,
+    val weight: String? = null,
+    val position: String? = null,
+    val number: Int? = null,
+)
+
+@Serializable
+data class MatchPlayersJson(val players: Map<String, PlayerMatchStatsJson> = emptyMap())
+
+/**
+ * Mirrors [com.tzvi.kickoff.core.model.PlayerMatchStats].
+ *
+ * Everything is nullable for the same reason it is there: the provider leaves a third of
+ * a keeper's line blank after a full ninety, and a zero would be a different claim.
+ */
+@Serializable
+data class PlayerMatchStatsJson(
+    val minutes: Int? = null,
+    val number: Int? = null,
+    val position: String? = null,
+    val rating: String? = null,
+    val captain: Boolean = false,
+    val startedOnBench: Boolean = false,
+    val goals: Int? = null,
+    val assists: Int? = null,
+    val conceded: Int? = null,
+    val saves: Int? = null,
+    val shotsTotal: Int? = null,
+    val shotsOnTarget: Int? = null,
+    val passesTotal: Int? = null,
+    val passesKey: Int? = null,
+    val passAccuracy: String? = null,
+    val tackles: Int? = null,
+    val interceptions: Int? = null,
+    val duelsTotal: Int? = null,
+    val duelsWon: Int? = null,
+    val dribbleAttempts: Int? = null,
+    val dribblesPast: Int? = null,
+    val dribblesSuccessful: Int? = null,
+    val foulsDrawn: Int? = null,
+    val foulsCommitted: Int? = null,
+    val yellowCards: Int? = null,
+    val redCards: Int? = null,
+    val offsides: Int? = null,
+    val penaltiesScored: Int? = null,
+    val penaltiesMissed: Int? = null,
+    val penaltiesSaved: Int? = null,
+)
+
+/** The provider's pre-match read, already mapped by the server. */
+@Serializable
+data class PredictionJson(
+    val homePercent: Int? = null,
+    val drawPercent: Int? = null,
+    val awayPercent: Int? = null,
+    val advice: String? = null,
+    val winnerName: String? = null,
+    val winnerComment: String? = null,
+    val goalsLine: String? = null,
+    val homeForm: TeamFormJson? = null,
+    val awayForm: TeamFormJson? = null,
+)
+
+@Serializable
+data class TeamFormJson(
+    val recentResults: String? = null,
+    val attackRating: String? = null,
+    val defenceRating: String? = null,
+    val goalsForAverage: String? = null,
+    val goalsAgainstAverage: String? = null,
+    val cleanSheets: Int? = null,
+)
+
+/**
+ * Values the server hands the app at start-up.
+ *
+ * The Clerk publishable key lives here rather than in the APK so it can be rotated on
+ * Render without shipping a new build, and so a self-hosted backend can point the app at
+ * its own Clerk instance. The key is absent when the server has no Clerk configured,
+ * which is a supported state and not an error.
+ */
+@Serializable
+data class ServerConfigJson(
+    val clerkPublishableKey: String? = null,
+    val features: ServerFeaturesJson = ServerFeaturesJson(),
+)
+
+/**
+ * What this particular deployment can actually do.
+ *
+ * `predictionGame` is false unless the server has both Clerk and a real database - the
+ * in-memory store would lose every guess on the next deploy, so it says so rather than
+ * letting people play a game that quietly forgets.
+ */
+@Serializable
+data class ServerFeaturesJson(
+    val auth: Boolean = false,
+    val predictionGame: Boolean = false,
+    val push: Boolean = false,
+    val polling: Boolean = false,
 )

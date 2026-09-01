@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="notif_surface">#FF0D150D</color>
-    <color name="notif_surface_variant">#FF232B23</color>
-    <color name="notif_on_surface">#FFDFE4DB</color>
-    <color name="notif_on_surface_muted">#FFC1CABD</color>
+    <color name="splash_background">@color/brand_ink</color>
+    <color name="notif_surface">#FF18231A</color>
     <color name="notif_accent">#FF3FE56C</color>
     <color name="notif_live">#FFFFB4AB</color>
-    <color name="notif_card">#FF192219</color>
+    <color name="notif_surface_variant">#FF25302A</color>
+    <color name="notif_on_surface">#FFE6EDE7</color>
+    <color name="notif_on_surface_muted">#FFB4C2B8</color>
 </resources>

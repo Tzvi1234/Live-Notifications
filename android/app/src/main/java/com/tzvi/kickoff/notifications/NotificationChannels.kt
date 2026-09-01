@@ -27,9 +27,6 @@ object NotificationChannels {
     /** Goals, red cards, full time. Allowed to interrupt. */
     const val MATCH_EVENTS = "match_events_v1"
 
-    /** The ongoing card for an upcoming calendar event. */
-    const val CALENDAR = "calendar_live_v1"
-
     fun ensureCreated(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
 
@@ -57,19 +54,7 @@ object NotificationChannels {
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
 
-        val calendar = NotificationChannel(
-            CALENDAR,
-            context.getString(R.string.channel_calendar),
-            NotificationManager.IMPORTANCE_LOW,
-        ).apply {
-            description = context.getString(R.string.channel_calendar_desc)
-            setSound(null, null)
-            enableVibration(false)
-            setShowBadge(false)
-            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-        }
-
-        manager.createNotificationChannels(listOf(live, events, calendar))
+        manager.createNotificationChannels(listOf(live, events))
     }
 
     fun areNotificationsEnabled(context: Context): Boolean =

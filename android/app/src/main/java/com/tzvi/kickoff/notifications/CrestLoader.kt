@@ -38,13 +38,26 @@ class CrestLoader @Inject constructor(
     private val cache = LruCache<String, Bitmap>(MAX_CACHED)
 
     suspend fun load(url: String?, fallbackText: String): Bitmap = withContext(Dispatchers.IO) {
-        val key = url ?: "fallback:$fallbackText"
+        val key = cacheKey(url, fallbackText)
         cache.get(key)?.let { return@withContext it }
 
         val bitmap = url?.let { fetch(it) } ?: placeholder(fallbackText)
         cache.put(key, bitmap)
         bitmap
     }
+
+    /**
+     * What is already decoded, for the caller that must not wait.
+     *
+     * A live card is posted every few seconds and cannot be held behind a crest CDN, so
+     * the posting path asks for this first and only falls back to [load] - on its own
+     * deadline - on the one update per match that can actually miss.
+     */
+    fun cached(url: String?, fallbackText: String): Bitmap? =
+        cache.get(cacheKey(url, fallbackText))
+
+    private fun cacheKey(url: String?, fallbackText: String): String =
+        url ?: "fallback:$fallbackText"
 
     suspend fun loadIcon(url: String?, fallbackText: String): IconCompat =
         IconCompat.createWithBitmap(load(url, fallbackText))
@@ -87,10 +100,12 @@ class CrestLoader @Inject constructor(
 
     private companion object {
         /**
-         * 96px covers a 38dp crest up to xxhdpi. Two of these is ~74KB against a 5MB
-         * budget, and they are reused for the whole match.
+         * The largest a crest is ever drawn is the scoreboard's 40dp slot, which is
+         * 120px at xxhdpi; 128px covers that without upscaling, and covers the 24dp each
+         * crest gets inside the live card's composed pair twice over. Two of these is
+         * ~131KB against a 5MB budget, and they are reused for the whole match.
          */
-        const val CREST_PX = 96
+        const val CREST_PX = 128
         const val MAX_CACHED = 24
         const val PLACEHOLDER_BG = 0xFF3A4A3C.toInt()
     }

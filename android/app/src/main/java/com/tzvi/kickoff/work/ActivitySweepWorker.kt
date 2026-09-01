@@ -4,22 +4,18 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.data.local.dao.TrackedActivityDao
-import com.tzvi.kickoff.data.repository.CalendarRepository
 import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.repository.NoFootballSourceException
-import com.tzvi.kickoff.data.repository.SettingsRepository
 import com.tzvi.kickoff.notifications.LiveActivityNotifier
 import com.tzvi.kickoff.notifications.LiveMatchService
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import kotlinx.coroutines.flow.first
 import java.time.Duration
 import java.time.Instant
 
 /**
- * The slow heartbeat: retires finished cards and keeps the calendar card current.
+ * The slow heartbeat: retires finished cards and re-adopts the ones nothing is driving.
  *
  * Matches are driven by the foreground service while they are in play; this worker only
  * has to catch what a killed process left behind.
@@ -28,17 +24,13 @@ import java.time.Instant
 class ActivitySweepWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
-    private val calendarRepository: CalendarRepository,
     private val footballRepository: FootballRepository,
-    private val settings: SettingsRepository,
     private val notifier: LiveActivityNotifier,
     private val trackedActivityDao: TrackedActivityDao,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        val config = settings.settings.first()
-
-        // Retire anything that has ended, so a stale card cannot outlive its event.
+        // Retire anything that has ended, so a stale card cannot outlive its match.
         val now = Instant.now()
         trackedActivityDao.active()
             .filter { it.endsAt != null && it.endsAt < now.toEpochMilli() - GRACE_MS }
@@ -49,10 +41,6 @@ class ActivitySweepWorker @AssistedInject constructor(
         trackedActivityDao.deleteEndedBefore(now.minus(Duration.ofDays(2)).toEpochMilli())
 
         adoptOrphanedLiveMatches()
-
-        if (config.calendarSyncEnabled && calendarRepository.hasPermission()) {
-            syncCalendarCard(config.calendarLeadMinutes)
-        }
         return Result.success()
     }
 
@@ -77,21 +65,6 @@ class ActivitySweepWorker @AssistedInject constructor(
             .filter { it.id !in tracked }
             .take(MAX_ADOPTED)
             .forEach { LiveMatchService.track(applicationContext, it.id) }
-    }
-
-    private suspend fun syncCalendarCard(leadMinutes: Int) {
-        val event = calendarRepository.nextEvent() ?: return
-        val now = Instant.now()
-        val leadWindow = event.instanceStart.minus(Duration.ofMinutes(leadMinutes.toLong()))
-        if (now.isBefore(leadWindow)) return
-
-        val stage = when {
-            now.isBefore(event.instanceStart) -> LiveActivity.CalendarActivity.Stage.UPCOMING
-            now.isBefore(event.instanceEnd) -> LiveActivity.CalendarActivity.Stage.IN_PROGRESS
-            else -> LiveActivity.CalendarActivity.Stage.ENDED
-        }
-        if (stage == LiveActivity.CalendarActivity.Stage.ENDED) return
-        notifier.postCalendar(LiveActivity.CalendarActivity(event, stage))
     }
 
     private companion object {

@@ -6,6 +6,9 @@ import com.tzvi.kickoff.core.model.League
 import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.repository.NoFootballSourceException
 import com.tzvi.kickoff.data.repository.SettingsRepository
+import com.tzvi.kickoff.data.repository.SourceProbe
+import com.tzvi.kickoff.data.auth.AuthRepository
+import com.tzvi.kickoff.data.auth.AuthState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -22,6 +25,7 @@ import javax.inject.Inject
 class OnboardingViewModel @Inject constructor(
     private val footballRepository: FootballRepository,
     private val settings: SettingsRepository,
+    private val auth: AuthRepository,
 ) : ViewModel() {
 
     private val mutableState = MutableStateFlow(OnboardingUiState())
@@ -39,28 +43,91 @@ class OnboardingViewModel @Inject constructor(
         viewModelScope.launch {
             val key = settings.apiFootballKey.first()
             val url = settings.backendUrl.first()
+            val demo = settings.demoMode.first()
+            val signedIn = auth.state.value is AuthState.SignedIn
             mutableState.update {
                 it.copy(
                     apiKeyInput = key,
                     apiKeySaved = key.isNotBlank(),
                     backendUrlInput = url,
                     backendSaved = url.isNotBlank(),
+                    demoEnabled = demo,
+                    hasAccount = signedIn,
+                    // Arriving here having skipped the sign-in is itself an answer: the
+                    // server is the shared one, on somebody else's quota, and an account
+                    // is what it asks for. Somebody who declined that wants their own key,
+                    // so the page opens on it rather than on a tile they cannot use.
+                    chosenSource = when {
+                        demo -> ConfiguredSource.DEMO
+                        !signedIn -> ConfiguredSource.API_FOOTBALL
+                        else -> ConfiguredSource.BACKEND
+                    },
                 )
             }
         }
     }
 
-    // ---- step 2: source -------------------------------------------------------
+    // ---- step 2: which source --------------------------------------------------
+
+    /**
+     * Records the pick, and for the demo acts on it immediately.
+     *
+     * Demo is the one choice with nothing left to fill in, so choosing it configures it;
+     * the setup page after it is then a confirmation rather than a form. The other two
+     * only record the intent - a key or a URL still has to be saved.
+     */
+    fun chooseSource(source: ConfiguredSource) {
+        mutableState.update { it.copy(chosenSource = source) }
+        if (source == ConfiguredSource.DEMO) {
+            useDemoData()
+        } else if (mutableState.value.demoEnabled) {
+            // Switching away from the demo has to actually switch away, or the demo keeps
+            // outranking the key you are about to paste and nothing appears to change.
+            stopUsingDemoData()
+        }
+    }
+
+    // ---- step 3: setting that source up ----------------------------------------
 
     fun onApiKeyChange(value: String) = mutableState.update { it.copy(apiKeyInput = value) }
 
+    /**
+     * Tries the key against the provider before storing it.
+     *
+     * A key is accepted or refused in one free call to /status. Storing first and finding
+     * out two steps later - at "pick your competitions", which is about competitions and
+     * not about keys - is what made a wrong key look like a broken app.
+     */
     fun saveApiKey() {
         val key = mutableState.value.apiKeyInput.trim()
         if (key.isBlank()) return
         viewModelScope.launch {
-            settings.setApiFootballKey(key)
-            invalidateCatalogue()
-            mutableState.update { it.copy(apiKeyInput = key, apiKeySaved = true) }
+            mutableState.update {
+                it.copy(checkingSource = true, sourceCheck = null, sourceCheckFailed = false)
+            }
+            when (val probe = footballRepository.probeApiKey(key)) {
+                is SourceProbe.Ok -> {
+                    settings.setApiFootballKey(key)
+                    invalidateCatalogue()
+                    mutableState.update {
+                        it.copy(
+                            apiKeyInput = key,
+                            apiKeySaved = true,
+                            checkingSource = false,
+                            sourceCheck = probe.message,
+                            sourceCheckFailed = false,
+                        )
+                    }
+                }
+
+                is SourceProbe.Failed -> mutableState.update {
+                    it.copy(
+                        checkingSource = false,
+                        sourceCheck = probe.message,
+                        sourceCheckFailed = true,
+                    )
+                }
+            }
         }
     }
 
@@ -74,14 +141,32 @@ class OnboardingViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
-            settings.setBackendUrl(normalised)
-            invalidateCatalogue()
             mutableState.update {
-                it.copy(
-                    backendUrlInput = normalised,
-                    backendUrlError = null,
-                    backendSaved = true,
-                )
+                it.copy(checkingSource = true, sourceCheck = null, sourceCheckFailed = false)
+            }
+            when (val probe = footballRepository.probeBackend(normalised)) {
+                is SourceProbe.Ok -> {
+                    settings.setBackendUrl(normalised)
+                    invalidateCatalogue()
+                    mutableState.update {
+                        it.copy(
+                            backendUrlInput = normalised,
+                            backendUrlError = null,
+                            backendSaved = true,
+                            checkingSource = false,
+                            sourceCheck = probe.message,
+                            sourceCheckFailed = false,
+                        )
+                    }
+                }
+
+                is SourceProbe.Failed -> mutableState.update {
+                    it.copy(
+                        checkingSource = false,
+                        sourceCheck = probe.message,
+                        sourceCheckFailed = true,
+                    )
+                }
             }
         }
     }
@@ -124,7 +209,11 @@ class OnboardingViewModel @Inject constructor(
                         // list would enable Next and then fetch no squads at all.
                         selectedLeagueIds = it.selectedLeagueIds
                             .intersect(leagues.mapTo(mutableSetOf()) { league -> league.id }),
-                        leaguesFailure = if (leagues.isEmpty()) CatalogueFailure.EMPTY else null,
+                        leaguesFailure = if (leagues.isEmpty()) {
+                            CatalogueError(CatalogueFailure.EMPTY)
+                        } else {
+                            null
+                        },
                     )
                 }
             } catch (cancelled: CancellationException) {
@@ -161,7 +250,7 @@ class OnboardingViewModel @Inject constructor(
             }
             val chosen = mutableState.value.leagues.filter { it.id in leagueIds }
             val collected = mutableListOf<TeamOption>()
-            var failure: CatalogueFailure? = null
+            var failure: CatalogueError? = null
             for (league in chosen) {
                 try {
                     // One request per league, and the result is held in state afterwards:
@@ -180,7 +269,7 @@ class OnboardingViewModel @Inject constructor(
                     teams = collected.sortedBy { option -> option.team.name },
                     // One league failing is not worth throwing away the ones that answered.
                     teamsFailure = if (collected.isEmpty()) {
-                        failure ?: CatalogueFailure.EMPTY
+                        failure ?: CatalogueError(CatalogueFailure.EMPTY)
                     } else {
                         null
                     },
@@ -212,6 +301,30 @@ class OnboardingViewModel @Inject constructor(
 
     // ---- finish ---------------------------------------------------------------
 
+    /**
+     * The third way in: no key, no deployment, real crests.
+     *
+     * It clears the catalogue as well as setting the flag, because the leagues and squads
+     * already on screen came from whichever source was selected before, and leaving them
+     * would show one source's competitions under another source's name.
+     */
+    fun useDemoData() {
+        viewModelScope.launch {
+            settings.setDemoMode(true)
+            invalidateCatalogue()
+            mutableState.update { it.copy(demoEnabled = true) }
+            loadLeagues(force = true)
+        }
+    }
+
+    fun stopUsingDemoData() {
+        viewModelScope.launch {
+            settings.setDemoMode(false)
+            invalidateCatalogue()
+            mutableState.update { it.copy(demoEnabled = false) }
+        }
+    }
+
     fun finish() {
         val current = mutableState.value
         if (current.saving || current.selected.isEmpty()) return
@@ -231,12 +344,16 @@ class OnboardingViewModel @Inject constructor(
         }
     }
 
-    private fun Throwable.asCatalogueFailure(): CatalogueFailure =
-        if (this is NoFootballSourceException) {
+    private fun Throwable.asCatalogueFailure(): CatalogueError = CatalogueError(
+        kind = if (this is NoFootballSourceException) {
             CatalogueFailure.NO_SOURCE
         } else {
             CatalogueFailure.UNREACHABLE
-        }
+        },
+        // The class name alone ("HttpException") tells nobody anything, so it is only
+        // used when the exception carried no message of its own.
+        detail = message?.takeIf { it.isNotBlank() } ?: this::class.simpleName,
+    )
 
     private companion object {
         const val SUBSCRIPTION_TIMEOUT_MS = 5_000L

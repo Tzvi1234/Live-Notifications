@@ -57,6 +57,13 @@ import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchPhase
 import com.tzvi.kickoff.core.model.Score
 import com.tzvi.kickoff.ui.component.EmptyState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.tzvi.kickoff.core.model.LineupPlayer
+import com.tzvi.kickoff.core.model.TeamLineup
+import com.tzvi.kickoff.feature.player.PlayerRequest
+import com.tzvi.kickoff.feature.player.PlayerSheet
 import com.tzvi.kickoff.ui.component.LoadingState
 import com.tzvi.kickoff.ui.motion.Motion
 import com.tzvi.kickoff.ui.theme.KickoffShapes
@@ -71,6 +78,10 @@ fun MatchDetailScreen(onBack: () -> Unit) {
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted -> if (granted) viewModel.toggleFollowing() }
+
+    // The sheet is match-detail state, not navigation: you tap through a whole line-up in
+    // one sitting, and pushing a destination per shirt would bury the pitch under a stack.
+    var playerRequest by remember { mutableStateOf<PlayerRequest?>(null) }
 
     MatchDetailContent(
         state = state,
@@ -88,7 +99,21 @@ fun MatchDetailScreen(onBack: () -> Unit) {
                 notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         },
+        onPlayerTap = { player, lineup ->
+            val id = player.id ?: return@MatchDetailContent
+            playerRequest = PlayerRequest(
+                playerId = id,
+                name = player.name,
+                photoUrl = player.photoUrl,
+                teamName = lineup.teamName,
+                matchId = state.match?.id,
+            )
+        },
     )
+
+    playerRequest?.let { request ->
+        PlayerSheet(request = request, onDismiss = { playerRequest = null })
+    }
 }
 
 private fun Context.canPostNotifications(): Boolean =
@@ -104,6 +129,7 @@ internal fun MatchDetailContent(
     onSelectTab: (MatchDetailTab) -> Unit,
     onRefresh: () -> Unit,
     onToggleFollowing: () -> Unit = {},
+    onPlayerTap: (LineupPlayer, TeamLineup) -> Unit = { _, _ -> },
 ) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -164,6 +190,7 @@ internal fun MatchDetailContent(
                     match = match,
                     onSelectTab = onSelectTab,
                     onRetry = onRefresh,
+                    onPlayerTap = onPlayerTap,
                 )
             }
         }
@@ -176,6 +203,7 @@ private fun MatchDetailBody(
     match: Match,
     onSelectTab: (MatchDetailTab) -> Unit,
     onRetry: () -> Unit,
+    onPlayerTap: (LineupPlayer, TeamLineup) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -199,7 +227,7 @@ private fun MatchDetailBody(
         Spacer(Modifier.height(SectionGap))
         MatchDetailTabs(selected = state.selectedTab, onSelect = onSelectTab)
         Spacer(Modifier.height(SectionGap))
-        MatchTabContent(state = state, match = match)
+        MatchTabContent(state = state, match = match, onPlayerTap = onPlayerTap)
     }
 }
 
@@ -223,7 +251,11 @@ private fun MatchDetailTabs(selected: MatchDetailTab, onSelect: (MatchDetailTab)
 }
 
 @Composable
-private fun MatchTabContent(state: MatchDetailUiState, match: Match) {
+private fun MatchTabContent(
+    state: MatchDetailUiState,
+    match: Match,
+    onPlayerTap: (LineupPlayer, TeamLineup) -> Unit,
+) {
     AnimatedContent(
         targetState = state.selectedTab,
         transitionSpec = {
@@ -240,6 +272,14 @@ private fun MatchTabContent(state: MatchDetailUiState, match: Match) {
         label = "match-tab",
     ) { tab ->
         when (tab) {
+            MatchDetailTab.PREVIEW -> MatchPreviewSection(
+                match = match,
+                prediction = state.prediction,
+                headToHead = state.headToHead,
+                isLoading = state.predictionLoading,
+                predictionsCovered = state.coverage?.predictions != false,
+                modifier = Modifier.padding(horizontal = ScreenPadding),
+            )
             MatchDetailTab.TIMELINE -> MatchTimeline(
                 entries = state.timeline,
                 match = match,
@@ -249,6 +289,8 @@ private fun MatchTabContent(state: MatchDetailUiState, match: Match) {
                 lineups = state.lineups,
                 match = match,
                 modifier = Modifier.padding(horizontal = ScreenPadding),
+                lineupsCovered = state.coverage?.lineups != false,
+                onPlayerTap = onPlayerTap,
             )
             MatchDetailTab.STATS -> MatchStatsSection(
                 stats = state.stats,
@@ -305,7 +347,7 @@ private fun MatchUnavailable(state: MatchDetailUiState, onRetry: () -> Unit) {
         when {
             state.sourceMissing -> EmptyState(
                 title = "No data source",
-                body = "Kickoff has nowhere to fetch this match from. Add a backend URL " +
+                body = "matchUP has nowhere to fetch this match from. Add a backend URL " +
                     "or an API-Football key in Settings.",
                 icon = Icons.Outlined.CloudOff,
             )

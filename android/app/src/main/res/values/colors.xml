@@ -3,15 +3,17 @@
     <!-- Brand seed. Everything else in the Compose theme is derived from this. -->
     <color name="brand_green">#FF00C853</color>
     <color name="brand_ink">#FF0B140C</color>
-    <color name="ic_launcher_background">#FF0B140C</color>
+    <!-- The mark is dark green on white, so its backdrops are light: a near-black
+         launcher tile turned the ring into a smudge and the white balls into the icon. -->
+    <color name="ic_launcher_background">#FFF1F8EF</color>
+    <color name="splash_background">#FFF1F8EF</color>
 
     <!-- Notification (RemoteViews) palette. These cannot come from the Compose
          ColorScheme, so they are pinned here and mirrored in values-night. -->
-    <color name="notif_surface">#FFF3FCEE</color>
-    <color name="notif_surface_variant">#FFDDE5D8</color>
-    <color name="notif_on_surface">#FF171D17</color>
-    <color name="notif_on_surface_muted">#FF414941</color>
+    <color name="notif_surface">#FFE3F0DF</color>
     <color name="notif_accent">#FF006E2A</color>
     <color name="notif_live">#FFBA1A1A</color>
-    <color name="notif_card">#FFE7F1E3</color>
+    <color name="notif_surface_variant">#FFE4EFE2</color>
+    <color name="notif_on_surface">#FF14261A</color>
+    <color name="notif_on_surface_muted">#FF52655A</color>
 </resources>

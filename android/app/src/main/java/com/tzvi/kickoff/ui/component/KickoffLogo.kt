@@ -1,221 +1,387 @@
 package com.tzvi.kickoff.ui.component
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.tzvi.kickoff.ui.motion.Motion
 import com.tzvi.kickoff.ui.theme.KickoffTheme
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * The Kickoff mark, drawn rather than loaded, so it can be animated.
+ * The matchUP mark, drawn rather than loaded, so every part of it can move.
  *
- * The proportions are the same ones baked into the vector drawables - the ring is a
- * progress arc with a tracker dot at its head, closing around a football panel - which
- * is why the launcher icon and this composable read as the same object.
+ * Three elements, and they are the same three everywhere the mark appears - launcher
+ * icon, splash, onboarding, loader, settings: a dark green ring open at the top right, a
+ * real black-and-white football in the middle of it, and a small white ball sitting in
+ * the opening as if it had just been chipped over the line.
+ *
+ * The ring used to run between two greens and the centre used to be a flat green
+ * pentagon-and-petals silhouette. Both were the mark describing a football rather than
+ * being one; one solid green and an actual panelled ball is the sketch as drawn.
  */
-private const val RING_RADIUS_RATIO = 25f / 108f
-private const val STROKE_RATIO = 9f / 108f
-private const val PENTAGON_RATIO = 13.5f / 108f
-private const val DOT_RATIO = 6f / 108f
-private const val ARC_START_DEG = -48f
-private const val ARC_SWEEP_DEG = 296f
+private const val RING_RADIUS = 0.360f
+private const val RING_STROKE = 0.118f
+
+/** The opening faces the top right; angles are Android's y-down screen convention. */
+private const val GAP_CENTER_DEG = -45f
+private const val GAP_HALF_DEG = 34f
+private const val ARC_START_DEG = GAP_CENTER_DEG - GAP_HALF_DEG
+private const val ARC_SWEEP_DEG = -(360f - 2 * GAP_HALF_DEG)
+
+private const val DOT_RADIUS = 0.094f
+private const val DOT_ANGLE_DEG = -40f
+private const val DOT_ORBIT = RING_RADIUS + 0.02f
+
+/** The ball in the middle, sized to leave an even margin inside the ring. */
+private const val BALL_RADIUS = 0.222f
+
+/** One dark green, everywhere. */
+val KickoffGreen = Color(0xFF0A7233)
+
+/** Kept as aliases so older call sites still resolve; both are the one green now. */
+val KickoffRingDark = KickoffGreen
+val KickoffRingLight = KickoffGreen
+
+/** The balls are white - properly white, not tinted. */
+val KickoffBallWhite = Color(0xFFFFFFFF)
+
+/** The panels, and the seam the pentagon sits in. */
+private val KickoffBallBlack = Color(0xFF14181A)
+
+/**
+ * A hairline rim so a white ball on a near-white page still has an edge.
+ *
+ * Translucent black rather than a colour: it darkens the light backgrounds where it is
+ * needed and disappears into the dark ones where it is not.
+ */
+private val KickoffBallRim = Color(0x33000000)
 
 @Composable
 fun KickoffLogo(
     modifier: Modifier = Modifier,
     size: Dp = 72.dp,
-    ringColor: Color = MaterialTheme.colorScheme.primary,
-    panelColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
-    dotColor: Color = MaterialTheme.colorScheme.primaryContainer,
     /** 0f draws nothing, 1f the finished mark. Drive this to animate the logo in. */
     progress: Float = 1f,
 ) {
     Canvas(modifier = modifier.size(size)) {
-        drawMark(progress.coerceIn(0f, 1f), ringColor, panelColor, dotColor)
+        val p = progress.coerceIn(0f, 1f)
+        // The static composable tells the same story as the animation, compressed:
+        // ball first, ring around it, loose ball last.
+        drawCentreBall(scale = (p / 0.4f).coerceIn(0f, 1f))
+        drawRing(sweepFraction = ((p - 0.25f) / 0.6f).coerceIn(0f, 1f))
+        drawSatellite(scale = ((p - 0.85f) / 0.15f).coerceIn(0f, 1f))
     }
 }
 
 /**
- * The logo assembling itself: the ring sweeps round, the panel drops in behind it, and
- * the tracker dot lands last. Used for the launch screen and the onboarding hero.
+ * The mark arriving, in four beats.
+ *
+ * The ball is struck from off the bottom-left corner and lobs across the frame, spinning
+ * as it travels; it drops to the middle and bounces to rest; the ring then draws itself
+ * from the top edge of the opening all the way round; and the loose ball pops in over the
+ * gap last. Squash on each bounce is what sells the weight - a ball that lands without
+ * deforming reads as a sticker, not a ball.
+ *
+ * The whole thing runs over three seconds, which is long for an animation and deliberate:
+ * it plays once, on the first screen anyone ever sees, and it is the only chance the mark
+ * gets to explain what it is. Every later appearance is the static [KickoffLogo].
  */
 @Composable
 fun AnimatedKickoffLogo(
     modifier: Modifier = Modifier,
     size: Dp = 96.dp,
-    ringColor: Color = MaterialTheme.colorScheme.primary,
-    panelColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
-    dotColor: Color = MaterialTheme.colorScheme.primaryContainer,
     onFinished: () -> Unit = {},
 ) {
-    val progress = remember { Animatable(0f) }
+    val flight = remember { Animatable(0f) }
+    val drop = remember { Animatable(0f) }
+    val ring = remember { Animatable(0f) }
+    val pop = remember { Animatable(0f) }
+
     LaunchedEffect(Unit) {
-        progress.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(
-                durationMillis = Motion.Duration.EXTRA_LONG,
-                easing = Motion.Easings.emphasised,
-            ),
-        )
+        flight.animateTo(1f, tween(durationMillis = 760, easing = LaunchEasing))
+        drop.animateTo(1f, tween(durationMillis = 880, easing = BounceOutEasing))
+        ring.animateTo(1f, tween(durationMillis = 1_180, easing = ArcEasing))
+        pop.animateTo(1f, tween(durationMillis = 480, easing = OvershootEasing))
         onFinished()
     }
-    KickoffLogo(
-        modifier = modifier,
-        size = size,
-        ringColor = ringColor,
-        panelColor = panelColor,
-        dotColor = dotColor,
-        progress = progress.value,
-    )
+
+    Canvas(modifier = modifier.size(size)) {
+        val dim = this.size.minDimension
+        // Both beats draw the ball, so the flight yields the moment the bounce starts -
+        // otherwise the frame after the handover has two of them stacked.
+        if (flight.value > 0f && drop.value == 0f) {
+            val t = flight.value
+            // Struck from off-frame and lobbed: the parabola term lifts the middle of the
+            // path so it arcs over rather than sliding across in a straight line.
+            val x = (1f - t) * -FLIGHT_REACH * dim
+            val lob = 4f * t * (1f - t) * FLIGHT_ARC * dim
+            val y = (FLIGHT_START_Y + (BOUNCE_HEIGHT - FLIGHT_START_Y) * t) * dim - lob
+            // It hands over to the bounce still turning, and the bounce takes that last
+            // rotation to zero - so the spin decays across the two beats rather than
+            // stopping dead at the seam between them.
+            val spin = -((1f - t) * FLIGHT_SPIN_DEG + SETTLE_SPIN_DEG)
+            translate(left = x, top = y) {
+                rotate(degrees = spin, pivot = center) {
+                    drawCentreBall(scale = 1f)
+                }
+            }
+        }
+        if (drop.value > 0f) {
+            // Falls the last half-radius; squash tracks how recently it hit the floor.
+            val y = (1f - drop.value) * BOUNCE_HEIGHT * dim
+            val squash = 1f - 0.22f * bounceImpact(drop.value)
+            translate(top = y) {
+                scale(scaleX = 2f - squash, scaleY = squash, pivot = center) {
+                    // A last slow half-turn while it settles, so the ball never freezes
+                    // between one beat and the next.
+                    rotate(degrees = -(1f - drop.value) * SETTLE_SPIN_DEG, pivot = center) {
+                        drawCentreBall(scale = 1f)
+                    }
+                }
+            }
+        }
+        drawRing(sweepFraction = ring.value)
+        if (pop.value > 0f) drawSatellite(scale = pop.value)
+    }
 }
 
+/** How far off-frame the ball is struck from, and how high the lob carries it. */
+private const val FLIGHT_REACH = 1.15f
+private const val FLIGHT_ARC = 0.55f
+private const val FLIGHT_START_Y = 0.85f
+private const val FLIGHT_SPIN_DEG = 900f
+
+/** Where the flight hands over to the bounce: half a radius above the resting point. */
+private const val BOUNCE_HEIGHT = -0.5f
+private const val SETTLE_SPIN_DEG = 140f
+
 /**
- * The loading state, built from the same mark: the ring detaches into a short arc that
- * runs the circle while the panel stays put. It is the logo, still moving - not a
- * generic spinner borrowed from somewhere else.
+ * The loading state: the same football turning inside the same green ring.
+ *
+ * It is deliberately the logo and not a spinner - at 18dp inside a button it still reads
+ * as the mark, so a screen that is waiting looks like the app thinking rather than like a
+ * borrowed widget.
  */
 @Composable
 fun KickoffLoader(
     modifier: Modifier = Modifier,
     size: Dp = 48.dp,
-    ringColor: Color = MaterialTheme.colorScheme.primary,
-    panelColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
+    /**
+     * The ring's colour. Dark green everywhere except inside a filled button, where the
+     * button is already that green and the ring would disappear into it.
+     */
+    ringColor: Color = KickoffGreen,
 ) {
     val transition = rememberInfiniteTransition(label = "kickoff-loader")
-    val rotation by transition.animateFloat(
+    val spin by transition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1_100, easing = LinearEasing),
-        ),
-        label = "rotation",
+        animationSpec = infiniteRepeatable(animation = tween(1_600, easing = LinearEasing)),
+        label = "spin",
     )
-    // The arc breathing between a short and a long sweep is what stops a constant-speed
-    // spinner from looking mechanical.
-    val sweep by transition.animateFloat(
-        initialValue = 40f,
-        targetValue = 260f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = Motion.Easings.standard),
-            repeatMode = RepeatMode.Reverse,
-        ),
+    // The ring breathes round behind it so the whole mark is alive, not just the ball.
+    val sweepHead by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(animation = tween(2_400, easing = LinearEasing)),
         label = "sweep",
     )
 
-    Box(modifier = modifier.size(size)) {
-        Canvas(Modifier.size(size)) {
-            val radius = this.size.minDimension * RING_RADIUS_RATIO / (1f - 2 * 0.02f)
-            val stroke = this.size.minDimension * STROKE_RATIO
-            val inset = this.size.minDimension / 2f - radius
-
-            drawPentagon(this.size.minDimension * PENTAGON_RATIO, panelColor)
-            drawArc(
-                color = ringColor,
-                startAngle = rotation,
-                sweepAngle = sweep,
-                useCenter = false,
-                topLeft = Offset(inset, inset),
-                size = Size(radius * 2, radius * 2),
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-            )
+    Canvas(modifier = modifier.size(size)) {
+        drawRing(sweepFraction = 1f, alpha = 0.20f, color = ringColor)
+        drawTail(headDeg = ARC_START_DEG + sweepHead, sweepDeg = 120f, color = ringColor)
+        rotate(degrees = spin, pivot = center) {
+            drawBall(radius = this.size.minDimension * BALL_RADIUS)
         }
     }
 }
 
-private fun DrawScope.drawMark(
-    progress: Float,
-    ringColor: Color,
-    panelColor: Color,
-    dotColor: Color,
-) {
-    val dimension = size.minDimension
-    val radius = dimension * RING_RADIUS_RATIO
-    val stroke = dimension * STROKE_RATIO
-    val inset = dimension / 2f - radius
+// ---- drawing --------------------------------------------------------------------------
 
-    // The panel scales in over the first two thirds, so it is settled before the
-    // tracker dot arrives and the eye has one thing to follow at a time.
-    val panelScale = (progress / 0.66f).coerceIn(0f, 1f)
-    if (panelScale > 0f) {
-        drawPentagon(dimension * PENTAGON_RATIO * panelScale, panelColor)
-    }
-
-    if (progress > 0f) {
-        drawArc(
-            color = ringColor,
-            startAngle = ARC_START_DEG,
-            sweepAngle = ARC_SWEEP_DEG * progress,
-            useCenter = false,
-            topLeft = Offset(inset, inset),
-            size = Size(radius * 2, radius * 2),
-            style = Stroke(width = stroke, cap = StrokeCap.Round),
-        )
-    }
-
-    // The dot only appears once the ring is essentially closed, then pops to full size.
-    val dotProgress = ((progress - 0.82f) / 0.18f).coerceIn(0f, 1f)
-    if (dotProgress > 0f) {
-        val angle = Math.toRadians(ARC_START_DEG.toDouble())
-        drawCircle(
-            color = dotColor,
-            radius = dimension * DOT_RATIO * dotProgress,
-            center = Offset(
-                x = center.x + radius * cos(angle).toFloat(),
-                y = center.y + radius * sin(angle).toFloat(),
-            ),
-        )
-    }
-}
-
-/** A regular pentagon with a vertex pointing up - the panel of a football. */
-private fun DrawScope.drawPentagon(radius: Float, color: Color) {
+/**
+ * A recognisable football: white sphere, black pentagon at the pole, five black panels
+ * around it. Filled shapes rather than outlines, because a 1px outline disappears the
+ * moment the mark is drawn at button size.
+ */
+private fun DrawScope.drawBall(radius: Float) {
     if (radius <= 0f) return
+    drawCircle(color = KickoffBallWhite, radius = radius, center = center)
+
+    val pentagonRadius = radius * 0.40f
     val path = Path()
-    listOf(-90f, -18f, 54f, 126f, 198f).forEachIndexed { index, degrees ->
+    PANEL_ANGLES.forEachIndexed { index, degrees ->
         val angle = Math.toRadians(degrees.toDouble())
-        val x = center.x + radius * cos(angle).toFloat()
-        val y = center.y + radius * sin(angle).toFloat()
+        val x = center.x + pentagonRadius * cos(angle).toFloat()
+        val y = center.y + pentagonRadius * sin(angle).toFloat()
         if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
     }
     path.close()
-    drawPath(path, color)
+    drawPath(path, KickoffBallBlack)
+
+    // The five outer panels, tucked just inside the edge so the sphere keeps its rim.
+    PANEL_ANGLES.forEach { degrees ->
+        val angle = Math.toRadians((degrees + 36).toDouble())
+        val cx = center.x + radius * 0.68f * cos(angle).toFloat()
+        val cy = center.y + radius * 0.68f * sin(angle).toFloat()
+        rotate(degrees = degrees + 36f + 90f, pivot = Offset(cx, cy)) {
+            drawOval(
+                color = KickoffBallBlack,
+                topLeft = Offset(cx - radius * 0.30f, cy - radius * 0.17f),
+                size = Size(radius * 0.60f, radius * 0.34f),
+            )
+        }
+    }
+
+    drawCircle(
+        color = KickoffBallRim,
+        radius = radius,
+        center = center,
+        style = Stroke(width = radius * 0.07f),
+    )
 }
 
-/** Bounds of the drawn mark, for callers that need to align something to it. */
-fun logoBounds(size: Float): Rect {
-    val outer = size * (RING_RADIUS_RATIO + STROKE_RATIO / 2f)
-    return Rect(
-        left = size / 2f - outer,
-        top = size / 2f - outer,
-        right = size / 2f + outer,
-        bottom = size / 2f + outer,
+/** Vertex up, so one panel always sits straight above the pentagon. */
+private val PANEL_ANGLES = listOf(-90f, -18f, 54f, 126f, 198f)
+
+/** The centre ball, growing from nothing when the mark animates in. */
+private fun DrawScope.drawCentreBall(scale: Float) {
+    if (scale <= 0f) return
+    drawBall(radius = size.minDimension * BALL_RADIUS * scale)
+}
+
+/**
+ * The ring: one stroke, one green.
+ *
+ * It was a sweep gradient between two greens, and at logo size the light end read as a
+ * worn patch rather than as shading. A single dark green is what the sketch has and it
+ * survives being scaled down to a 24dp notification glyph.
+ */
+private fun DrawScope.drawRing(
+    sweepFraction: Float,
+    alpha: Float = 1f,
+    color: Color = KickoffGreen,
+) {
+    if (sweepFraction <= 0f) return
+    val dim = size.minDimension
+    val radius = dim * RING_RADIUS
+    val strokeWidth = dim * RING_STROKE
+
+    rotate(degrees = ARC_START_DEG, pivot = center) {
+        drawArc(
+            color = color,
+            startAngle = 0f,
+            sweepAngle = ARC_SWEEP_DEG * sweepFraction,
+            useCenter = false,
+            topLeft = Offset(center.x - radius, center.y - radius),
+            size = Size(radius * 2, radius * 2),
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+            alpha = alpha,
+        )
+    }
+}
+
+/** The comet head running round the loader's ring, fading as it trails. */
+private fun DrawScope.drawTail(headDeg: Float, sweepDeg: Float, color: Color) {
+    val dim = size.minDimension
+    val radius = dim * RING_RADIUS
+    val topLeft = Offset(center.x - radius, center.y - radius)
+    val arcSize = Size(radius * 2, radius * 2)
+    val steps = 12
+    for (i in 0 until steps) {
+        val f = i / steps.toFloat()
+        drawArc(
+            color = color.copy(alpha = 1f - f),
+            startAngle = headDeg - sweepDeg * f - sweepDeg / steps,
+            sweepAngle = sweepDeg / steps + 0.5f,
+            useCenter = false,
+            topLeft = topLeft,
+            size = arcSize,
+            style = Stroke(width = dim * RING_STROKE, cap = StrokeCap.Round),
+        )
+    }
+}
+
+/** The loose white ball in the ring's opening. */
+private fun DrawScope.drawSatellite(scale: Float) {
+    if (scale <= 0f) return
+    val dim = size.minDimension
+    val angle = Math.toRadians(DOT_ANGLE_DEG.toDouble())
+    val radius = dim * DOT_RADIUS * scale
+    val at = Offset(
+        x = center.x + dim * DOT_ORBIT * cos(angle).toFloat(),
+        y = center.y + dim * DOT_ORBIT * sin(angle).toFloat(),
     )
+    drawCircle(color = KickoffBallWhite, radius = radius, center = at)
+    drawCircle(
+        color = KickoffBallRim,
+        radius = radius,
+        center = at,
+        style = Stroke(width = radius * 0.16f),
+    )
+}
+
+// ---- easing ---------------------------------------------------------------------------
+
+/** The classic bounce-out curve: three touches, each losing height. */
+val BounceOutEasing = Easing { fraction ->
+    val n1 = 7.5625f
+    val d1 = 2.75f
+    var t = fraction
+    when {
+        t < 1f / d1 -> n1 * t * t
+        t < 2f / d1 -> { t -= 1.5f / d1; n1 * t * t + 0.75f }
+        t < 2.5f / d1 -> { t -= 2.25f / d1; n1 * t * t + 0.9375f }
+        else -> { t -= 2.625f / d1; n1 * t * t + 0.984375f }
+    }
+}
+
+/** How hard the ball is hitting the ground right now, for the squash. */
+private fun bounceImpact(fraction: Float): Float {
+    val value = BounceOutEasing.transform(fraction)
+    // Near 1f means near the floor; squash spikes at the touches and dies by the end.
+    return ((value - 0.9f) / 0.1f).coerceIn(0f, 1f) * (1f - fraction) * abs(1f - fraction * 0.4f)
+}
+
+/** A struck ball: all its speed at the start, coasting as it comes down. */
+val LaunchEasing = Easing { fraction ->
+    1f - (1f - fraction) * (1f - fraction)
+}
+
+/** Fast out, gentle landing - the ring being drawn by a confident hand. */
+val ArcEasing = Easing { fraction ->
+    1f - (1f - fraction) * (1f - fraction) * (1f - fraction)
+}
+
+/** A small overshoot for the pop: past full size, then settle. */
+val OvershootEasing = Easing { fraction ->
+    val tension = 2.2f
+    val t = fraction - 1f
+    t * t * ((tension + 1f) * t + tension) + 1f
 }
 
 @Preview

@@ -28,6 +28,20 @@ data class FollowedLeagueEntity(
     val logoUrl: String?,
     val season: Int,
     val sortOrder: Int = 0,
+    /**
+     * What the provider carries for this competition, cached alongside it.
+     *
+     * Held per league rather than fetched per match because it is a property of the
+     * competition and season, and a match screen opened offline still has to be able to
+     * tell "the line-up is not out yet" from "this cup never has line-ups".
+     */
+    val coversLineups: Boolean = true,
+    val coversEvents: Boolean = true,
+    val coversFixtureStats: Boolean = true,
+    val coversPlayerStats: Boolean = true,
+    val coversStandings: Boolean = true,
+    val coversInjuries: Boolean = true,
+    val coversPredictions: Boolean = true,
 )
 
 /** Cached fixtures. Kept flat: this is a read-through cache, not a source of truth. */
@@ -96,8 +110,6 @@ data class TrackedActivityEntity(
     @PrimaryKey val key: String,
     val kind: String,
     val matchId: Long?,
-    val calendarEventId: Long?,
-    val calendarInstanceStart: Long?,
     val startsAt: Long,
     val endsAt: Long?,
     @ColumnInfo(defaultValue = "0") val dismissed: Boolean = false,

@@ -16,6 +16,7 @@ import com.tzvi.kickoff.data.local.dao.TrackedActivityDao
 import com.tzvi.kickoff.data.backend.KickoffBackendService
 import com.tzvi.kickoff.data.remote.ApiFootballKeyInterceptor
 import com.tzvi.kickoff.data.remote.BackendUrlInterceptor
+import com.tzvi.kickoff.data.remote.ClerkAuthInterceptor
 import com.tzvi.kickoff.data.remote.api.ApiFootballService
 import dagger.Module
 import dagger.Provides
@@ -37,6 +38,9 @@ import javax.inject.Singleton
 @Qualifier @Retention(AnnotationRetention.BINARY) annotation class FootballApi
 @Qualifier @Retention(AnnotationRetention.BINARY) annotation class BackendApi
 @Qualifier @Retention(AnnotationRetention.BINARY) annotation class ImageHttp
+
+/** Plain client, no key or base-URL interceptor: for testing a value that is not saved yet. */
+@Qualifier @Retention(AnnotationRetention.BINARY) annotation class ProbeHttp
 
 /** The dispatcher for provider queries and disk work. Injected rather than hard-coded
  *  so a test can swap it for a deterministic one. */
@@ -77,6 +81,16 @@ object AppModule {
 
     @Provides
     @Singleton
+    @ProbeHttp
+    fun probeHttpClient(logging: HttpLoggingInterceptor): OkHttpClient =
+        OkHttpClient.Builder()
+            .addInterceptor(logging)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .build()
+
+    @Provides
+    @Singleton
     @FootballApi
     fun footballHttpClient(
         keyInterceptor: ApiFootballKeyInterceptor,
@@ -93,9 +107,11 @@ object AppModule {
     @BackendApi
     fun backendHttpClient(
         urlInterceptor: BackendUrlInterceptor,
+        authInterceptor: ClerkAuthInterceptor,
         logging: HttpLoggingInterceptor,
     ): OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(urlInterceptor)
+        .addInterceptor(authInterceptor)
         .addInterceptor(logging)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(25, TimeUnit.SECONDS)
@@ -142,6 +158,10 @@ object AppModule {
     @Singleton
     fun database(@ApplicationContext context: Context): KickoffDatabase =
         Room.databaseBuilder(context, KickoffDatabase::class.java, KickoffDatabase.NAME)
+            .addMigrations(KickoffDatabase.MIGRATION_1_2, KickoffDatabase.MIGRATION_2_3)
+            // Still the last resort, but every version bump from here needs a real
+            // migration first: the followed teams and leagues are the user's own choices,
+            // not cache, and dropping them silently is not an upgrade.
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
 

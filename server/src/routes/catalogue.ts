@@ -8,7 +8,7 @@
 import express, { type Request, type Response, type Router } from 'express';
 
 import type { ApiDeps } from './deps.js';
-import type { TeamQuery } from '../provider/apiFootball.js';
+import type { ApiTeamCatalogueEntry, TeamQuery } from '../provider/apiFootball.js';
 import { currentSeason, toLeagues, toTeam } from '../provider/mapper.js';
 import type { LeagueJson, LeagueListJson, TeamJson, TeamListJson } from '../types.js';
 import {
@@ -71,7 +71,16 @@ export function createCatalogueRouter(deps: ApiDeps): Router {
     // parameter is dropped and the search runs unqualified rather than failing the request.
     if (term !== undefined) query.search = term;
 
-    const raw = await deps.provider.teams(query);
+    let raw: Awaited<ReturnType<typeof deps.provider.teams>>;
+    try {
+      raw = await deps.provider.teams(query);
+    } catch (error) {
+      raw = await retryWithFreeSeason(deps, query, error);
+    }
+    // Some plan restrictions answer with an empty list instead of an error note.
+    if (raw.length === 0 && canFallBack(query)) {
+      raw = await deps.provider.teams({ ...query, season: FREE_PLAN_LAST_SEASON });
+    }
     const teams: TeamJson[] = raw.map((entry) => toTeam(entry)).filter((team) => team.id > 0);
     const body: TeamListJson = { teams };
     res.json(body);
@@ -89,4 +98,30 @@ function pickFeatured(leagues: LeagueJson[], featuredIds: readonly number[]): Le
     if (league) picked.push(league);
   }
   return picked;
+}
+
+/** The newest season API-Football's free plan is known to answer for. */
+const FREE_PLAN_LAST_SEASON = 2023;
+
+function canFallBack(query: TeamQuery): boolean {
+  return query.league !== undefined && (query.season ?? 0) > FREE_PLAN_LAST_SEASON;
+}
+
+/**
+ * The free plan serves /leagues but refuses current-season /teams, so a deployment run on
+ * a free key loads competitions and then fails on every squad list - which reads as a
+ * broken server when it is actually a priced key. Club ids are stable across seasons, so
+ * an older season's browse list is the same clubs; anything else rethrows untouched.
+ */
+async function retryWithFreeSeason(
+  deps: ApiDeps,
+  query: TeamQuery,
+  error: unknown,
+): Promise<ApiTeamCatalogueEntry[]> {
+  if (!canFallBack(query)) throw error;
+  try {
+    return await deps.provider.teams({ ...query, season: FREE_PLAN_LAST_SEASON });
+  } catch {
+    throw error;
+  }
 }

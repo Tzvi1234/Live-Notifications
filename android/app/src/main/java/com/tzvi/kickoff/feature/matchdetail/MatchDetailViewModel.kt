@@ -3,9 +3,13 @@ package com.tzvi.kickoff.feature.matchdetail
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tzvi.kickoff.core.model.LeagueCoverage
+import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
 import com.tzvi.kickoff.core.model.MatchEventType
+import com.tzvi.kickoff.core.model.MatchPrediction
 import com.tzvi.kickoff.core.model.MatchLineups
+import com.tzvi.kickoff.core.model.MatchPhase
 import com.tzvi.kickoff.core.model.MatchSide
 import com.tzvi.kickoff.core.model.MatchStatistics
 import com.tzvi.kickoff.core.model.Score
@@ -21,8 +25,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -44,7 +52,27 @@ class MatchDetailViewModel @Inject constructor(
     }
 
     private val requests = MutableStateFlow(RefreshRequest())
+    /**
+     * Opens on the timeline once there is one, and on the preview before there is.
+     *
+     * Set from the first match state rather than fixed, because landing on an empty
+     * timeline is the commonest way into this screen - from a fixture list, hours early.
+     */
     private val selectedTab = MutableStateFlow(MatchDetailTab.TIMELINE)
+    private var tabChosenByUser = false
+
+    init {
+        // One-shot: the first time we learn the match has not started, move to the tab
+        // that actually has something on it. Never again after that, and never over a
+        // choice the user has already made.
+        viewModelScope.launch {
+            val first = footballRepository.observeMatch(matchId).filterNotNull().first()
+            if (!tabChosenByUser && first.phase == MatchPhase.SCHEDULED) {
+                selectedTab.value = MatchDetailTab.PREVIEW
+            }
+        }
+    }
+
 
     /**
      * Line-ups and statistics are the one part of a match that Room never holds: only
@@ -60,19 +88,59 @@ class MatchDetailViewModel @Inject constructor(
     private val details: Flow<DetailState> =
         requests.flatMapLatest { request -> pollDetail(request) }
 
+    /**
+     * The pre-match read, fetched once per match rather than polled.
+     *
+     * The provider recomputes predictions hourly and head-to-head never changes, so this
+     * deliberately does not ride [requests]: a pull-to-refresh is asking for a fresher
+     * score, not for the same percentages again. Keyed on the league so it also picks up
+     * that competition's coverage flags, which is what tells the line-ups tab whether an
+     * empty XI is "not yet" or "never".
+     */
+    private val preMatch: Flow<PreMatchState> = footballRepository.observeMatch(matchId)
+        .map { it?.leagueId to (it?.home?.id to it?.away?.id) }
+        .distinctUntilChanged()
+        .flatMapLatest { (leagueId, teams) ->
+            val (homeId, awayId) = teams
+            flow {
+                if (leagueId == null) {
+                    emit(PreMatchState())
+                    return@flow
+                }
+                val coverage = footballRepository.leagueCoverage(leagueId)
+                emit(PreMatchState(coverage = coverage, isLoading = coverage?.predictions != false))
+                if (coverage?.predictions == false) return@flow
+                val prediction = footballRepository.predictions(matchId)
+                val h2h = if (homeId != null && awayId != null) {
+                    footballRepository.headToHead(homeId, awayId)
+                } else {
+                    emptyList()
+                }
+                emit(PreMatchState(coverage = coverage, prediction = prediction, headToHead = h2h))
+            }
+        }
+
+    // Six sources against combine's five typed slots, so the two per-match fetches travel
+    // together rather than dropping the lambda to Array<Any>.
+    private val detailAndPreview = combine(details, preMatch, ::Pair)
+
     val uiState: StateFlow<MatchDetailUiState> = combine(
         footballRepository.observeMatch(matchId),
         footballRepository.observeEvents(matchId),
-        details,
+        detailAndPreview,
         selectedTab,
         matchTracker.isTracking(matchId),
-    ) { match, events, detail, tab, following ->
+    ) { match, events, (detail, preview), tab, following ->
         MatchDetailUiState(
             matchId = matchId,
             match = match,
             timeline = timelineOf(events),
             lineups = detail.lineups,
             stats = detail.statistics.toComparisons(),
+            prediction = preview.prediction,
+            predictionLoading = preview.isLoading,
+            headToHead = preview.headToHead,
+            coverage = preview.coverage,
             selectedTab = tab,
             // Coming in from a fixture list the match is already cached, so the screen
             // only ever shows the full-page loader on a genuinely cold open.
@@ -104,6 +172,7 @@ class MatchDetailViewModel @Inject constructor(
     }
 
     fun selectTab(tab: MatchDetailTab) {
+        tabChosenByUser = true
         selectedTab.value = tab
     }
 
@@ -227,6 +296,13 @@ class MatchDetailViewModel @Inject constructor(
         /** Makes a repeated pull-to-refresh a new value, so the flow actually restarts. */
         val attempt: Int = 0,
         val fromUser: Boolean = false,
+    )
+
+    private data class PreMatchState(
+        val coverage: LeagueCoverage? = null,
+        val prediction: MatchPrediction? = null,
+        val headToHead: List<Match> = emptyList(),
+        val isLoading: Boolean = false,
     )
 
     private data class DetailState(

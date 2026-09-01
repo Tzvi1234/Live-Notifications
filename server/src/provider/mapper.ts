@@ -8,14 +8,21 @@ import {
   leagueLogoUrl,
   playerPhotoUrl,
   teamCrestUrl,
+  type ApiCoverage,
   type ApiEvent,
   type ApiFixture,
   type ApiFixtureInfo,
+  type ApiFixturePlayers,
+  type ApiFixturePlayerStats,
   type ApiGoals,
   type ApiLeagueCatalogueEntry,
   type ApiLeagueRef,
   type ApiLineup,
   type ApiLineupPlayer,
+  type ApiPlayerEntry,
+  type ApiPrediction,
+  type ApiSeasonEntry,
+  type ApiSquadEntry,
   type ApiTeamCatalogueEntry,
   type ApiTeamRef,
   type ApiTeamStatistics,
@@ -23,15 +30,24 @@ import {
 import {
   eventId,
   phaseFromProviderCode,
+  type FixturePlayerJson,
+  type LeagueCoverageJson,
   type LeagueJson,
   type LineupPlayerJson,
   type MatchEventJson,
   type MatchEventType,
   type MatchJson,
+  type MatchPlayersJson,
+  type MatchPredictionJson,
   type MatchSide,
+  type PlayerProfileJson,
+  type PlayerSeasonStatsJson,
   type ScoreJson,
+  type SquadPlayerJson,
+  type TeamFixturePlayersJson,
   type TeamJson,
   type TeamLineupJson,
+  type TeamSquadJson,
 } from '../types.js';
 
 /**
@@ -40,6 +56,8 @@ import {
  * the shapes it produces from one import.
  */
 export type {
+  FixturePlayerJson,
+  LeagueCoverageJson,
   LeagueJson,
   LineupPlayerJson,
   MatchDetailJson,
@@ -47,10 +65,15 @@ export type {
   MatchEventType,
   MatchJson,
   MatchPhase,
+  MatchPlayersJson,
+  MatchPredictionJson,
   MatchSide,
+  PlayerProfileJson,
   ScoreJson,
+  SquadPlayerJson,
   TeamJson,
   TeamLineupJson,
+  TeamSquadJson,
 } from '../types.js';
 
 /**
@@ -110,20 +133,18 @@ export function toLeague(
   if (isLeagueCatalogueEntry(raw)) {
     const id = raw.league?.id;
     if (typeof id !== 'number') return undefined;
-    const seasons = raw.seasons ?? [];
-    const current = seasons.find((season) => season.current === true)?.year;
-    const latest = seasons.reduce<number | undefined>(
-      (best, season) =>
-        typeof season.year === 'number' && (best === undefined || season.year > best) ? season.year : best,
-      undefined,
-    );
+    // One season entry, not two lookups: `coverage` describes the season it sits on, and
+    // reporting the current season's year beside the latest season's coverage would tell the
+    // client a competition has line-ups this year because it had them last year.
+    const season = pickSeason(raw.seasons ?? []);
     return {
       id,
       name: raw.league?.name ?? `League ${id}`,
       country: raw.country?.name ?? undefined,
       logoUrl: raw.league?.logo ?? leagueLogoUrl(id),
-      season: current ?? latest ?? fallbackSeason,
+      season: season?.year ?? fallbackSeason,
       type: raw.league?.type ?? undefined,
+      coverage: toCoverage(season?.coverage),
     };
   }
 
@@ -136,6 +157,39 @@ export function toLeague(
     logoUrl: raw.logo ?? leagueLogoUrl(id),
     season: raw.season ?? fallbackSeason,
     type: undefined,
+    // The league block embedded in a fixture carries no coverage; only /leagues does.
+    coverage: undefined,
+  };
+}
+
+/** The season marked current, else the most recent one the provider listed. */
+function pickSeason(seasons: readonly ApiSeasonEntry[]): ApiSeasonEntry | undefined {
+  const current = seasons.find((season) => season.current === true);
+  if (current) return current;
+  return seasons.reduce<ApiSeasonEntry | undefined>((best, season) => {
+    if (typeof season.year !== 'number') return best;
+    if (best === undefined || season.year > (best.year ?? Number.NEGATIVE_INFINITY)) return season;
+    return best;
+  }, undefined);
+}
+
+/**
+ * Absent stays absent. `{ lineups: false }` and "the provider said nothing" are different
+ * answers — the first hides the line-up tab for good, the second only means this build of
+ * the catalogue could not tell — so a missing block is undefined rather than all-false.
+ */
+export function toCoverage(raw: ApiCoverage | null | undefined): LeagueCoverageJson | undefined {
+  if (!raw) return undefined;
+  return {
+    lineups: raw.fixtures?.lineups === true,
+    events: raw.fixtures?.events === true,
+    statisticsFixtures: raw.fixtures?.statistics_fixtures === true,
+    statisticsPlayers: raw.fixtures?.statistics_players === true,
+    standings: raw.standings === true,
+    players: raw.players === true,
+    injuries: raw.injuries === true,
+    predictions: raw.predictions === true,
+    odds: raw.odds === true,
   };
 }
 
@@ -251,6 +305,173 @@ export function toStats(
   const home = raw.find((entry) => entry.team?.id === homeTeamId);
   const away = raw.find((entry) => typeof entry.team?.id === 'number' && entry.team.id !== homeTeamId);
   return { homeStats: flattenStats(home), awayStats: flattenStats(away) };
+}
+
+/** `/players/squads` -> the squad list. Entries without an id are dropped, not renumbered. */
+export function toSquad(raw: ApiSquadEntry[]): TeamSquadJson | undefined {
+  const entry = raw[0];
+  if (!entry) return undefined;
+
+  const players: SquadPlayerJson[] = [];
+  for (const player of entry.players ?? []) {
+    const id = player.id;
+    if (typeof id !== 'number' || id <= 0) continue;
+    players.push({
+      id,
+      name: player.name ?? '',
+      number: player.number ?? undefined,
+      position: player.position ?? undefined,
+      age: player.age ?? undefined,
+      photoUrl: player.photo ?? playerPhotoUrl(id),
+    });
+  }
+  return { team: toTeam(entry.team), players };
+}
+
+/**
+ * `/players?id=&season=` -> one profile with a line per competition that season. The
+ * provider returns the same player once per team when they transferred mid-season, so the
+ * profile is taken from the first entry and every entry's statistics are concatenated.
+ */
+export function toPlayerProfile(raw: ApiPlayerEntry[]): PlayerProfileJson | undefined {
+  const first = raw[0]?.player;
+  const id = first?.id;
+  if (!first || typeof id !== 'number' || id <= 0) return undefined;
+
+  const statistics: PlayerSeasonStatsJson[] = [];
+  for (const entry of raw) {
+    for (const line of entry.statistics ?? []) {
+      statistics.push({
+        leagueId: line.league?.id ?? undefined,
+        leagueName: line.league?.name ?? undefined,
+        teamId: line.team?.id ?? undefined,
+        teamName: line.team?.name ?? undefined,
+        season: line.league?.season ?? undefined,
+        // The provider's own spelling of "appearances" is `appearences`; correcting it
+        // here rather than in the client contract keeps the typo out of the app.
+        appearances: line.games?.appearences ?? undefined,
+        lineups: line.games?.lineups ?? undefined,
+        minutes: line.games?.minutes ?? undefined,
+        goals: line.goals?.total ?? undefined,
+        assists: line.goals?.assists ?? undefined,
+        yellowCards: line.cards?.yellow ?? undefined,
+        redCards: line.cards?.red ?? undefined,
+        rating: line.games?.rating ?? undefined,
+      });
+    }
+  }
+
+  return {
+    id,
+    name: first.name ?? '',
+    firstName: first.firstname ?? undefined,
+    lastName: first.lastname ?? undefined,
+    age: first.age ?? undefined,
+    birthDate: first.birth?.date ?? undefined,
+    birthPlace: first.birth?.place ?? undefined,
+    nationality: first.nationality ?? undefined,
+    height: first.height ?? undefined,
+    weight: first.weight ?? undefined,
+    injured: first.injured ?? undefined,
+    photoUrl: first.photo ?? playerPhotoUrl(id),
+    statistics,
+  };
+}
+
+/** Splits `/fixtures/players` into the two sides, the way `toLineups` splits the sheets. */
+export function toMatchPlayers(
+  matchId: number,
+  homeTeamId: number,
+  raw: ApiFixturePlayers[],
+): MatchPlayersJson {
+  const home = raw.find((entry) => entry.team?.id === homeTeamId);
+  const away = raw.find(
+    (entry) => typeof entry.team?.id === 'number' && entry.team.id !== homeTeamId,
+  );
+  return {
+    matchId,
+    home: home ? toTeamFixturePlayers(home) : undefined,
+    away: away ? toTeamFixturePlayers(away) : undefined,
+  };
+}
+
+function toTeamFixturePlayers(entry: ApiFixturePlayers): TeamFixturePlayersJson {
+  const teamId = entry.team?.id ?? 0;
+  const players: FixturePlayerJson[] = [];
+  for (const slot of entry.players ?? []) {
+    // The statistics array holds exactly one line per player in this endpoint; a second
+    // would be a shape change, and taking the first is what the lineups mapper does too.
+    players.push(toFixturePlayer(slot.player, slot.statistics?.[0]));
+  }
+  return {
+    teamId,
+    teamName: entry.team?.name ?? '',
+    crestUrl: entry.team?.logo ?? (teamId > 0 ? teamCrestUrl(teamId) : undefined),
+    players,
+  };
+}
+
+function toFixturePlayer(
+  player: ApiPlayerEntry['player'],
+  stats: ApiFixturePlayerStats | undefined,
+): FixturePlayerJson {
+  const id = player?.id ?? undefined;
+  return {
+    id,
+    name: player?.name ?? '',
+    number: stats?.games?.number ?? undefined,
+    position: stats?.games?.position ?? undefined,
+    photoUrl: player?.photo ?? (typeof id === 'number' ? playerPhotoUrl(id) : undefined),
+    minutes: stats?.games?.minutes ?? undefined,
+    rating: stats?.games?.rating ?? undefined,
+    captain: stats?.games?.captain ?? undefined,
+    substitute: stats?.games?.substitute ?? undefined,
+    goals: stats?.goals?.total ?? undefined,
+    assists: stats?.goals?.assists ?? undefined,
+    shotsTotal: stats?.shots?.total ?? undefined,
+    shotsOn: stats?.shots?.on ?? undefined,
+    passes: stats?.passes?.total ?? undefined,
+    // "78%" on some plans, 78 on others; stringified rather than parsed, like match stats.
+    passAccuracy: statValue(stats?.passes?.accuracy),
+    tackles: stats?.tackles?.total ?? undefined,
+    duelsWon: stats?.duels?.won ?? undefined,
+    yellowCards: stats?.cards?.yellow ?? undefined,
+    redCards: stats?.cards?.red ?? undefined,
+  };
+}
+
+/** `/predictions?fixture=` -> the pre-match call, with its comparison table flattened. */
+export function toMatchPrediction(
+  matchId: number,
+  raw: ApiPrediction[],
+): MatchPredictionJson | undefined {
+  const entry = raw[0];
+  if (!entry) return undefined;
+
+  const homeComparison: Record<string, string> = {};
+  const awayComparison: Record<string, string> = {};
+  for (const [metric, values] of Object.entries(entry.comparison ?? {})) {
+    const home = statValue(values?.home);
+    const away = statValue(values?.away);
+    if (home !== undefined) homeComparison[metric] = home;
+    if (away !== undefined) awayComparison[metric] = away;
+  }
+
+  return {
+    matchId,
+    // Absent when the provider predicts a draw, which is a real answer and not a gap.
+    winnerTeamId: entry.predictions?.winner?.id ?? undefined,
+    winnerName: entry.predictions?.winner?.name ?? undefined,
+    winnerComment: entry.predictions?.winner?.comment ?? undefined,
+    advice: entry.predictions?.advice ?? undefined,
+    homePercent: entry.predictions?.percent?.home ?? undefined,
+    drawPercent: entry.predictions?.percent?.draw ?? undefined,
+    awayPercent: entry.predictions?.percent?.away ?? undefined,
+    goalsHome: statValue(entry.predictions?.goals?.home),
+    goalsAway: statValue(entry.predictions?.goals?.away),
+    homeComparison,
+    awayComparison,
+  };
 }
 
 function flattenStats(entry: ApiTeamStatistics | undefined): Record<string, string> {

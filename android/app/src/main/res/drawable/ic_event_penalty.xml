@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tracker symbol for a penalty: the spot with the arc of the D over it. The arc is a
+     filled band between two radii rather than a stroked path - at the 20dp the tracker
+     is drawn at, a stroke thin enough to look like a pitch marking disappears. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:pathData="M6.15,23.5A19,19,0,0,1,41.85,23.5L35.28,25.9A12,12,0,0,0,12.72,25.9Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M24,25.5a5.5,5.5,0,1,0,0,11a5.5,5.5,0,1,0,0,-11Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>

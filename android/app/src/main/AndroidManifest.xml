@@ -22,12 +22,8 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
-    <!-- Calendar is read-only and never leaves the device. -->
-    <uses-permission android:name="android.permission.READ_CALENDAR" />
-
     <!-- Opt-in only: lets the Dynamic Island float over other apps. The app is fully
          usable without it - the in-app island needs no permission at all. -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:name=".KickoffApp"
@@ -58,16 +54,23 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="kickoff" android:host="match" />
             </intent-filter>
+            <!--
+              An invitation to a predictions group: matchup://join/<CODE>. A custom scheme
+              rather than an https App Link, which would need an assetlinks.json pinned to
+              the release signing certificate.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="matchup" android:host="join" />
+            </intent-filter>
         </activity>
 
         <service
             android:name=".notifications.LiveMatchService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
-
-        <service
-            android:name=".ui.island.IslandOverlayService"
-            android:exported="false" />
 
         <service
             android:name=".notifications.KickoffMessagingService"

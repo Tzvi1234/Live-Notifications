@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -5,6 +7,23 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
 }
+
+/**
+ * A `-P` flag or gradle.properties entry, falling back to the same key in
+ * local.properties.
+ *
+ * local.properties is the one file in an Android checkout that is git-ignored on every
+ * machine, which makes it the obvious home for a per-instance key - but Gradle does not
+ * load it into project properties itself, so it is read here. Missing is not an error:
+ * every caller has a defined behaviour for an empty value.
+ */
+fun keyProperty(name: String): String =
+    project.findProperty(name)?.toString()
+        ?: Properties().apply {
+            val file = rootProject.file("local.properties")
+            if (file.exists()) file.inputStream().use { load(it) }
+        }.getProperty(name)
+        ?: ""
 
 // Firebase is optional: the app builds and runs (polling only, no push) without a
 // google-services.json. Drop the file in app/ and the plugin wires itself up.
@@ -21,12 +40,30 @@ android {
         applicationId = "com.tzvi.kickoff"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 10
+        versionName = "2.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
 
         buildConfigField("boolean", "HAS_FIREBASE", hasFirebaseConfig.toString())
+
+        // The backend this build ships pointed at. A fork changes one line here rather
+        // than asking every user to paste a URL during onboarding.
+        buildConfigField(
+            "String",
+            "DEFAULT_BACKEND_URL",
+            "\"${project.findProperty("kickoff.backendUrl") ?: "https://kickoff-api-tato.onrender.com"}\"",
+        )
+
+        // Clerk's publishable key is not a secret, but it is per-instance, so it is not
+        // committed either: set clerk.publishableKey in local.properties or in
+        // ~/.gradle/gradle.properties. Left empty the app asks its backend for the key
+        // instead - see AuthRepository - and runs without accounts if that fails too.
+        buildConfigField(
+            "String",
+            "CLERK_PUBLISHABLE_KEY",
+            "\"${keyProperty("clerk.publishableKey")}\"",
+        )
     }
 
     buildTypes {
@@ -38,6 +75,12 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+
+            // Signed with the debug key so a release build is installable without a
+            // keystore. The debug build is now over 30 MB unshrunk - the auth SDK's UI
+            // module alone is three dex files - so this is the build that actually gets
+            // handed to anyone. Replace this with a real signing config before publishing.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -108,6 +151,11 @@ dependencies {
     implementation(libs.retrofit.serialization)
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
+
+    // Clerk hosts accounts, sessions and token refresh; the server only ever verifies a
+    // JWT, so no password ever reaches our own backend.
+    implementation(libs.clerk.api)
+    implementation(libs.clerk.ui)
 
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)

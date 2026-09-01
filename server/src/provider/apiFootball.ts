@@ -16,9 +16,29 @@ const DEFAULT_BUDGET = 7500;
 const DEFAULT_CACHE_TTL_SECONDS = 60;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DAY_MS = 86_400_000;
+const MINUTE_MS = 60_000;
 /** Warn once the account's daily allowance is down to this fraction of the plan limit. */
 const LOW_QUOTA_FRACTION = 0.1;
 const MAX_CACHE_ENTRIES = 500;
+
+/**
+ * Requests left in the provider's PER-MINUTE window below which a call is held back rather
+ * than issued. The daily budget is a wall the local counter refuses to walk into; the minute
+ * window is a wall you can wait out, and waiting is strictly better than spending the day's
+ * quota on a 429. Two rather than zero because a poll tick issues several calls in a burst
+ * and the headers only describe the state *before* them.
+ */
+const MIN_MINUTE_HEADROOM = 2;
+
+/**
+ * Longest a single call waits for that window to roll over. The provider sends no reset
+ * header, so the window's end is inferred (see `#readQuotaHeaders`) and can be most of a
+ * minute away — but a REST handler that blocks for a minute is worse than one that tries
+ * and is told to slow down, so the wait is capped well inside any client timeout and the
+ * provider's own answer settles anything longer. Only the last MIN_MINUTE_HEADROOM requests
+ * of a window pay it at all.
+ */
+const MAX_MINUTE_BACKOFF_MS = 5_000;
 
 export type LogFn = (message: string, meta?: Record<string, unknown>) => void;
 
@@ -112,6 +132,20 @@ export interface ApiGoals {
   away?: number | null;
 }
 
+/**
+ * THE INLINE SECTIONS — the single biggest quota saving this client has.
+ *
+ * `GET /fixtures?id=<id>` does not return the bare fixture: it returns `events`, `lineups`,
+ * `statistics` and `players` in the same response, so a detail view costs ONE request rather
+ * than four. `GET /fixtures?live=all` carries `events` per fixture, so a poll tick's
+ * per-match `/fixtures/events` call is already paid for by the live poll itself.
+ *
+ * They are optional because the other fixture queries — `?date=`, `?team=&from=&to=`,
+ * `?league=` — do not carry them, and because a plan whose coverage excludes a section
+ * omits it there too. Every consumer therefore uses the inline array *when it is present*
+ * and falls back to the dedicated endpoint when it is not; an absent key and an empty array
+ * are different answers, so these are `undefined`-able rather than defaulted to `[]`.
+ */
 export interface ApiFixture {
   fixture: ApiFixtureInfo;
   league?: ApiLeagueRef | null;
@@ -123,6 +157,10 @@ export interface ApiFixture {
     extratime?: ApiGoals | null;
     penalty?: ApiGoals | null;
   } | null;
+  events?: ApiEvent[] | null;
+  lineups?: ApiLineup[] | null;
+  statistics?: ApiTeamStatistics[] | null;
+  players?: ApiFixturePlayers[] | null;
 }
 
 export interface ApiEvent {
@@ -182,6 +220,35 @@ export interface ApiTeamCatalogueEntry {
   venue?: ApiVenue | null;
 }
 
+/**
+ * What the plan publishes for one season of one competition. The client needs it to tell a
+ * competition with no line-up feed at all from one whose line-up is merely not out yet.
+ */
+export interface ApiCoverage {
+  fixtures?: {
+    events?: boolean | null;
+    lineups?: boolean | null;
+    statistics_fixtures?: boolean | null;
+    statistics_players?: boolean | null;
+  } | null;
+  standings?: boolean | null;
+  players?: boolean | null;
+  top_scorers?: boolean | null;
+  top_assists?: boolean | null;
+  top_cards?: boolean | null;
+  injuries?: boolean | null;
+  predictions?: boolean | null;
+  odds?: boolean | null;
+}
+
+export interface ApiSeasonEntry {
+  year?: number | null;
+  start?: string | null;
+  end?: string | null;
+  current?: boolean | null;
+  coverage?: ApiCoverage | null;
+}
+
 export interface ApiLeagueCatalogueEntry {
   league?: {
     id?: number | null;
@@ -190,7 +257,120 @@ export interface ApiLeagueCatalogueEntry {
     logo?: string | null;
   } | null;
   country?: { name?: string | null; code?: string | null; flag?: string | null } | null;
-  seasons?: Array<{ year?: number | null; start?: string | null; end?: string | null; current?: boolean | null }> | null;
+  seasons?: ApiSeasonEntry[] | null;
+}
+
+/** `/players/squads?team=` — one entry, the whole squad. */
+export interface ApiSquadEntry {
+  team?: ApiTeamRef | null;
+  players?: Array<{
+    id?: number | null;
+    name?: string | null;
+    age?: number | null;
+    number?: number | null;
+    position?: string | null;
+    photo?: string | null;
+  }> | null;
+}
+
+export interface ApiPlayerInfo {
+  id?: number | null;
+  name?: string | null;
+  firstname?: string | null;
+  lastname?: string | null;
+  age?: number | null;
+  birth?: { date?: string | null; place?: string | null; country?: string | null } | null;
+  nationality?: string | null;
+  height?: string | null;
+  weight?: string | null;
+  injured?: boolean | null;
+  photo?: string | null;
+}
+
+/** One competition-season line of a player's record; `/players` returns several. */
+export interface ApiPlayerStatistics {
+  team?: ApiTeamRef | null;
+  league?: ApiLeagueRef | null;
+  games?: {
+    /** The provider's own spelling. */
+    appearences?: number | null;
+    lineups?: number | null;
+    minutes?: number | null;
+    number?: number | null;
+    position?: string | null;
+    rating?: string | null;
+    captain?: boolean | null;
+  } | null;
+  goals?: {
+    total?: number | null;
+    conceded?: number | null;
+    assists?: number | null;
+    saves?: number | null;
+  } | null;
+  cards?: { yellow?: number | null; yellowred?: number | null; red?: number | null } | null;
+}
+
+export interface ApiPlayerEntry {
+  player?: ApiPlayerInfo | null;
+  statistics?: ApiPlayerStatistics[] | null;
+}
+
+/** One player's line in `/fixtures/players`; the array always holds exactly one entry. */
+export interface ApiFixturePlayerStats {
+  games?: {
+    minutes?: number | null;
+    number?: number | null;
+    position?: string | null;
+    rating?: string | null;
+    captain?: boolean | null;
+    substitute?: boolean | null;
+  } | null;
+  shots?: { total?: number | null; on?: number | null } | null;
+  goals?: {
+    total?: number | null;
+    conceded?: number | null;
+    assists?: number | null;
+    saves?: number | null;
+  } | null;
+  passes?: { total?: number | null; key?: number | null; accuracy?: string | number | null } | null;
+  tackles?: {
+    total?: number | null;
+    blocks?: number | null;
+    interceptions?: number | null;
+  } | null;
+  duels?: { total?: number | null; won?: number | null } | null;
+  cards?: { yellow?: number | null; red?: number | null } | null;
+}
+
+export interface ApiFixturePlayers {
+  team?: ApiTeamRef | null;
+  players?: Array<{
+    player?: ApiPlayerInfo | null;
+    statistics?: ApiFixturePlayerStats[] | null;
+  }> | null;
+}
+
+/** `/predictions?fixture=` — the provider's own pre-match call, one entry per fixture. */
+export interface ApiPrediction {
+  predictions?: {
+    winner?: { id?: number | null; name?: string | null; comment?: string | null } | null;
+    win_or_draw?: boolean | null;
+    under_over?: string | null;
+    goals?: { home?: string | number | null; away?: string | number | null } | null;
+    advice?: string | null;
+    percent?: {
+      home?: string | null;
+      draw?: string | null;
+      away?: string | null;
+    } | null;
+  } | null;
+  league?: ApiLeagueRef | null;
+  teams?: { home?: ApiTeamRef | null; away?: ApiTeamRef | null } | null;
+  /** Metric -> per-side percentage, e.g. `{ form: { home: "60%", away: "40%" } }`. */
+  comparison?: Record<
+    string,
+    { home?: string | number | null; away?: string | number | null } | null
+  > | null;
 }
 
 export interface ProviderQuota {
@@ -198,6 +378,12 @@ export interface ProviderQuota {
   dailyRemaining: number | undefined;
   minuteLimit: number | undefined;
   minuteRemaining: number | undefined;
+  /**
+   * Epoch millis at which the per-minute window is expected to roll over. Inferred, not
+   * reported: the provider sends no reset header, so this is one minute from the last
+   * response whose `minuteRemaining` went UP — the only observable sign of a new window.
+   */
+  minuteWindowResetsAt: number | undefined;
 }
 
 export interface BudgetState {
@@ -266,6 +452,15 @@ export interface FixtureQuery {
   team?: number;
   league?: number;
   season?: number;
+  /** The team's N most recent finished fixtures; needs `team` and needs no season. */
+  last?: number;
+  /** The team's next N fixtures. */
+  next?: number;
+}
+
+/** Per-call cache override; without one a cacheable call uses CACHE_TTL_SECONDS. */
+export interface RequestCacheOptions {
+  cacheTtlSeconds?: number | undefined;
 }
 
 export interface TeamQuery {
@@ -336,10 +531,13 @@ export class ApiFootballClient {
     dailyRemaining: undefined,
     minuteLimit: undefined,
     minuteRemaining: undefined,
+    minuteWindowResetsAt: undefined,
   };
   #used = 0;
   #budgetDay: number;
   #lowQuotaWarned = false;
+  /** When the provider's current per-minute window is believed to have opened. */
+  #minuteWindowStartedAt: number | undefined;
 
   constructor(options: ApiFootballClientOptions) {
     this.#apiKey = options.apiKey;
@@ -385,10 +583,18 @@ export class ApiFootballClient {
     );
   }
 
-  async fixtures(query: FixtureQuery = {}): Promise<ApiFixture[]> {
-    // A calendar day (or range) of fixtures is stable enough to cache; a single fixture
-    // fetched by id is usually an in-play one the poller is diffing, so it never is.
-    const cacheable = query.id === undefined && (query.date !== undefined || query.from !== undefined);
+  async fixtures(
+    query: FixtureQuery = {},
+    options: RequestCacheOptions = {},
+  ): Promise<ApiFixture[]> {
+    // A calendar day, a range, or a team's last/next N is stable enough to cache; a single
+    // fixture fetched by id is usually an in-play one the poller is diffing, so it never is.
+    const cacheable =
+      query.id === undefined &&
+      (query.date !== undefined ||
+        query.from !== undefined ||
+        query.last !== undefined ||
+        query.next !== undefined);
     return this.#request<ApiFixture>(
       '/fixtures',
       {
@@ -399,9 +605,28 @@ export class ApiFootballClient {
         team: query.team,
         league: query.league,
         season: query.season,
+        last: query.last,
+        next: query.next,
       },
       cacheable,
+      options.cacheTtlSeconds,
     );
+  }
+
+  /**
+   * The whole fixture with its inline `events`, `lineups`, `statistics` and `players` — one
+   * request where the detail view used to spend four. Cached briefly (rather than not at
+   * all, as the poller's own by-id fetch is) because several devices open the same match at
+   * once and the sections it carries are what makes that call expensive to repeat.
+   */
+  async fixtureById(fixtureId: number, cacheTtlSeconds?: number): Promise<ApiFixture | undefined> {
+    const [fixture] = await this.#request<ApiFixture>(
+      '/fixtures',
+      { id: fixtureId },
+      true,
+      cacheTtlSeconds,
+    );
+    return fixture;
   }
 
   /**
@@ -425,9 +650,61 @@ export class ApiFootballClient {
     return this.#request<ApiTeamStatistics>('/fixtures/statistics', { fixture: fixtureId }, false);
   }
 
-  async #request<T>(path: string, params: QueryParams, cacheable: boolean): Promise<T[]> {
+  /** Per-player stats for one fixture. Also inline in `fixtureById`, which is cheaper. */
+  async fixturePlayers(fixtureId: number, cacheTtlSeconds?: number): Promise<ApiFixturePlayers[]> {
+    return this.#request<ApiFixturePlayers>(
+      '/fixtures/players',
+      { fixture: fixtureId },
+      true,
+      cacheTtlSeconds,
+    );
+  }
+
+  /** The provider's own pre-match call. Nothing to fetch once the match has started. */
+  async predictions(fixtureId: number, cacheTtlSeconds?: number): Promise<ApiPrediction[]> {
+    return this.#request<ApiPrediction>(
+      '/predictions',
+      { fixture: fixtureId },
+      true,
+      cacheTtlSeconds,
+    );
+  }
+
+  /** A club's registered squad. Changes at transfer windows, so it caches for hours. */
+  async squad(teamId: number, cacheTtlSeconds?: number): Promise<ApiSquadEntry[]> {
+    return this.#request<ApiSquadEntry>(
+      '/players/squads',
+      { team: teamId },
+      true,
+      cacheTtlSeconds,
+    );
+  }
+
+  /**
+   * A player profile with that season's per-competition record. `/players` refuses an `id`
+   * without a `season`, which is why the caller has to supply one.
+   */
+  async player(
+    playerId: number,
+    season: number,
+    cacheTtlSeconds?: number,
+  ): Promise<ApiPlayerEntry[]> {
+    return this.#request<ApiPlayerEntry>(
+      '/players',
+      { id: playerId, season },
+      true,
+      cacheTtlSeconds,
+    );
+  }
+
+  async #request<T>(
+    path: string,
+    params: QueryParams,
+    cacheable: boolean,
+    cacheTtlSeconds?: number | undefined,
+  ): Promise<T[]> {
     const key = cacheKey(path, params);
-    if (!cacheable) return this.#fetchItems<T>(path, params, key, false);
+    if (!cacheable) return this.#fetchItems<T>(path, params, key, undefined);
 
     const hit = this.#cacheGet(key);
     if (hit) return [...hit] as T[];
@@ -438,7 +715,8 @@ export class ApiFootballClient {
     const inflight = this.#inflight.get(key);
     if (inflight !== undefined) return [...(await inflight)] as T[];
 
-    const call = this.#fetchItems<T>(path, params, key, true);
+    const ttlMs = cacheTtlSeconds === undefined ? this.#cacheTtlMs : cacheTtlSeconds * 1000;
+    const call = this.#fetchItems<T>(path, params, key, ttlMs);
     this.#inflight.set(key, call as Promise<unknown[]>);
     try {
       return await call;
@@ -447,8 +725,15 @@ export class ApiFootballClient {
     }
   }
 
-  async #fetchItems<T>(path: string, params: QueryParams, key: string, cacheable: boolean): Promise<T[]> {
+  /** `cacheTtlMs === undefined` means "do not cache the result at all". */
+  async #fetchItems<T>(
+    path: string,
+    params: QueryParams,
+    key: string,
+    cacheTtlMs: number | undefined,
+  ): Promise<T[]> {
     this.#spendBudget(path);
+    await this.#awaitMinuteHeadroom(path);
 
     const url = new URL(this.#baseUrl + path);
     for (const [name, value] of Object.entries(params)) {
@@ -504,8 +789,38 @@ export class ApiFootballClient {
     const items = Array.isArray(envelope.response) ? envelope.response : [];
     // The cached array must not be the one handed to the caller: a consumer that sorts or
     // truncates its result in place would otherwise rewrite every hit until the TTL expires.
-    if (cacheable) this.#cacheSet(key, [...items] as unknown[]);
+    if (cacheTtlMs !== undefined) this.#cacheSet(key, [...items] as unknown[], cacheTtlMs);
     return items;
+  }
+
+  /**
+   * Holds a call back when the provider's per-minute allowance is nearly spent.
+   *
+   * The daily budget and this are different problems: the day's is a wall, so `#spendBudget`
+   * refuses outright and the poller waits for midnight. A minute passes on its own, so
+   * waiting for it costs nothing but latency and saves a request that would come back 429 —
+   * and a 429 is charged against the daily quota just the same.
+   *
+   * Capped at MAX_MINUTE_BACKOFF_MS. If the wait is not long enough the call goes out anyway
+   * and the provider's own answer settles it, which beats blocking a request handler for a
+   * full minute on an inferred window boundary.
+   */
+  async #awaitMinuteHeadroom(path: string): Promise<void> {
+    const { minuteRemaining, minuteLimit } = this.#quota;
+    if (minuteRemaining === undefined || minuteRemaining > MIN_MINUTE_HEADROOM) return;
+    if (this.#minuteWindowStartedAt === undefined) return;
+
+    const untilReset = this.#minuteWindowStartedAt + MINUTE_MS - this.#now();
+    const waitMs = Math.min(untilReset, MAX_MINUTE_BACKOFF_MS);
+    if (waitMs <= 0) return;
+
+    this.#logger.warn('per-minute request allowance nearly spent; holding the call back', {
+      path,
+      minuteRemaining,
+      minuteLimit,
+      waitMs,
+    });
+    await delay(waitMs);
   }
 
   #spendBudget(path: string): void {
@@ -527,11 +842,32 @@ export class ApiFootballClient {
   }
 
   #readQuotaHeaders(headers: Headers): void {
+    // Two different windows, and the provider spells them differently: the lower-cased
+    // `x-ratelimit-requests-*` pair is the DAILY plan allowance, the `X-RateLimit-*` pair is
+    // the PER-MINUTE one. `Headers.get` is case-insensitive, so the names below are the
+    // documented spellings only for readability.
+    const minuteRemaining =
+      numberHeader(headers, 'x-ratelimit-remaining') ?? this.#quota.minuteRemaining;
+    const previousMinuteRemaining = this.#quota.minuteRemaining;
+
+    // A remaining count that went UP is the only observable sign that the minute window
+    // rolled over — there is no reset header — so that is when the window's clock restarts.
+    if (
+      minuteRemaining !== undefined &&
+      (previousMinuteRemaining === undefined || minuteRemaining > previousMinuteRemaining)
+    ) {
+      this.#minuteWindowStartedAt = this.#now();
+    }
+
     const quota: ProviderQuota = {
       dailyLimit: numberHeader(headers, 'x-ratelimit-requests-limit') ?? this.#quota.dailyLimit,
       dailyRemaining: numberHeader(headers, 'x-ratelimit-requests-remaining') ?? this.#quota.dailyRemaining,
       minuteLimit: numberHeader(headers, 'x-ratelimit-limit') ?? this.#quota.minuteLimit,
-      minuteRemaining: numberHeader(headers, 'x-ratelimit-remaining') ?? this.#quota.minuteRemaining,
+      minuteRemaining,
+      minuteWindowResetsAt:
+        this.#minuteWindowStartedAt === undefined
+          ? undefined
+          : this.#minuteWindowStartedAt + MINUTE_MS,
     };
     this.#quota = quota;
 
@@ -561,10 +897,10 @@ export class ApiFootballClient {
     return entry.value;
   }
 
-  #cacheSet(key: string, value: unknown[]): void {
-    if (this.#cacheTtlMs <= 0) return;
+  #cacheSet(key: string, value: unknown[], ttlMs: number): void {
+    if (ttlMs <= 0) return;
     if (this.#cache.size >= MAX_CACHE_ENTRIES) this.#sweepCache();
-    this.#cache.set(key, { expiresAt: this.#now() + this.#cacheTtlMs, value });
+    this.#cache.set(key, { expiresAt: this.#now() + ttlMs, value });
   }
 
   #sweepCache(): void {
@@ -586,6 +922,18 @@ function cacheKey(path: string, params: QueryParams): string {
     .map(([name, value]) => `${name}=${String(value)}`)
     .join('&');
   return `${path}?${query}`;
+}
+
+/**
+ * Deliberately NOT unref'd, unlike the poller's scheduling timers: a caller is awaiting this
+ * one, and an unref'd timer in a process with nothing else pending would let Node exit with
+ * that await never settling. MAX_MINUTE_BACKOFF_MS keeps the delay well inside the shutdown
+ * grace in index.ts, so a back-off in flight cannot hold a deploy open either.
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function numberHeader(headers: Headers, name: string): number | undefined {

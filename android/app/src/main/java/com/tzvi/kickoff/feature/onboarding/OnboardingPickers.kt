@@ -51,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -75,28 +76,9 @@ internal fun LeaguesPage(
 ) {
     val leaguesFailure = state.leaguesFailure
 
+    // The title, the count and "pick at least one" all live in the fixed frame now, so the
+    // page itself is nothing but the grid - one job per screen region.
     Column(modifier = modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier.padding(horizontal = OnboardingSpacing.screen),
-            verticalArrangement = Arrangement.spacedBy(OnboardingSpacing.tight),
-        ) {
-            PageHeading(
-                title = "Which competitions?",
-                body = "This only decides which squads the next step offers you. Following " +
-                    "a team matters more than following a league.",
-            )
-            Text(
-                text = if (state.selectedLeagueIds.isEmpty()) {
-                    "Pick at least one to continue."
-                } else {
-                    "${state.selectedLeagueIds.size} selected"
-                },
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        Spacer(Modifier.height(OnboardingSpacing.tight))
-
         when {
             state.leaguesPending -> LoadingState(
                 modifier = Modifier.weight(1f),
@@ -117,6 +99,7 @@ internal fun LeaguesPage(
                 contentPadding = PaddingValues(
                     start = OnboardingSpacing.screen,
                     end = OnboardingSpacing.screen,
+                    top = 2.dp,
                     bottom = OnboardingSpacing.block,
                 ),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -218,15 +201,12 @@ internal fun TeamsPage(
     val teamsFailure = state.teamsFailure
 
     Column(modifier = modifier.fillMaxSize()) {
+        // Picked teams then the search box, both pinned above the list: the two things you
+        // act on stay put while the list under them scrolls.
         Column(
             modifier = Modifier.padding(horizontal = OnboardingSpacing.screen),
             verticalArrangement = Arrangement.spacedBy(OnboardingSpacing.tight),
         ) {
-            PageHeading(
-                title = "Who do you follow?",
-                body = "Every match these teams play gets a live card. One is enough to " +
-                    "start; the Teams screen can change the list at any point.",
-            )
             AnimatedVisibility(
                 visible = chosen.isNotEmpty(),
                 enter = expandVertically(Motion.sizeSpring()) +
@@ -294,6 +274,7 @@ internal fun TeamsPage(
                 contentPadding = PaddingValues(
                     start = OnboardingSpacing.screen - 12.dp,
                     end = OnboardingSpacing.screen - 12.dp,
+                    top = 4.dp,
                     bottom = OnboardingSpacing.block,
                 ),
             ) {
@@ -415,17 +396,18 @@ private fun TeamRow(
 /** One place for the three ways a catalogue fetch can come back with nothing. */
 @Composable
 private fun CatalogueFailureState(
-    failure: CatalogueFailure,
+    failure: CatalogueError,
     subject: String,
     onRetry: () -> Unit,
     onFixSource: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        when (failure) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        when (failure.kind) {
             CatalogueFailure.NO_SOURCE -> EmptyState(
                 title = "No data source yet",
-                body = "Kickoff cannot list $subject until it has an API-Football key or " +
+                body = "matchUP cannot list $subject until it has an API-Football key or " +
                     "the URL of a backend. That is the previous step.",
                 icon = Icons.Outlined.Key,
                 actionLabel = "Back to the source step",
@@ -449,6 +431,19 @@ private fun CatalogueFailureState(
                 actionLabel = "Try again",
                 onAction = onRetry,
             )
+        }
+
+        // The exact words the source used. Without them "could not reach the source"
+        // covers a dead network, a wrong key and a plan restriction identically.
+        failure.detail?.let { detail ->
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            )
+        }
         }
     }
 }
@@ -474,7 +469,9 @@ private fun LeaguesPagePreview() {
 private fun LeaguesNoSourcePreview() {
     KickoffTheme {
         LeaguesPage(
-            state = OnboardingUiState(leaguesFailure = CatalogueFailure.NO_SOURCE),
+            state = OnboardingUiState(
+                leaguesFailure = CatalogueError(CatalogueFailure.NO_SOURCE),
+            ),
             onToggleLeague = {},
             onRetry = {},
             onFixSource = {},

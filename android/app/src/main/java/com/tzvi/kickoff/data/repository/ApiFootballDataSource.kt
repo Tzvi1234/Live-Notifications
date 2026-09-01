@@ -1,7 +1,11 @@
 package com.tzvi.kickoff.data.repository
 
 import com.tzvi.kickoff.core.model.League
+import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
+import com.tzvi.kickoff.core.model.MatchPrediction
+import com.tzvi.kickoff.core.model.PlayerMatchStats
+import com.tzvi.kickoff.core.model.PlayerProfile
 import com.tzvi.kickoff.core.model.Team
 import com.tzvi.kickoff.data.remote.ApiFootballMapper
 import com.tzvi.kickoff.data.remote.api.ApiFootballService
@@ -9,6 +13,8 @@ import com.tzvi.kickoff.data.remote.dto.ApiEnvelope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.time.LocalDate
+import java.time.ZoneId
+import kotlinx.coroutines.CancellationException
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
@@ -32,17 +38,68 @@ class ApiFootballDataSource @Inject constructor(
     }
 
     override suspend fun teams(leagueId: Int?, season: Int?, query: String?): List<Team> {
-        val response = service.teams(
-            league = leagueId,
-            season = season ?: leagueId?.let { ApiFootballMapper.currentSeason() },
-            search = query?.takeIf { it.length >= 3 },
-        ).requireOk()
-        return response.response.map(ApiFootballMapper::team)
+        // A pure search takes no season at all, so there is nothing to walk.
+        if (leagueId == null) return teamsForSeason(null, season, query)
+
+        // /leagues answers without a season; /teams demands one, which is the whole
+        // reason competitions load and squads do not. Three things can go wrong with the
+        // season we pick, and they are indistinguishable from here: the provider has not
+        // opened the new one yet (empty list), the plan refuses current-season data
+        // (HTTP 200 with a "plan" note), or our own July rollover is a month early. So
+        // rather than guess once, walk the candidates newest-first and keep the first
+        // that actually answers.
+        val candidates = buildList {
+            season?.let { add(it) }
+            val current = ApiFootballMapper.currentSeason()
+            add(current)
+            add(current - 1)
+            add(FREE_PLAN_LAST_SEASON)
+        }.distinct()
+
+        var lastError: Exception? = null
+        for (candidate in candidates) {
+            val teams = try {
+                teamsForSeason(leagueId, candidate, query)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                lastError = error
+                continue
+            }
+            if (teams.isNotEmpty()) return teams
+        }
+
+        // Nothing answered. The provider's own words are the only useful thing left, and
+        // burying them behind "could not reach the source" is what made this unfixable
+        // from the screen: a plan restriction and a dead network read identically.
+        lastError?.let { throw it }
+        throw ProviderException(
+            "No teams for league $leagueId in any of seasons ${candidates.joinToString()}. " +
+                "The competition may not have started, or your plan may not cover it.",
+        )
     }
 
+    private suspend fun teamsForSeason(leagueId: Int?, season: Int?, query: String?): List<Team> =
+        service.teams(
+            league = leagueId,
+            season = season,
+            search = query?.takeIf { it.length >= 3 },
+        ).requireOk().response.map(ApiFootballMapper::team)
+
     override suspend fun fixturesOn(date: LocalDate): List<Match> =
-        service.fixtures(date = date.format(DATE)).requireOk()
+        service.fixtures(date = date.format(DATE), timezone = deviceZone()).requireOk()
             .response.map(ApiFootballMapper::match)
+
+    /**
+     * The zone the dates below are in.
+     *
+     * `date=` and `from=`/`to=` are interpreted in the provider's timezone, which is UTC
+     * unless you say otherwise, while the dates handed in here come from
+     * `LocalDate.now()` on the device. West of UTC that pairing quietly asked for
+     * tomorrow's fixtures for most of the evening, so an 8pm kick-off was simply absent
+     * from the window - no pre-match alarm, no live card, nothing to explain it.
+     */
+    private fun deviceZone(): String = ZoneId.systemDefault().id
 
     override suspend fun fixturesForTeams(
         teamIds: List<Int>,
@@ -59,11 +116,47 @@ class ApiFootballDataSource @Inject constructor(
                         from = from.format(DATE),
                         to = to.format(DATE),
                         season = ApiFootballMapper.currentSeason(),
+                        timezone = deviceZone(),
                     ).requireOk().response.map(ApiFootballMapper::match)
                 }.getOrDefault(emptyList())
             }
         }.map { it.await() }.flatten().distinctBy { it.id }.sortedBy { it.kickoffAt }
     }
+
+    /**
+     * One team's recent results and next fixtures.
+     *
+     * `last` and `next` are the provider's own windows and are capped at 99 each, which
+     * is why this takes counts rather than dates: asking for "the last ten" is one cheap
+     * request, while asking for a date range needs a season and returns the whole lot.
+     */
+    override suspend fun teamFixtures(teamId: Int, last: Int, next: Int): List<Match> =
+        coroutineScope {
+            val pastDeferred = async {
+                if (last <= 0) emptyList() else runCatching {
+                    service.fixtures(team = teamId, last = last.coerceAtMost(PROVIDER_WINDOW_MAX))
+                        .requireOk().response.map(ApiFootballMapper::match)
+                }.getOrDefault(emptyList())
+            }
+            val nextDeferred = async {
+                if (next <= 0) emptyList() else runCatching {
+                    service.fixtures(team = teamId, next = next.coerceAtMost(PROVIDER_WINDOW_MAX))
+                        .requireOk().response.map(ApiFootballMapper::match)
+                }.getOrDefault(emptyList())
+            }
+            (pastDeferred.await() + nextDeferred.await())
+                .distinctBy { it.id }
+                .sortedBy { it.kickoffAt }
+        }
+
+    override suspend fun predictions(matchId: Long): MatchPrediction? =
+        service.predictions(matchId).requireOk().response
+            .firstOrNull()
+            ?.let(ApiFootballMapper::prediction)
+
+    override suspend fun headToHead(homeTeamId: Int, awayTeamId: Int, last: Int): List<Match> =
+        service.headToHead("$homeTeamId-$awayTeamId", last.coerceAtMost(PROVIDER_WINDOW_MAX))
+            .requireOk().response.map(ApiFootballMapper::match)
 
     override suspend fun liveFixtures(teamIds: List<Int>): List<Match> {
         // One request covers every in-play match worldwide; filtering is done locally
@@ -106,27 +199,81 @@ class ApiFootballDataSource @Inject constructor(
     }
 
     private companion object {
-        val DATE: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE
-        const val MAX_TEAMS_PER_REFRESH = 8
+        /** The newest season API-Football's free plan is known to answer for. */
+        const val FREE_PLAN_LAST_SEASON = 2023
 
-        /** Competitions offered first during onboarding. */
+        val DATE: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE
+        /**
+         * How many followed teams a fixture refresh will fan out over.
+         *
+         * One request per team, so this is the single most expensive thing the app does.
+         * Twenty rather than eight because the plan behind the key now has the headroom;
+         * it is still a cap, because a user following fifty clubs would otherwise spend a
+         * free day's allowance on one pull.
+         */
+        const val MAX_TEAMS_PER_REFRESH = 20
+
+        /** `last`/`next` are two-digit provider params. */
+        const val PROVIDER_WINDOW_MAX = 99
+
+        /**
+         * Competitions offered first during onboarding.
+         *
+         * Deliberately a set of ids rather than "everything the provider has": /leagues
+         * returns over twelve hundred competitions, and an onboarding list that long is
+         * not a choice, it is a wall. The English and Israeli pyramids are carried down
+         * to the domestic cups because those are the ones actually followed here.
+         */
         val FEATURED_LEAGUE_IDS = setOf(
+            // England, top to bottom, plus the three domestic cups.
             39,   // Premier League
+            40,   // Championship
+            41,   // League One
+            42,   // League Two
+            45,   // FA Cup
+            48,   // League Cup (Carabao)
+            528,  // Community Shield
+            // Israel.
+            383,  // Ligat ha'Al
+            382,  // Liga Leumit
+            384,  // State Cup
+            385,  // Toto Cup Ligat Al
+            // The rest of the big five, and the leagues people follow a player into.
             140,  // La Liga
             135,  // Serie A
             78,   // Bundesliga
             61,   // Ligue 1
-            2,    // UEFA Champions League
-            3,    // UEFA Europa League
             88,   // Eredivisie
             94,   // Primeira Liga
             203,  // Süper Lig
-            383,  // Ligat ha'Al (Israel)
             253,  // Major League Soccer
             71,   // Brasileirão Série A
             128,  // Liga Profesional (Argentina)
+            // Europe and international.
+            2,    // UEFA Champions League
+            3,    // UEFA Europa League
+            848,  // UEFA Europa Conference League
+            531,  // UEFA Super Cup
+            5,    // UEFA Nations League
             1,    // World Cup
             4,    // Euro Championship
+            15,   // FIFA Club World Cup
         )
     }
+
+    override suspend fun playersInMatch(matchId: Long): Map<Int, PlayerMatchStats> =
+        ApiFootballMapper.playersInMatch(service.fixturePlayers(matchId).requireOk().response)
+
+    override suspend fun squad(teamId: Int): List<LineupPlayer> =
+        service.squad(teamId).requireOk().response
+            .firstOrNull()
+            ?.players
+            ?.mapNotNull(ApiFootballMapper::squadMember)
+            .orEmpty()
+
+    override suspend fun playerProfile(playerId: Int): PlayerProfile? =
+        service.playerProfile(playerId).requireOk().response
+            .firstOrNull()
+            ?.player
+            ?.let(ApiFootballMapper::playerProfile)
 }

@@ -16,6 +16,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,17 +43,23 @@ import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
 @Composable
-fun MatchesScreen(onOpenMatch: (Long) -> Unit) {
+fun MatchesScreen(onOpenMatch: (Long) -> Unit, onOpenTeams: () -> Unit = {}) {
     val viewModel: MatchesViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) { viewModel.refreshTimeline() }
 
     MatchesContent(
         state = state,
         onOpenMatch = onOpenMatch,
+        onOpenTeams = onOpenTeams,
         onSelectDate = viewModel::selectDate,
         onSelectFilter = viewModel::selectFilter,
+        onSelectTab = viewModel::selectTab,
+        onSelectTimelineFilter = viewModel::selectTimelineFilter,
         onJumpToToday = viewModel::jumpToToday,
         onRefresh = viewModel::refresh,
+        onRefreshTimeline = viewModel::refreshTimeline,
     )
 }
 
@@ -59,19 +68,24 @@ fun MatchesScreen(onOpenMatch: (Long) -> Unit) {
 internal fun MatchesContent(
     state: MatchesUiState,
     onOpenMatch: (Long) -> Unit,
+    onOpenTeams: () -> Unit,
     onSelectDate: (LocalDate) -> Unit,
     onSelectFilter: (MatchFilter) -> Unit,
+    onSelectTab: (MatchesTab) -> Unit,
+    onSelectTimelineFilter: (TimelineFilter) -> Unit,
     onJumpToToday: () -> Unit,
     onRefresh: () -> Unit,
+    onRefreshTimeline: () -> Unit,
 ) {
+    val onMyTeams = state.tab == MatchesTab.MY_TEAMS
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(state.monthLabel) },
+                title = { Text(if (onMyTeams) "Your teams" else state.monthLabel) },
                 actions = {
                     AnimatedVisibility(
-                        visible = !state.isOnToday,
+                        visible = !onMyTeams && !state.isOnToday,
                         enter = fadeIn(Motion.effects(Motion.Duration.MEDIUM)),
                         exit = fadeOut(Motion.effects(Motion.Duration.SHORT)),
                     ) {
@@ -86,6 +100,50 @@ internal fun MatchesContent(
                 .fillMaxSize()
                 .padding(insets),
         ) {
+            PrimaryTabRow(selectedTabIndex = state.tab.ordinal) {
+                MatchesTab.entries.forEach { entry ->
+                    Tab(
+                        selected = entry == state.tab,
+                        onClick = { onSelectTab(entry) },
+                        text = { Text(entry.label) },
+                    )
+                }
+            }
+
+            if (onMyTeams) {
+                Spacer(Modifier.height(SectionGap))
+                TimelineFilterRow(
+                    selected = state.timelineFilter,
+                    onSelect = onSelectTimelineFilter,
+                    modifier = Modifier.padding(horizontal = ScreenPadding),
+                )
+                Spacer(Modifier.height(SectionGap))
+                PullToRefreshBox(
+                    isRefreshing = state.timelineRefreshing,
+                    onRefresh = onRefreshTimeline,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    AnimatedContent(
+                        targetState = state,
+                        contentKey = { Triple(it.timelineFilter, it.timelineLoading, it.timelineEmptyReason) },
+                        transitionSpec = {
+                            fadeIn(Motion.effects(Motion.Duration.MEDIUM))
+                                .togetherWith(fadeOut(Motion.effects(Motion.Duration.SHORT)))
+                                .using(SizeTransform(clip = false))
+                        },
+                        label = "fixtures-timeline",
+                    ) { current ->
+                        TeamTimeline(
+                            state = current,
+                            onOpenMatch = onOpenMatch,
+                            onOpenTeams = onOpenTeams,
+                            onRefresh = onRefreshTimeline,
+                        )
+                    }
+                }
+                return@Column
+            }
+
             WeekStrip(
                 days = state.days,
                 selectedDate = state.selectedDate,
@@ -122,6 +180,73 @@ internal fun MatchesContent(
                         state = dayState,
                         onOpenMatch = onOpenMatch,
                         onRefresh = onRefresh,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The followed teams' fixtures as one continuous list.
+ *
+ * Grouped by date rather than by competition, because across a season the question is
+ * "when do they play" - the competition is already on every card.
+ */
+@Composable
+private fun TeamTimeline(
+    state: MatchesUiState,
+    onOpenMatch: (Long) -> Unit,
+    onOpenTeams: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    val emptyReason = state.timelineEmptyReason
+    when {
+        state.timelineLoading -> LoadingState(label = "Loading your teams' fixtures")
+
+        emptyReason != null -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+            item(key = "timeline-empty-${emptyReason.name}") {
+                TimelineEmptyState(
+                    reason = emptyReason,
+                    onRetry = onRefresh,
+                    onOpenTeams = onOpenTeams,
+                    modifier = Modifier.fillParentMaxSize(),
+                )
+            }
+        }
+
+        else -> LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = ScreenPadding,
+                end = ScreenPadding,
+                top = 2.dp,
+                bottom = BottomPadding,
+            ),
+        ) {
+            state.timeline.forEach { section ->
+                item(key = "section-${section.key}") {
+                    TimelineHeader(
+                        section = section,
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = Motion.effects(Motion.Duration.SHORT),
+                            placementSpec = Motion.offsetSpring(),
+                            fadeOutSpec = Motion.effects(Motion.Duration.SHORT),
+                        ),
+                    )
+                }
+                items(section.matches, key = { it.id }) { match ->
+                    MatchCard(
+                        match = match,
+                        onClick = onOpenMatch,
+                        showLeague = true,
+                        modifier = Modifier
+                            .animateItem(
+                                fadeInSpec = Motion.effects(Motion.Duration.SHORT),
+                                placementSpec = Motion.offsetSpring(),
+                                fadeOutSpec = Motion.effects(Motion.Duration.SHORT),
+                            )
+                            .padding(bottom = ItemGap),
                     )
                 }
             }
@@ -267,9 +392,13 @@ private fun previewState(
     dayMatchCount: Int = groups.sumOf { it.matches.size },
     errorMessage: String? = null,
     sourceMissing: Boolean = false,
+    // These previews are all of the date browser; the timeline gets its own below.
+    tab: MatchesTab = MatchesTab.BY_DATE,
 ): MatchesUiState {
     val today = LocalDate.now()
     return MatchesUiState(
+        tab = tab,
+        timelineLoading = false,
         days = previewDays(today),
         selectedDate = today,
         isOnToday = true,
@@ -347,10 +476,14 @@ private fun MatchesContentPreview() {
         MatchesContent(
             state = previewState(groups = previewGroups()),
             onOpenMatch = {},
+            onOpenTeams = {},
             onSelectDate = {},
             onSelectFilter = {},
+            onSelectTab = {},
+            onSelectTimelineFilter = {},
             onJumpToToday = {},
             onRefresh = {},
+            onRefreshTimeline = {},
         )
     }
 }
@@ -362,10 +495,14 @@ private fun MatchesLoadingPreview() {
         MatchesContent(
             state = previewState(isLoading = true),
             onOpenMatch = {},
+            onOpenTeams = {},
             onSelectDate = {},
             onSelectFilter = {},
+            onSelectTab = {},
+            onSelectTimelineFilter = {},
             onJumpToToday = {},
             onRefresh = {},
+            onRefreshTimeline = {},
         )
     }
 }
@@ -377,10 +514,14 @@ private fun MatchesEmptyPreview() {
         MatchesContent(
             state = previewState(),
             onOpenMatch = {},
+            onOpenTeams = {},
             onSelectDate = {},
             onSelectFilter = {},
+            onSelectTab = {},
+            onSelectTimelineFilter = {},
             onJumpToToday = {},
             onRefresh = {},
+            onRefreshTimeline = {},
         )
     }
 }
@@ -392,10 +533,14 @@ private fun MatchesErrorPreview() {
         MatchesContent(
             state = previewState(errorMessage = "Couldn't reach the network."),
             onOpenMatch = {},
+            onOpenTeams = {},
             onSelectDate = {},
             onSelectFilter = {},
+            onSelectTab = {},
+            onSelectTimelineFilter = {},
             onJumpToToday = {},
             onRefresh = {},
+            onRefreshTimeline = {},
         )
     }
 }
@@ -407,10 +552,14 @@ private fun MatchesNoSourcePreview() {
         MatchesContent(
             state = previewState(sourceMissing = true),
             onOpenMatch = {},
+            onOpenTeams = {},
             onSelectDate = {},
             onSelectFilter = {},
+            onSelectTab = {},
+            onSelectTimelineFilter = {},
             onJumpToToday = {},
             onRefresh = {},
+            onRefreshTimeline = {},
         )
     }
 }
@@ -425,10 +574,14 @@ private fun MatchesStalePreview() {
                 errorMessage = "Couldn't reach the network.",
             ),
             onOpenMatch = {},
+            onOpenTeams = {},
             onSelectDate = {},
             onSelectFilter = {},
+            onSelectTab = {},
+            onSelectTimelineFilter = {},
             onJumpToToday = {},
             onRefresh = {},
+            onRefreshTimeline = {},
         )
     }
 }

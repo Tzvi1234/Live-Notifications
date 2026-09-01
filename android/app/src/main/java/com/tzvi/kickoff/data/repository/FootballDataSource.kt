@@ -1,10 +1,14 @@
 package com.tzvi.kickoff.data.repository
 
 import com.tzvi.kickoff.core.model.League
+import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
 import com.tzvi.kickoff.core.model.MatchLineups
+import com.tzvi.kickoff.core.model.MatchPrediction
 import com.tzvi.kickoff.core.model.MatchStatistics
+import com.tzvi.kickoff.core.model.PlayerMatchStats
+import com.tzvi.kickoff.core.model.PlayerProfile
 import com.tzvi.kickoff.core.model.Team
 import java.time.LocalDate
 
@@ -18,6 +22,45 @@ interface FootballDataSource {
     suspend fun fixturesForTeams(teamIds: List<Int>, from: LocalDate, to: LocalDate): List<Match>
     suspend fun liveFixtures(teamIds: List<Int>): List<Match>
     suspend fun matchDetail(matchId: Long): MatchDetail
+
+    /**
+     * Every player's line for one fixture, keyed by player id.
+     *
+     * Deliberately whole-match rather than per-player: the provider returns all ~36
+     * players in a single request, so fetching one player would cost exactly as much as
+     * fetching the lot. A source with nothing to say returns an empty map rather than
+     * throwing - the sheet degrades to the profile alone.
+     */
+    suspend fun playersInMatch(matchId: Long): Map<Int, PlayerMatchStats> = emptyMap()
+
+    /** Birth, nationality and physicals. Null when the source cannot supply them. */
+    suspend fun playerProfile(playerId: Int): PlayerProfile? = null
+
+    /**
+     * The club's current roster. [LineupPlayer] is reused because a squad member is the
+     * same five fields with the pitch coordinates left null. Empty = not supported here.
+     */
+    suspend fun squad(teamId: Int): List<LineupPlayer> = emptyList()
+
+    /**
+     * One club's recent results and next fixtures, whether or not it is followed.
+     *
+     * Separate from [fixturesForTeams] because that one exists to fill the local window
+     * for the teams the user tracks; this answers a browsing question about a club they
+     * have only just looked up, and must not write anything or assume a season.
+     */
+    suspend fun teamFixtures(teamId: Int, last: Int, next: Int): List<Match> = emptyList()
+
+    /**
+     * The provider's pre-match read: win percentages, form, a one-line call.
+     *
+     * Null when the source cannot supply it, which includes every competition whose
+     * [League.coverage] has predictions off.
+     */
+    suspend fun predictions(matchId: Long): MatchPrediction? = null
+
+    /** Past meetings between two clubs, newest first. Empty = not supported here. */
+    suspend fun headToHead(homeTeamId: Int, awayTeamId: Int, last: Int): List<Match> = emptyList()
 }
 
 data class MatchDetail(
@@ -30,7 +73,7 @@ data class MatchDetail(
 
 /** Raised when no data source is configured at all - neither backend nor API key. */
 class NoFootballSourceException : IllegalStateException(
-    "No football data source configured. Point the app at a Kickoff backend, " +
+    "No football data source configured. Point the app at a matchUP backend, " +
         "or paste an API-Football key in Settings.",
 )
 

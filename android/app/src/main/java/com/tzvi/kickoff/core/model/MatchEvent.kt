@@ -77,13 +77,21 @@ data class MatchEvent(
          * Providers re-report events as minutes get corrected and VAR overturns things,
          * and they never send an id. Key on the tuple that actually identifies the
          * incident so a re-report dedupes instead of firing a second notification.
+         *
+         * The minute is deliberately NOT part of it, despite being the obvious
+         * discriminator: it is the field most likely to be corrected, and a goal whose
+         * minute moved from 45 to 45+2 used to key as a second goal - a duplicate alert
+         * and a score counted twice. What separates a player's two goals instead is
+         * [occurrence], their index within this match among incidents of the same type
+         * for the same team and player, which is stable under any correction.
          */
         fun key(
             matchId: Long,
             type: MatchEventType,
-            minute: Int?,
+            occurrence: Int,
             teamId: Int?,
             playerName: String?,
-        ): String = "$matchId:${type.name}:${minute ?: -1}:${teamId ?: -1}:${playerName.orEmpty()}"
+        ): String =
+            "$matchId:${type.name}:$occurrence:${teamId ?: -1}:${playerName.orEmpty()}"
     }
 }

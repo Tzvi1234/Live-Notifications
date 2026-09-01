@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.Icon
@@ -33,18 +34,19 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.tzvi.kickoff.AppUiState
-import com.tzvi.kickoff.ui.island.DynamicIsland
 import com.tzvi.kickoff.ui.motion.Motion
 import com.tzvi.kickoff.ui.navigation.KickoffNavHost
+import com.tzvi.kickoff.data.predict.PendingInvite
 import com.tzvi.kickoff.ui.navigation.Routes
 import com.tzvi.kickoff.ui.navigation.TopLevelDestination
 
 /**
- * The app shell: navigation bar, nav graph, and the live island floating above both.
+ * The app shell: navigation bar and nav graph.
  *
- * The island deliberately sits outside the NavHost. It tracks the match, not the screen,
- * so it must survive navigation - if it lived inside a destination it would be torn down
- * and rebuilt on every transition, and the score would flicker.
+ * The live island is deliberately NOT here. It is a system overlay that exists to put the
+ * score in front of you while you are somewhere else, so drawing it over matchUP's own
+ * screens only ever put a second copy of the scoreline on top of the toolbar. See
+ * IslandOverlayService, which hides itself whenever this app is in the foreground.
  */
 @Composable
 fun KickoffApp(
@@ -56,23 +58,25 @@ fun KickoffApp(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    var islandExpanded by rememberSaveable { mutableStateOf(false) }
-    var islandDismissed by remember { mutableStateOf(false) }
 
-    // "kickoff://match/12345" from a notification or the overlay island.
     LaunchedEffect(deepLink) {
         val uri = deepLink ?: return@LaunchedEffect
+        // "kickoff://match/12345" from a notification or the overlay island.
         if (uri.scheme == "kickoff" && uri.host == "match") {
             uri.lastPathSegment?.toLongOrNull()?.let { matchId ->
                 navController.navigate(Routes.matchDetail(matchId))
             }
         }
+        // "matchup://join/3YJK2CYK" from a friend. The code itself was parked by the
+        // activity before this ran, because joining needs an account and this may well be
+        // the tap that installed the app; all that is left here is to go and redeem it.
+        if (PendingInvite.codeIn(uri.scheme, uri.host, uri.lastPathSegment) != null) {
+            navController.navigate(Routes.PREDICT)
+        }
         onDeepLinkHandled()
     }
 
     val showBottomBar = currentRoute in TopLevelDestination.entries.map { it.route }
-    val startDestination =
-        if (state.settings.onboardingComplete) Routes.TODAY else Routes.ONBOARDING
 
     Box(Modifier.fillMaxSize()) {
         Scaffold(
@@ -116,7 +120,7 @@ fun KickoffApp(
         ) { padding ->
             KickoffNavHost(
                 navController = navController,
-                startDestination = startDestination,
+                startDestination = state.startDestination,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(
@@ -125,23 +129,9 @@ fun KickoffApp(
             )
         }
 
-        val islandActivity = state.liveActivity?.takeUnless { islandDismissed }
-        DynamicIsland(
-            activity = islandActivity,
-            expanded = islandExpanded,
-            onToggle = { islandExpanded = !islandExpanded },
-            onOpenMatch = { matchId ->
-                islandExpanded = false
-                navController.navigate(Routes.matchDetail(matchId))
-            },
-            onDismiss = {
-                islandExpanded = false
-                islandDismissed = true
-            },
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(WindowInsets.statusBars.asPaddingValues())
-                .padding(horizontal = 12.dp, vertical = 4.dp),
-        )
+        // No island inside matchUP. It exists to put the score somewhere you are NOT
+        // looking - over the launcher, over another app - and over its own match screens
+        // it was just a second copy of the same numbers sitting on the toolbar.
+        // IslandOverlayService draws it, and hides itself while this app is in front.
     }
 }

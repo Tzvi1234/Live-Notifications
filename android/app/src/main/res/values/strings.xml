@@ -1,23 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Kickoff</string>
+    <string name="app_name">matchUP</string>
 
     <!-- Notification channels -->
     <string name="channel_live_match">Live matches</string>
     <string name="channel_live_match_desc">The ongoing scoreboard card for a match you follow.</string>
     <string name="channel_match_events">Goals and cards</string>
     <string name="channel_match_events_desc">Alerts for goals, red cards and full time.</string>
-    <string name="channel_calendar">Calendar events</string>
-    <string name="channel_calendar_desc">A live card for the calendar event you are heading into.</string>
 
     <!-- Live card -->
     <string name="live_kickoff_in">Kick-off in %1$s</string>
-    <string name="live_lineups_pending">Line-ups drop about an hour before kick-off</string>
     <string name="live_starting_soon">Starting soon</string>
     <string name="action_stop_following">Stop following</string>
-    <string name="action_open_match">Open</string>
-
-    <string name="promotion_disabled_title">Live Updates are switched off</string>
-    <string name="promotion_disabled_body">Turn on promoted notifications so the score can appear in the status bar and on your lock screen.</string>
-    <string name="promotion_open_settings">Open settings</string>
 </resources>

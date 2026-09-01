@@ -12,6 +12,8 @@ import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
 import com.tzvi.kickoff.core.model.MatchEventType
+import com.tzvi.kickoff.core.model.MatchPhase
+import com.tzvi.kickoff.core.model.MatchSide
 import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.repository.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
@@ -21,6 +23,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -79,7 +82,7 @@ class LiveMatchService : Service() {
      * A placeholder is posted immediately: `startForeground` must be called within a few
      * seconds of the service starting, long before the first network round trip lands.
      * As soon as a real match card exists, [adoptAsForeground] replaces it, so the user
-     * never ends up with a redundant "Kickoff is running" notification sitting beside
+     * never ends up with a redundant "matchUP is running" notification sitting beside
      * the scoreboard for ninety minutes.
      */
     private fun promoteToForeground() {
@@ -144,15 +147,19 @@ class LiveMatchService : Service() {
      */
     private suspend fun pollLoop(matchId: Long) {
         var finishedAt: Instant? = null
+        var lastPhase: MatchPhase? = null
 
-        while (scope.isActive) {
+        while (currentCoroutineContext().isActive) {
             val config = settings.settings.first()
             val refresh = runCatching { repository.refreshMatch(matchId) }.getOrNull()
 
             if (refresh != null) {
                 val match = refresh.detail.match
                 val stage = stageOf(match)
-                val alerting = refresh.newEvents.filter { it.shouldAlert(config) }
+                val whistle = whistleEvent(lastPhase, match)
+                lastPhase = match.phase
+                val alerting = (refresh.newEvents + listOfNotNull(whistle))
+                    .filter { it.shouldAlert(config) }
 
                 val activity = LiveActivity.MatchActivity(
                     match = match,
@@ -195,6 +202,47 @@ class LiveMatchService : Service() {
         stopIfIdle()
     }
 
+    /**
+     * Kick-off, half time and full time, derived rather than received.
+     *
+     * API-Football's `fixtures/events` only ever carries goals, cards, subs and VAR - the
+     * three whistles are not events there, they are status changes on the fixture. So the
+     * "Kick-off & full time" alert had nothing to fire on and was silently dead on the
+     * direct-API path. Watching `phase` change across two polls is where that information
+     * actually lives.
+     *
+     * [previous] being null means this is the loop's first pass and we have not seen a
+     * transition, only a state - joining a match already in play must not announce a
+     * kick-off that happened an hour ago.
+     */
+    private fun whistleEvent(previous: MatchPhase?, match: Match): MatchEvent? {
+        if (previous == null || previous == match.phase) return null
+        val type = when {
+            match.phase.isFinished && previous.isLive -> MatchEventType.FULL_TIME
+            match.phase == MatchPhase.HALF_TIME -> MatchEventType.HALF_TIME
+            match.phase.isLive && !previous.isLive && previous != MatchPhase.HALF_TIME ->
+                MatchEventType.KICK_OFF
+            else -> return null
+        }
+        return MatchEvent(
+            // Keyed off the phase it announces, so the same whistle observed twice - a
+            // service restart, a status that flickers back and forth - stays one event.
+            id = "${match.id}:whistle:${type.name}",
+            matchId = match.id,
+            type = type,
+            side = MatchSide.NEUTRAL,
+            teamId = null,
+            teamName = null,
+            minute = match.elapsedMinutes,
+            extraMinute = null,
+            playerName = null,
+            assistName = null,
+            detail = null,
+            comment = null,
+            scoreAfter = match.score,
+        )
+    }
+
     private fun stageOf(match: Match): LiveActivity.MatchActivity.Stage = when {
         match.phase.isFinished -> LiveActivity.MatchActivity.Stage.FULL_TIME
         match.isLive -> LiveActivity.MatchActivity.Stage.LIVE
@@ -213,8 +261,8 @@ class LiveMatchService : Service() {
         type.isGoal -> config.notifyGoals
         type.isCard -> config.notifyCards
         type == MatchEventType.SUBSTITUTION -> config.notifySubstitutions
-        type == MatchEventType.FULL_TIME || type == MatchEventType.KICK_OFF ->
-            config.notifyKickoffAndFullTime
+        type == MatchEventType.FULL_TIME || type == MatchEventType.KICK_OFF ||
+            type == MatchEventType.HALF_TIME -> config.notifyKickoffAndFullTime
         else -> false
     }
 
@@ -223,6 +271,7 @@ class LiveMatchService : Service() {
         MatchEventType.RED_CARD, MatchEventType.SECOND_YELLOW -> 80
         MatchEventType.PENALTY_MISSED -> 70
         MatchEventType.FULL_TIME -> 60
+        MatchEventType.KICK_OFF, MatchEventType.HALF_TIME -> 50
         MatchEventType.YELLOW_CARD -> 40
         else -> 10
     }

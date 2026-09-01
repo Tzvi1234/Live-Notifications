@@ -2,6 +2,7 @@ package com.tzvi.kickoff.feature.matchdetail
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -54,19 +56,22 @@ internal fun MatchLineupsSection(
     lineups: MatchLineups?,
     match: Match,
     modifier: Modifier = Modifier,
+    /** False only when the provider says this competition carries no line-ups at all. */
+    lineupsCovered: Boolean = true,
+    onPlayerTap: (LineupPlayer, TeamLineup) -> Unit = { _, _ -> },
 ) {
     val home = lineups?.home
     val away = lineups?.away
     if (home == null || away == null) {
-        LineupsEmptyState(match, modifier)
+        LineupsEmptyState(match, lineupsCovered, modifier)
         return
     }
     Column(modifier.fillMaxWidth()) {
-        Pitch(home = home, away = away)
+        Pitch(home = home, away = away, onPlayerTap = onPlayerTap)
         Spacer(Modifier.height(20.dp))
-        TeamLineupDetail(home)
+        TeamLineupDetail(home, onPlayerTap = onPlayerTap)
         Spacer(Modifier.height(20.dp))
-        TeamLineupDetail(away)
+        TeamLineupDetail(away, onPlayerTap = onPlayerTap)
     }
 }
 
@@ -78,7 +83,12 @@ internal fun MatchLineupsSection(
  * both themes, so scheme colours would flip to dark-on-dark at night.
  */
 @Composable
-private fun Pitch(home: TeamLineup, away: TeamLineup, modifier: Modifier = Modifier) {
+private fun Pitch(
+    home: TeamLineup,
+    away: TeamLineup,
+    onPlayerTap: (LineupPlayer, TeamLineup) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val turf = KickoffTheme.accents.pitch
     val markings = KickoffTheme.accents.pitchLine
 
@@ -101,11 +111,13 @@ private fun Pitch(home: TeamLineup, away: TeamLineup, modifier: Modifier = Modif
             HalfPitch(
                 rows = away.rows.map { it.asReversed() },
                 isHome = false,
+                onTap = { onPlayerTap(it, away) },
                 modifier = Modifier.weight(1f),
             )
             HalfPitch(
                 rows = home.rows.asReversed(),
                 isHome = true,
+                onTap = { onPlayerTap(it, home) },
                 modifier = Modifier.weight(1f),
             )
         }
@@ -116,6 +128,7 @@ private fun Pitch(home: TeamLineup, away: TeamLineup, modifier: Modifier = Modif
 private fun HalfPitch(
     rows: List<List<LineupPlayer>>,
     isHome: Boolean,
+    onTap: (LineupPlayer) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -127,33 +140,61 @@ private fun HalfPitch(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                row.forEach { player -> PlayerDisc(player, isHome) }
+                row.forEach { player -> PlayerDisc(player, isHome, onTap = { onTap(player) }) }
             }
         }
     }
 }
 
 @Composable
-private fun PlayerDisc(player: LineupPlayer, isHome: Boolean) {
+private fun PlayerDisc(player: LineupPlayer, isHome: Boolean, onTap: () -> Unit) {
     val light = KickoffTheme.accents.onLive
     val turf = KickoffTheme.accents.pitch
     Column(
-        modifier = Modifier.width(DiscColumnWidth),
+        modifier = Modifier
+            .width(DiscColumnWidth)
+            .clip(KickoffShapes.small)
+            .clickable(onClick = onTap),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
-            modifier = Modifier
-                .size(DiscSize)
-                .clip(KickoffShapeTokens.crest)
-                .background(if (isHome) light else turf)
-                .border(1.5.dp, light, KickoffShapeTokens.crest),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = player.number?.toString().orEmpty(),
-                style = KickoffTextStyles.shirtNumber,
-                color = if (isHome) turf else light,
-            )
+        // The face fills the disc, with the shirt number riding its top-left corner -
+        // the arrangement every scores app uses, because a photo identifies a player
+        // faster than a number and the number disambiguates the photo.
+        Box(contentAlignment = Alignment.TopStart) {
+            Box(
+                modifier = Modifier
+                    .size(DiscSize)
+                    .clip(KickoffShapeTokens.crest)
+                    .background(light)
+                    .border(1.5.dp, light, KickoffShapeTokens.crest),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (player.photoUrl != null) {
+                    CrestImage(
+                        url = player.photoUrl,
+                        fallback = player.surname,
+                        size = DiscSize,
+                    )
+                } else {
+                    Text(
+                        text = player.number?.toString().orEmpty(),
+                        style = KickoffTextStyles.shirtNumber,
+                        color = turf,
+                    )
+                }
+            }
+            if (player.photoUrl != null && player.number != null) {
+                Text(
+                    text = player.number.toString(),
+                    style = KickoffTextStyles.shirtNumber,
+                    color = light,
+                    modifier = Modifier
+                        .offset(x = (-4).dp, y = (-2).dp)
+                        .clip(KickoffShapeTokens.crest)
+                        .background(turf)
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                )
+            }
         }
         Spacer(Modifier.height(3.dp))
         Text(
@@ -215,7 +256,11 @@ private fun DrawScope.drawPitchMarkings(color: Color) {
 }
 
 @Composable
-private fun TeamLineupDetail(lineup: TeamLineup, modifier: Modifier = Modifier) {
+private fun TeamLineupDetail(
+    lineup: TeamLineup,
+    onPlayerTap: (LineupPlayer, TeamLineup) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -258,17 +303,20 @@ private fun TeamLineupDetail(lineup: TeamLineup, modifier: Modifier = Modifier) 
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                lineup.substitutes.forEach { SubstituteChip(it) }
+                lineup.substitutes.forEach { player ->
+                    SubstituteChip(player, onTap = { onPlayerTap(player, lineup) })
+                }
             }
         }
     }
 }
 
 @Composable
-private fun SubstituteChip(player: LineupPlayer) {
+private fun SubstituteChip(player: LineupPlayer, onTap: () -> Unit) {
     Surface(
         shape = KickoffShapeTokens.chip,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        onClick = onTap,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -291,12 +339,28 @@ private fun SubstituteChip(player: LineupPlayer) {
 }
 
 @Composable
-private fun LineupsEmptyState(match: Match, modifier: Modifier = Modifier) {
+private fun LineupsEmptyState(
+    match: Match,
+    lineupsCovered: Boolean,
+    modifier: Modifier = Modifier,
+) {
     when {
+        // A competition the provider does not cover for line-ups will never produce one,
+        // and telling the user to pull down again was an instruction that could not work.
+        // This is the difference between the Premier League an hour early and the Israel
+        // State Cup at any hour at all.
+        !lineupsCovered -> EmptyState(
+            title = "No line-ups in this competition",
+            body = "The provider doesn't publish a starting XI for ${match.leagueName}. " +
+                "Goals, cards and the score still arrive as normal.",
+            icon = Icons.Outlined.Groups,
+            modifier = modifier,
+        )
+
         match.phase == MatchPhase.SCHEDULED -> EmptyState(
             title = "Line-ups aren't out yet",
-            body = "Line-ups usually land about an hour before kick-off. Pull down to " +
-                "check again.",
+            body = "Confirmed line-ups land 20 to 40 minutes before kick-off - there is " +
+                "no earlier version to fetch. Pull down once the hour is close.",
             icon = Icons.Outlined.Groups,
             modifier = modifier,
         )
@@ -308,7 +372,8 @@ private fun LineupsEmptyState(match: Match, modifier: Modifier = Modifier) {
         )
         else -> EmptyState(
             title = "No line-ups for this match",
-            body = "The provider never published a starting XI for this fixture.",
+            body = "This competition carries line-ups, but none were published for this " +
+                "fixture.",
             icon = Icons.Outlined.Groups,
             modifier = modifier,
         )

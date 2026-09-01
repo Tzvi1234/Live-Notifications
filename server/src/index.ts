@@ -193,7 +193,17 @@ function describeConfig(active: KickoffConfig): Record<string, unknown> {
     cacheTtlSeconds: active.cacheTtlSeconds,
     featuredLeagueIds: [...active.featuredLeagueIds],
     adminToken: active.adminToken === undefined ? 'unset (admin routes disabled)' : 'set',
+    clerk: describeClerk(active),
   };
+}
+
+/** Never the secret key itself; the publishable one is a client credential and is printed. */
+function describeClerk(active: KickoffConfig): string {
+  if (!active.hasClerk) return 'unset (accounts, groups and predictions disabled)';
+  const verification = active.clerkJwtKey === undefined ? 'network' : 'networkless (JWT key)';
+  return `${describeSecret(active.clerkSecretKey ?? '')}, ${verification}, publishable ${
+    active.clerkPublishableKey ?? 'unset'
+  }`;
 }
 
 function describeSecret(secret: string): string {
