@@ -4,6 +4,7 @@ import com.tzvi.kickoff.data.remote.dto.ApiEnvelope
 import com.tzvi.kickoff.data.remote.dto.EventResponse
 import com.tzvi.kickoff.data.remote.dto.FixturePlayersResponse
 import com.tzvi.kickoff.data.remote.dto.FixtureResponse
+import com.tzvi.kickoff.data.remote.dto.PredictionResponse
 import com.tzvi.kickoff.data.remote.dto.LeagueCatalogueResponse
 import com.tzvi.kickoff.data.remote.dto.LineupResponse
 import com.tzvi.kickoff.data.remote.dto.PlayerProfileResponse
@@ -18,7 +19,7 @@ import retrofit2.http.Query
  *
  * This is the "bring your own key" path: it works with nothing deployed, but a free
  * key is 100 requests/day, which one live match at a 60s cadence already exceeds.
- * Production traffic should go through the Kickoff backend instead, which polls once
+ * Production traffic should go through the matchUP backend instead, which polls once
  * on behalf of every user and pushes deltas.
  */
 interface ApiFootballService {
@@ -61,6 +62,23 @@ interface ApiFootballService {
     @GET("fixtures")
     suspend fun liveFixtures(
         @Query("live") live: String = "all",
+    ): ApiEnvelope<FixtureResponse>
+
+    /**
+     * The provider's own read on a fixture: win percentages, form and a one-line call.
+     *
+     * Takes a fixture and nothing else - there is no way to ask for several at once, so
+     * this is one request per match and is worth caching until kick-off. Recomputed
+     * hourly at the source, so polling it faster than that buys nothing.
+     */
+    @GET("predictions")
+    suspend fun predictions(@Query("fixture") fixtureId: Long): ApiEnvelope<PredictionResponse>
+
+    /** Past meetings between two teams. The parameter really is "id-id". */
+    @GET("fixtures/headtohead")
+    suspend fun headToHead(
+        @Query("h2h") h2h: String,
+        @Query("last") last: Int? = null,
     ): ApiEnvelope<FixtureResponse>
 
     @GET("fixtures/events")

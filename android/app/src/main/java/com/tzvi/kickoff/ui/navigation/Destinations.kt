@@ -12,6 +12,8 @@ import androidx.compose.material.icons.filled.SportsSoccer
 import androidx.compose.ui.graphics.vector.ImageVector
 
 object Routes {
+    const val AUTH = "auth"
+    const val PROFILE = "profile"
     const val ONBOARDING = "onboarding"
     const val TODAY = "today"
     const val MATCHES = "matches"

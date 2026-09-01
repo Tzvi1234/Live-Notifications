@@ -7,14 +7,17 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
+import android.util.LruCache
 import android.view.View
 import android.widget.RemoteViews
+import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
-import androidx.core.graphics.scale
+import androidx.core.graphics.drawable.IconCompat
 import com.tzvi.kickoff.MainActivity
 import com.tzvi.kickoff.R
 import com.tzvi.kickoff.core.model.LiveActivity
@@ -83,6 +86,9 @@ class MatchNotificationBuilder @Inject constructor(
 
     data class Crests(val home: Bitmap, val away: Bitmap, val league: Bitmap?)
 
+    /** Composed crest pairs, keyed by the identity of the two crests. See [crestPair]. */
+    private val pairCache = LruCache<Long, Bitmap>(PAIR_CACHE_ENTRIES)
+
     fun build(
         activity: LiveActivity.MatchActivity,
         crests: Crests?,
@@ -130,9 +136,22 @@ class MatchNotificationBuilder @Inject constructor(
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setColor(color(R.color.brand_green))
+            .setColor(alertAccent(event))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
+    }
+
+    /**
+     * The header accent for an interrupting event: red when someone has been sent off.
+     *
+     * A theme resource rather than one of the bar's fixed mark colours, because this
+     * colour lands on the notification surface and has to hold up in both themes. The
+     * marks are pinned constants for the opposite reason - they sit on the progress bar,
+     * where a surface palette would disappear into the track.
+     */
+    private fun alertAccent(event: MatchEvent): Int = when (event.type) {
+        MatchEventType.RED_CARD, MatchEventType.SECOND_YELLOW -> color(R.color.notif_live)
+        else -> color(R.color.brand_green)
     }
 
     /** Alerts get their own ids so several can stack, and dismissing one keeps the card. */
@@ -219,11 +238,18 @@ class MatchNotificationBuilder @Inject constructor(
     }
 
     /** The latest event, but only while it is still news. */
-    private fun freshEvent(activity: LiveActivity.MatchActivity): MatchEvent? {
-        val event = activity.latestEvent ?: return null
-        val now = activity.match.elapsedMinutes ?: return event
-        val minute = event.minute ?: return event
-        return event.takeIf { now - minute <= EVENT_LINE_MINUTES }
+    private fun freshEvent(activity: LiveActivity.MatchActivity): MatchEvent? =
+        activity.latestEvent?.takeIf { isFresh(it, activity.match.elapsedMinutes) }
+
+    /**
+     * The one expiry rule, shared by the prose line and the bar's tracker symbol so the
+     * two never disagree about whether something is still news. A missing minute on
+     * either side means we cannot age the event, and an event we cannot age is kept.
+     */
+    private fun isFresh(event: MatchEvent, elapsedMinutes: Int?): Boolean {
+        val now = elapsedMinutes ?: return true
+        val minute = event.minute ?: return true
+        return now - minute <= EVENT_LINE_MINUTES
     }
 
     /**
@@ -277,8 +303,15 @@ class MatchNotificationBuilder @Inject constructor(
     }
 
     /**
-     * The status-bar chip text. At most seven characters, and it must use the same
-     * format as the expanded card so the two never disagree.
+     * The status-bar chip text. At most [CHIP_CHARS] characters, and it must use the
+     * same format as the expanded card so the two never disagree.
+     *
+     * This one string is the whole of what the chip can be told. The chip renders the
+     * notification's small icon force-tinted to a single system colour, plus exactly one
+     * of this text, a chronometer or a short time delta - there is no bitmap slot, so
+     * the crests stop at the shade and cannot follow the card into the status bar. The
+     * score is therefore what has to survive; the minute is appended only when both
+     * still fit, because a truncated chip reads worse than a short one.
      */
     private fun shortCriticalText(activity: LiveActivity.MatchActivity): String {
         val m = activity.match
@@ -287,19 +320,36 @@ class MatchNotificationBuilder @Inject constructor(
                 val minutes = Duration.between(Instant.now(), m.kickoffAt).toMinutes()
                 if (minutes in 0..99) "${minutes}m" else "Soon"
             }
-            LiveActivity.MatchActivity.Stage.LIVE ->
-                m.score?.let { "${it.home}-${it.away}" } ?: m.clockLabel.take(7)
+            LiveActivity.MatchActivity.Stage.LIVE -> {
+                val score = m.score?.let { "${it.home}-${it.away}" }
+                val clock = m.clockLabel.takeIf { it.isNotBlank() }
+                when {
+                    score == null -> clock?.take(CHIP_CHARS).orEmpty()
+                    clock == null -> score
+                    // "2-1 67'" is exactly the budget; "2-1 45+2'" is not, and a
+                    // scoreline on its own is the half worth keeping.
+                    else -> "$score $clock".takeIf { it.length <= CHIP_CHARS } ?: score
+                }
+            }
             LiveActivity.MatchActivity.Stage.FULL_TIME ->
-                m.score?.let { "FT ${it.home}-${it.away}".take(7) } ?: "FT"
+                m.score?.let { "FT ${it.home}-${it.away}".take(CHIP_CHARS) } ?: "FT"
         }
     }
 
     // ---- promoted (Live Update) ---------------------------------------------
 
     /**
-     * The bar *is* the match clock: two 45-minute segments for the halves, a point for
-     * every goal at the minute it went in, coloured by the side that scored, and the
-     * ball tracker sitting on the current minute. Start and end icons are the crests.
+     * The bar *is* the match clock: two 45-minute segments for the halves, a coloured
+     * mark at the minute of each of the four most notable incidents, and the tracker
+     * riding the current minute carrying the symbol of whatever has just happened. The
+     * crests bookend the bar at the 20dp those two slots are pinned to, and ride the
+     * header as a composed pair, which is both larger and the only one of the two that
+     * survives into the collapsed card.
+     *
+     * All of that is the *expanded* card and nowhere else: the collapsed and heads-up
+     * views call hideProgress(true) and never bind the bar at all, and the always-on
+     * display repaints every segment and point white and merges the segments into one -
+     * so on that surface the bar is decoration, and the title carries the score.
      */
     private fun applyClock(
         builder: NotificationCompat.Builder,
@@ -320,20 +370,15 @@ class MatchNotificationBuilder @Inject constructor(
                         .setColor(color(R.color.notif_accent)),
                 ),
             )
-            .setProgressPoints(goalPoints(activity))
-            .setProgressTrackerIcon(
-                androidx.core.graphics.drawable.IconCompat.createWithResource(
-                    context, R.drawable.ic_ball_tracker,
-                ),
-            )
+            .setProgressPoints(eventPoints(activity))
+            .setProgressTrackerIcon(trackerIcon(activity))
 
         crests?.let {
-            style.setProgressStartIcon(
-                androidx.core.graphics.drawable.IconCompat.createWithBitmap(it.home),
-            )
-            style.setProgressEndIcon(
-                androidx.core.graphics.drawable.IconCompat.createWithBitmap(it.away),
-            )
+            // The two ends of the bar. Fixed at 20dp by the platform, hence the large
+            // icon below - this is not where a crest becomes legible.
+            style.setProgressStartIcon(IconCompat.createWithBitmap(it.home))
+            style.setProgressEndIcon(IconCompat.createWithBitmap(it.away))
+            builder.setLargeIcon(crestPair(it))
         }
 
         builder.setStyle(style)
@@ -349,27 +394,117 @@ class MatchNotificationBuilder @Inject constructor(
         }
     }
 
-    /** One [NotificationCompat.ProgressStyle.Point] per goal, at the minute it was scored. */
-    private fun goalPoints(
+    /**
+     * Up to four incidents, each a dot on the bar at the minute it happened, coloured by
+     * the side it belongs to.
+     *
+     * A `Point` carries an id and a colour and nothing else - neither the platform nor
+     * androidx has an icon field on `Point` or `Segment` - so the bar can say *when* an
+     * incident happened and *whose* it was, and the tracker icon has to say *what* it
+     * was. Four is the platform's own cap on points (ten on segments), so when a match
+     * runs past four incidents the significant ones win and, among equals, the recent
+     * ones. [markWeight] is the same ranking the alerting path uses, so the dot that
+     * survives is the one the user was interrupted for.
+     */
+    private fun eventPoints(
         activity: LiveActivity.MatchActivity,
     ): List<NotificationCompat.ProgressStyle.Point> =
         activity.recentEvents
-            .asSequence()
-            .filter { it.type.isGoal || it.type == com.tzvi.kickoff.core.model.MatchEventType.RED_CARD }
             .mapNotNull { event ->
+                if (markIcon(event.type) == null) return@mapNotNull null
                 // Point positions are 1-based and relative to the summed segment length.
-                val position = event.minute?.coerceIn(1, Match.REGULATION_MINUTES) ?: return@mapNotNull null
+                val minute = event.minute ?: return@mapNotNull null
+                event to minute.coerceIn(1, Match.REGULATION_MINUTES)
+            }
+            .sortedWith(
+                compareByDescending<Pair<MatchEvent, Int>> { markWeight(it.first.type) }
+                    .thenByDescending { it.second },
+            )
+            // Two incidents in the same minute would land on the same dot; the better
+            // ranked of the two keeps it.
+            .distinctBy { it.second }
+            .take(MAX_POINTS)
+            .sortedBy { it.second }
+            .map { (event, position) ->
                 NotificationCompat.ProgressStyle.Point(position)
                     .setId(event.id.hashCode())
-                    .setColor(pointColor(event))
+                    .setColor(sideColor(event.side))
             }
-            .distinctBy { it.position }
-            .toList()
 
-    private fun pointColor(event: MatchEvent): Int = when {
-        event.type == com.tzvi.kickoff.core.model.MatchEventType.RED_CARD -> color(R.color.notif_live)
-        event.side == MatchSide.AWAY -> AWAY_GOAL_COLOR
-        else -> HOME_GOAL_COLOR
+    /**
+     * The tracker sits on the current minute, which makes it the one thing on the bar
+     * that can say what just happened as well as where we are: a ball in the scoring
+     * side's colour, a yellow or a red card, or the penalty spot.
+     *
+     * It is also the *only* place a symbol can go. `ProgressStyle` has exactly three
+     * icon slots - the two ends of the bar and this one - and none of them can be pinned
+     * to a point, so a per-incident icon along the bar is not something to be worked
+     * around; it does not exist.
+     *
+     * The symbol expires on the same [EVENT_LINE_MINUTES] rule the card's prose line
+     * uses, after which the tracker goes back to the plain ball and the card reads clean.
+     */
+    private fun trackerIcon(activity: LiveActivity.MatchActivity): IconCompat {
+        val event = freshMark(activity)
+        val tracker = IconCompat.createWithResource(
+            context,
+            event?.type?.let(::markIcon) ?: R.drawable.ic_ball_tracker,
+        )
+        // Only an incident's symbol is tinted; the idle ball keeps the drawable's white.
+        return if (event == null) tracker else tracker.setTint(markTint(event))
+    }
+
+    /** The newest incident the bar has a symbol for, while it is still news. */
+    private fun freshMark(activity: LiveActivity.MatchActivity): MatchEvent? =
+        activity.recentEvents.lastOrNull {
+            markIcon(it.type) != null && isFresh(it, activity.match.elapsedMinutes)
+        }
+
+    /** The symbol for an incident, or null for the kinds the bar does not mark. */
+    @DrawableRes
+    private fun markIcon(type: MatchEventType): Int? = when (type) {
+        MatchEventType.GOAL, MatchEventType.OWN_GOAL -> R.drawable.ic_event_goal
+        MatchEventType.PENALTY_GOAL, MatchEventType.PENALTY_MISSED -> R.drawable.ic_event_penalty
+        MatchEventType.YELLOW_CARD, MatchEventType.SECOND_YELLOW, MatchEventType.RED_CARD ->
+            R.drawable.ic_event_card
+        else -> null
+    }
+
+    /**
+     * What the symbol is tinted.
+     *
+     * A card's colour *is* the card - it is the whole of what a booking says - so that
+     * wins. Everything else takes the colour of the side it belongs to, which is what
+     * makes the ball answer "whose goal?" on its own.
+     */
+    private fun markTint(event: MatchEvent): Int = when (event.type) {
+        MatchEventType.YELLOW_CARD -> CARD_YELLOW_COLOR
+        MatchEventType.SECOND_YELLOW, MatchEventType.RED_CARD -> CARD_RED_COLOR
+        else -> sideColor(event.side)
+    }
+
+    /** How much an incident deserves one of the four points. Mirrors the alert ranking. */
+    private fun markWeight(type: MatchEventType): Int = when {
+        type.isGoal -> 100
+        type == MatchEventType.RED_CARD || type == MatchEventType.SECOND_YELLOW -> 80
+        type == MatchEventType.PENALTY_MISSED -> 70
+        type == MatchEventType.YELLOW_CARD -> 40
+        else -> 0
+    }
+
+    /**
+     * A side's colour on the bar.
+     *
+     * Deliberately a fixed pair rather than anything sampled from the crest: a crest's
+     * dominant colour is as often green as not, which is the track's own colour, and two
+     * clubs in the same shirt - Arsenal against Manchester United - would come out
+     * indistinguishable on a dot a few pixels wide. Neutral covers the whistles and VAR,
+     * which belong to neither side.
+     */
+    private fun sideColor(side: MatchSide): Int = when (side) {
+        MatchSide.HOME -> HOME_MARK_COLOR
+        MatchSide.AWAY -> AWAY_MARK_COLOR
+        MatchSide.NEUTRAL -> NEUTRAL_MARK_COLOR
     }
 
     // ---- scoreboard (custom views) ------------------------------------------
@@ -537,35 +672,46 @@ class MatchNotificationBuilder @Inject constructor(
     }
 
     /**
-     * Both crests on one 16:9 bitmap.
+     * Both crests on one bitmap, as large as the slot they land in will draw them.
      *
-     * 16:9 because that is the widest aspect the system will not crop: a large icon is
-     * capped at 48dp tall, and the AOD widens it to at most 48dp x 16/9 before clamping.
-     * Anything bigger is silently downscaled, so it is generated at exactly that size.
+     * That slot is `right_icon`, and it is a **square**: every template that carries a
+     * large icon - the promoted progress one included - includes
+     * `notification_right_icon`, which is [LARGE_ICON_DP] wide *and* tall with
+     * `scaleType="centerCrop"`. A composition wider than it is tall is therefore not
+     * shown wider, it is centre-cropped back to the square, which for a pair drawn at
+     * the two edges means the crop keeps the gap and throws away both crests. So the
+     * bitmap is square, and each crest takes half its width.
+     *
+     * That is 24dp a crest against the 20dp the bar's end icons are pinned to, and
+     * unlike the bar it also survives into the collapsed card, which never draws the
+     * progress bar at all. It is the largest either crest can be on this card.
+     *
+     * Cached per crest pair: a match posts hundreds of updates and this would otherwise
+     * allocate a fresh bitmap for every one of them. [CrestLoader] hands back the same
+     * crest instances for the whole match, so identity is a sound key, and reusing one
+     * output instance also lets the RemoteViews bitmap cache dedupe it across updates.
      */
     private fun crestPair(crests: Crests): Bitmap {
-        val density = context.resources.displayMetrics.density
-        val height = (LARGE_ICON_DP * density).toInt().coerceAtLeast(1)
-        val width = (height * 16f / 9f).toInt().coerceAtLeast(height)
-        val crestSize = (height * 0.82f).toInt().coerceAtLeast(1)
-        val top = (height - crestSize) / 2f
+        val key = (System.identityHashCode(crests.home).toLong() shl 32) or
+            (System.identityHashCode(crests.away).toLong() and 0xFFFF_FFFFL)
+        pairCache.get(key)?.let { return it }
 
-        val output = createBitmap(width, height)
+        // Composed at the device's own density, so the system never resamples it on the
+        // way in and never has to crop it on the way out.
+        val density = context.resources.displayMetrics.density
+        val size = (LARGE_ICON_DP * density).toInt().coerceAtLeast(2)
+        val crestSize = size / 2
+        val top = (size - crestSize) / 2
+
+        val output = createBitmap(size, size)
         val canvas = Canvas(output)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
+        // Drawn straight into a destination rect rather than through a scaled copy, so a
+        // pair costs one bitmap rather than three.
+        canvas.drawBitmap(crests.home, null, Rect(0, top, crestSize, top + crestSize), paint)
+        canvas.drawBitmap(crests.away, null, Rect(crestSize, top, size, top + crestSize), paint)
 
-        canvas.drawBitmap(
-            crests.home.scale(crestSize, crestSize),
-            0f,
-            top,
-            paint,
-        )
-        canvas.drawBitmap(
-            crests.away.scale(crestSize, crestSize),
-            (width - crestSize).toFloat(),
-            top,
-            paint,
-        )
+        pairCache.put(key, output)
         return output
     }
 
@@ -628,11 +774,29 @@ class MatchNotificationBuilder @Inject constructor(
 
         /** How many match minutes an event holds the card's one prose line. */
         const val EVENT_LINE_MINUTES = 5
+
+        /** What the status-bar chip will show before it truncates. */
+        const val CHIP_CHARS = 7
+
+        /** `notification_right_icon_size`: the large icon's square slot. */
         const val LARGE_ICON_DP = 48
+        const val PAIR_CACHE_ENTRIES = 4
         const val SEGMENT_FIRST_HALF = 1
         const val SEGMENT_SECOND_HALF = 2
-        const val HOME_GOAL_COLOR = 0xFF00C853.toInt()
-        const val AWAY_GOAL_COLOR = 0xFF4FC3F7.toInt()
+
+        /** The platform's cap on `ProgressStyle` points. Exceeding it drops the extras. */
+        const val MAX_POINTS = 4
+
+        /**
+         * The mark palette. Amber and cyan because they have to be told apart from each
+         * other *and* from the track, which is green in both themes; the card colours
+         * are the cards themselves.
+         */
+        const val HOME_MARK_COLOR = 0xFFFFAB00.toInt()
+        const val AWAY_MARK_COLOR = 0xFF40C4FF.toInt()
+        const val NEUTRAL_MARK_COLOR = 0xFFECEFF1.toInt()
+        const val CARD_YELLOW_COLOR = 0xFFFFD600.toInt()
+        const val CARD_RED_COLOR = 0xFFE53935.toInt()
         val TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
     }
 }

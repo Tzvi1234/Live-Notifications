@@ -25,6 +25,29 @@ data class League(
     val logoUrl: String?,
     val season: Int,
     val type: String? = null,
+    val coverage: LeagueCoverage = LeagueCoverage(),
+)
+
+/**
+ * What the provider actually has for this competition this season.
+ *
+ * The reason it exists: line-ups are published for the Premier League and simply do not
+ * exist for the Israel State Cup, and both came back as an empty array. The screen said
+ * "the line-up isn't out yet" in both cases and then went on saying it forever. These
+ * flags are what let it say "this competition doesn't carry line-ups" instead - which is
+ * the difference between a bug and a fact about the data.
+ *
+ * Everything defaults to true so an unknown competition behaves as it did before: hopeful,
+ * and corrected by reality rather than by a guess.
+ */
+data class LeagueCoverage(
+    val lineups: Boolean = true,
+    val events: Boolean = true,
+    val fixtureStatistics: Boolean = true,
+    val playerStatistics: Boolean = true,
+    val standings: Boolean = true,
+    val injuries: Boolean = true,
+    val predictions: Boolean = true,
 )
 
 /**

@@ -16,6 +16,7 @@ import com.tzvi.kickoff.data.local.dao.TrackedActivityDao
 import com.tzvi.kickoff.data.backend.KickoffBackendService
 import com.tzvi.kickoff.data.remote.ApiFootballKeyInterceptor
 import com.tzvi.kickoff.data.remote.BackendUrlInterceptor
+import com.tzvi.kickoff.data.remote.ClerkAuthInterceptor
 import com.tzvi.kickoff.data.remote.api.ApiFootballService
 import dagger.Module
 import dagger.Provides
@@ -106,9 +107,11 @@ object AppModule {
     @BackendApi
     fun backendHttpClient(
         urlInterceptor: BackendUrlInterceptor,
+        authInterceptor: ClerkAuthInterceptor,
         logging: HttpLoggingInterceptor,
     ): OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(urlInterceptor)
+        .addInterceptor(authInterceptor)
         .addInterceptor(logging)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(25, TimeUnit.SECONDS)
@@ -155,6 +158,10 @@ object AppModule {
     @Singleton
     fun database(@ApplicationContext context: Context): KickoffDatabase =
         Room.databaseBuilder(context, KickoffDatabase::class.java, KickoffDatabase.NAME)
+            .addMigrations(KickoffDatabase.MIGRATION_1_2)
+            // Still the last resort, but every version bump from here needs a real
+            // migration first: the followed teams and leagues are the user's own choices,
+            // not cache, and dropping them silently is not an upgrade.
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
 

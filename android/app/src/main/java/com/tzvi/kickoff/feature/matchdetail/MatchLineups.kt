@@ -56,12 +56,14 @@ internal fun MatchLineupsSection(
     lineups: MatchLineups?,
     match: Match,
     modifier: Modifier = Modifier,
+    /** False only when the provider says this competition carries no line-ups at all. */
+    lineupsCovered: Boolean = true,
     onPlayerTap: (LineupPlayer, TeamLineup) -> Unit = { _, _ -> },
 ) {
     val home = lineups?.home
     val away = lineups?.away
     if (home == null || away == null) {
-        LineupsEmptyState(match, modifier)
+        LineupsEmptyState(match, lineupsCovered, modifier)
         return
     }
     Column(modifier.fillMaxWidth()) {
@@ -337,12 +339,28 @@ private fun SubstituteChip(player: LineupPlayer, onTap: () -> Unit) {
 }
 
 @Composable
-private fun LineupsEmptyState(match: Match, modifier: Modifier = Modifier) {
+private fun LineupsEmptyState(
+    match: Match,
+    lineupsCovered: Boolean,
+    modifier: Modifier = Modifier,
+) {
     when {
+        // A competition the provider does not cover for line-ups will never produce one,
+        // and telling the user to pull down again was an instruction that could not work.
+        // This is the difference between the Premier League an hour early and the Israel
+        // State Cup at any hour at all.
+        !lineupsCovered -> EmptyState(
+            title = "No line-ups in this competition",
+            body = "The provider doesn't publish a starting XI for ${match.leagueName}. " +
+                "Goals, cards and the score still arrive as normal.",
+            icon = Icons.Outlined.Groups,
+            modifier = modifier,
+        )
+
         match.phase == MatchPhase.SCHEDULED -> EmptyState(
             title = "Line-ups aren't out yet",
-            body = "Line-ups usually land about an hour before kick-off. Pull down to " +
-                "check again.",
+            body = "Confirmed line-ups land 20 to 40 minutes before kick-off - there is " +
+                "no earlier version to fetch. Pull down once the hour is close.",
             icon = Icons.Outlined.Groups,
             modifier = modifier,
         )
@@ -354,7 +372,8 @@ private fun LineupsEmptyState(match: Match, modifier: Modifier = Modifier) {
         )
         else -> EmptyState(
             title = "No line-ups for this match",
-            body = "The provider never published a starting XI for this fixture.",
+            body = "This competition carries line-ups, but none were published for this " +
+                "fixture.",
             icon = Icons.Outlined.Groups,
             modifier = modifier,
         )

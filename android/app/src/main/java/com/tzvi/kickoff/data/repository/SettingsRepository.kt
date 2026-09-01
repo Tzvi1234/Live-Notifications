@@ -1,5 +1,7 @@
 package com.tzvi.kickoff.data.repository
 
+import com.tzvi.kickoff.BuildConfig
+
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -41,6 +43,7 @@ class SettingsRepository @Inject constructor(
         val fcmToken = stringPreferencesKey("fcm_token")
         val apiKey = stringPreferencesKey("api_football_key")
         val backendUrl = stringPreferencesKey("backend_url")
+        val useDirectApi = booleanPreferencesKey("use_direct_api")
         val demoMode = booleanPreferencesKey("demo_mode")
     }
 
@@ -70,8 +73,28 @@ class SettingsRepository @Inject constructor(
     /** Empty unless the user pasted their own API-Football key in Settings. */
     val apiFootballKey: Flow<String> = context.dataStore.data.map { it[Keys.apiKey].orEmpty() }
 
-    /** Empty unless a Kickoff backend has been pointed at. */
-    val backendUrl: Flow<String> = context.dataStore.data.map { it[Keys.backendUrl].orEmpty() }
+    /**
+     * The backend this install talks to, which is the shipped one until told otherwise.
+     *
+     * It used to start empty, so every install began with nowhere to fetch from and the
+     * first thing the app asked for was a URL - a question almost nobody could answer.
+     * The build already knows the address; asking was theatre. Clearing it in Settings
+     * still works and still means "go direct".
+     */
+    val backendUrl: Flow<String> = context.dataStore.data.map {
+        it[Keys.backendUrl] ?: BuildConfig.DEFAULT_BACKEND_URL
+    }
+
+    /**
+     * Skip the server and talk to API-Football with the user's own key.
+     *
+     * Off by default: the server holds one key for everybody, caches, and is the only
+     * path that can push. This exists for the case the server is down, or somebody wants
+     * their own quota and no middleman.
+     */
+    val useDirectApi: Flow<Boolean> = context.dataStore.data.map {
+        it[Keys.useDirectApi] ?: false
+    }
 
     /**
      * Demo mode replaces the football source with a generated one. It outranks a backend
@@ -96,6 +119,7 @@ class SettingsRepository @Inject constructor(
     suspend fun setDynamicColor(value: Boolean) = edit { it[Keys.dynamicColor] = value }
     suspend fun setApiFootballKey(key: String) = edit { it[Keys.apiKey] = key.trim() }
     suspend fun setBackendUrl(url: String) = edit { it[Keys.backendUrl] = url.trim() }
+    suspend fun setUseDirectApi(value: Boolean) = edit { it[Keys.useDirectApi] = value }
     suspend fun setDemoMode(value: Boolean) = edit { it[Keys.demoMode] = value }
     suspend fun setFcmToken(token: String) = edit { it[Keys.fcmToken] = token }
 

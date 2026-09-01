@@ -43,7 +43,7 @@ import com.tzvi.kickoff.ui.navigation.TopLevelDestination
  * The app shell: navigation bar and nav graph.
  *
  * The live island is deliberately NOT here. It is a system overlay that exists to put the
- * score in front of you while you are somewhere else, so drawing it over Kickoff's own
+ * score in front of you while you are somewhere else, so drawing it over matchUP's own
  * screens only ever put a second copy of the scoreline on top of the toolbar. See
  * IslandOverlayService, which hides itself whenever this app is in the foreground.
  */
@@ -70,8 +70,6 @@ fun KickoffApp(
     }
 
     val showBottomBar = currentRoute in TopLevelDestination.entries.map { it.route }
-    val startDestination =
-        if (state.settings.onboardingComplete) Routes.TODAY else Routes.ONBOARDING
 
     Box(Modifier.fillMaxSize()) {
         Scaffold(
@@ -115,7 +113,7 @@ fun KickoffApp(
         ) { padding ->
             KickoffNavHost(
                 navController = navController,
-                startDestination = startDestination,
+                startDestination = state.startDestination,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(
@@ -124,7 +122,7 @@ fun KickoffApp(
             )
         }
 
-        // No island inside Kickoff. It exists to put the score somewhere you are NOT
+        // No island inside matchUP. It exists to put the score somewhere you are NOT
         // looking - over the launcher, over another app - and over its own match screens
         // it was just a second copy of the same numbers sitting on the toolbar.
         // IslandOverlayService draws it, and hides itself while this app is in front.

@@ -164,7 +164,7 @@ internal fun FavouriteTeamsRow(
 internal fun NoTeamsState(onOpenTeams: () -> Unit, modifier: Modifier = Modifier) {
     EmptyState(
         title = "No teams followed yet",
-        body = "Pick a few clubs and Kickoff will keep their fixtures, scores and " +
+        body = "Pick a few clubs and matchUP will keep their fixtures, scores and " +
             "line-ups on this screen.",
         icon = Icons.Outlined.Groups,
         actionLabel = "Choose teams",
@@ -177,7 +177,7 @@ internal fun NoTeamsState(onOpenTeams: () -> Unit, modifier: Modifier = Modifier
 internal fun CalendarPermissionState(onRequestPermission: () -> Unit, modifier: Modifier = Modifier) {
     EmptyState(
         title = "Calendar access is off",
-        body = "Calendar sync is switched on, but Android has not granted Kickoff " +
+        body = "Calendar sync is switched on, but Android has not granted matchUP " +
             "permission to read your events yet.",
         icon = Icons.Outlined.CalendarMonth,
         actionLabel = "Allow calendar access",
@@ -204,7 +204,7 @@ internal fun NoSourceBanner(onOpenSettings: () -> Unit, modifier: Modifier = Mod
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Point Kickoff at a backend, or paste an API-Football key, and " +
+            text = "Point matchUP at a backend, or paste an API-Football key, and " +
                 "fixtures will start arriving.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onErrorContainer,

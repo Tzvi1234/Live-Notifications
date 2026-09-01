@@ -1,6 +1,7 @@
 package com.tzvi.kickoff.data.local
 
 import com.tzvi.kickoff.core.model.League
+import com.tzvi.kickoff.core.model.LeagueCoverage
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
 import com.tzvi.kickoff.core.model.MatchEventType
@@ -116,7 +117,35 @@ fun Team.toFavouriteEntity(leagueId: Int?, leagueName: String?, sortOrder: Int) 
         addedAt = System.currentTimeMillis(),
     )
 
-fun FollowedLeagueEntity.toDomain() = League(leagueId, name, countryName, logoUrl, season)
+fun FollowedLeagueEntity.toDomain() = League(
+    id = leagueId,
+    name = name,
+    countryName = countryName,
+    logoUrl = logoUrl,
+    season = season,
+    coverage = LeagueCoverage(
+        lineups = coversLineups,
+        events = coversEvents,
+        fixtureStatistics = coversFixtureStats,
+        playerStatistics = coversPlayerStats,
+        standings = coversStandings,
+        injuries = coversInjuries,
+        predictions = coversPredictions,
+    ),
+)
 
-fun League.toEntity(sortOrder: Int = 0) =
-    FollowedLeagueEntity(id, name, countryName, logoUrl, season, sortOrder)
+fun League.toEntity(sortOrder: Int = 0) = FollowedLeagueEntity(
+    leagueId = id,
+    name = name,
+    countryName = countryName,
+    logoUrl = logoUrl,
+    season = season,
+    sortOrder = sortOrder,
+    coversLineups = coverage.lineups,
+    coversEvents = coverage.events,
+    coversFixtureStats = coverage.fixtureStatistics,
+    coversPlayerStats = coverage.playerStatistics,
+    coversStandings = coverage.standings,
+    coversInjuries = coverage.injuries,
+    coversPredictions = coverage.predictions,
+)

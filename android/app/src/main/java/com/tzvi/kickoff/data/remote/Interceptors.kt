@@ -1,5 +1,6 @@
 package com.tzvi.kickoff.data.remote
 
+import com.tzvi.kickoff.data.auth.SessionTokenCache
 import com.tzvi.kickoff.data.remote.api.ApiFootballService
 import com.tzvi.kickoff.data.repository.SettingsRepository
 import kotlinx.coroutines.flow.first
@@ -48,7 +49,7 @@ class BackendUrlInterceptor @Inject constructor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val configured = runBlocking { settings.backendUrl.first() }.trim()
         if (configured.isBlank()) {
-            throw IOException("No Kickoff backend configured. Add its URL in Settings.")
+            throw IOException("No matchUP backend configured. Add its URL in Settings.")
         }
         val base = normalise(configured).toHttpUrlOrNull()
             ?: throw IOException("Backend URL is not a valid http(s) URL: $configured")
@@ -70,5 +71,36 @@ class BackendUrlInterceptor @Inject constructor(
     companion object {
         /** Never contacted: every request is rewritten before it leaves. */
         const val PLACEHOLDER_BASE_URL = "https://kickoff.invalid/"
+    }
+}
+
+/**
+ * Speaks for the signed-in user on backend calls.
+ *
+ * Signed out is not an error here. The football endpoints answer perfectly well without
+ * a session and the app is meant to be useful without an account, so a missing token
+ * means a request with no Authorization header rather than a failed one - only the
+ * account-only routes on the server will refuse it, which is exactly right.
+ *
+ * The read is blocking for the same reason the two above are: Clerk's `getToken` is a
+ * suspending call, `Interceptor` is not, and interceptors already run on OkHttp's own
+ * dispatcher rather than on the main thread. [SessionTokenCache] keeps that blocking
+ * stretch to a cache hit for all but the first request in each token's lifetime.
+ */
+@Singleton
+class ClerkAuthInterceptor @Inject constructor(
+    private val tokens: SessionTokenCache,
+) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val token = runBlocking { tokens.current() }
+        val request = chain.request()
+        if (token == null) return chain.proceed(request)
+        return chain.proceed(
+            request.newBuilder().header(AUTHORIZATION_HEADER, "Bearer $token").build(),
+        )
+    }
+
+    private companion object {
+        const val AUTHORIZATION_HEADER = "Authorization"
     }
 }

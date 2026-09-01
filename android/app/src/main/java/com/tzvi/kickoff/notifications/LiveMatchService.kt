@@ -82,7 +82,7 @@ class LiveMatchService : Service() {
      * A placeholder is posted immediately: `startForeground` must be called within a few
      * seconds of the service starting, long before the first network round trip lands.
      * As soon as a real match card exists, [adoptAsForeground] replaces it, so the user
-     * never ends up with a redundant "Kickoff is running" notification sitting beside
+     * never ends up with a redundant "matchUP is running" notification sitting beside
      * the scoreboard for ninety minutes.
      */
     private fun promoteToForeground() {

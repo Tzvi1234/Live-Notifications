@@ -22,8 +22,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --include=dev
 COPY tsconfig.json ./
 COPY src ./src
-# `npm run build` also copies src/store/schema.sql into dist/ — it is data, so tsc ignores it
-# and the Postgres store would find no schema to apply at startup without that step.
+# `npm run build` also copies src/store/migrations into dist/ — .sql files are data, so tsc
+# ignores them and the migration runner would find nothing to apply at startup without it.
 RUN npm run build
 
 # ---- runtime: dist + production deps only, nothing that can compile ----------------------

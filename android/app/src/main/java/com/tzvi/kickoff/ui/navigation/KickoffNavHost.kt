@@ -10,6 +10,8 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.tzvi.kickoff.feature.auth.AuthScreen
+import com.tzvi.kickoff.feature.auth.ProfileScreen
 import com.tzvi.kickoff.feature.calendar.CalendarScreen
 import com.tzvi.kickoff.feature.matchdetail.MatchDetailScreen
 import com.tzvi.kickoff.feature.matches.MatchesScreen
@@ -45,6 +47,29 @@ fun KickoffNavHost(
                 popEnterTransition = NavTransitions.backEnter,
                 popExitTransition = NavTransitions.backExit,
             ) {
+                // The account question comes before onboarding and leaves nothing on the
+                // stack behind it: whichever way it is answered, there is no going back
+                // to being asked.
+                composable(
+                    route = Routes.AUTH,
+                    enterTransition = NavTransitions.onboardingEnter,
+                    exitTransition = NavTransitions.onboardingExit,
+                ) {
+                    Scoped {
+                        AuthScreen(
+                            onDone = { needsOnboarding ->
+                                // Signing out lands here too, and a returning user must
+                                // not be walked through onboarding a second time.
+                                val next =
+                                    if (needsOnboarding) Routes.ONBOARDING else Routes.TODAY
+                                navController.navigate(next) {
+                                    popUpTo(Routes.AUTH) { inclusive = true }
+                                }
+                            },
+                        )
+                    }
+                }
+
                 composable(
                     route = Routes.ONBOARDING,
                     enterTransition = NavTransitions.onboardingEnter,
@@ -75,6 +100,7 @@ fun KickoffNavHost(
                     Scoped {
                         MatchesScreen(
                             onOpenMatch = { matchId -> navController.navigate(Routes.matchDetail(matchId)) },
+                            onOpenTeams = { navController.navigate(Routes.TEAMS) },
                         )
                     }
                 }
@@ -101,6 +127,27 @@ fun KickoffNavHost(
                     popExitTransition = NavTransitions.expandExit,
                 ) {
                     Scoped { SettingsScreen(onBack = { navController.popBackStack() }) }
+                }
+
+                // Opened from a settings row, like Settings itself is.
+                composable(
+                    route = Routes.PROFILE,
+                    enterTransition = NavTransitions.expandEnter,
+                    exitTransition = NavTransitions.expandExit,
+                    popEnterTransition = NavTransitions.backEnter,
+                    popExitTransition = NavTransitions.expandExit,
+                ) {
+                    Scoped {
+                        ProfileScreen(
+                            onBack = { navController.popBackStack() },
+                            onOpenAuth = {
+                                // Nothing of the signed-in session is left behind it.
+                                navController.navigate(Routes.AUTH) {
+                                    popUpTo(navController.graph.id) { inclusive = true }
+                                }
+                            },
+                        )
+                    }
                 }
 
                 composable(

@@ -235,6 +235,29 @@ data class SeasonDto(
     val start: String? = null,
     val end: String? = null,
     val current: Boolean = false,
+    val coverage: CoverageDto? = null,
+)
+
+/**
+ * Per-season coverage, which the provider nests under the season rather than the league -
+ * the same competition can carry line-ups one year and not the next.
+ */
+@Serializable
+data class CoverageDto(
+    val fixtures: FixtureCoverageDto? = null,
+    val standings: Boolean = false,
+    val players: Boolean = false,
+    val injuries: Boolean = false,
+    val predictions: Boolean = false,
+    val odds: Boolean = false,
+)
+
+@Serializable
+data class FixtureCoverageDto(
+    val events: Boolean = false,
+    val lineups: Boolean = false,
+    @SerialName("statistics_fixtures") val statisticsFixtures: Boolean = false,
+    @SerialName("statistics_players") val statisticsPlayers: Boolean = false,
 )
 
 // ---- players -------------------------------------------------------------------------
@@ -378,3 +401,80 @@ data class SquadPlayerDto(
     val position: String? = null,
     val photo: String? = null,
 )
+
+// ---- predictions -----------------------------------------------------------------------
+
+@Serializable
+data class PredictionResponse(
+    val predictions: PredictionBlockDto? = null,
+    val teams: PredictionTeamsDto? = null,
+)
+
+@Serializable
+data class PredictionBlockDto(
+    val winner: PredictionWinnerDto? = null,
+    @SerialName("win_or_draw") val winOrDraw: Boolean? = null,
+    @SerialName("under_over") val underOver: String? = null,
+    val advice: String? = null,
+    /** Strings with a per-cent sign on them - "45%" - not numbers. */
+    val percent: PredictionPercentDto? = null,
+)
+
+@Serializable
+data class PredictionWinnerDto(
+    val id: Int? = null,
+    val name: String? = null,
+    val comment: String? = null,
+)
+
+@Serializable
+data class PredictionPercentDto(
+    val home: String? = null,
+    val draw: String? = null,
+    val away: String? = null,
+)
+
+@Serializable
+data class PredictionTeamsDto(
+    val home: PredictionTeamDto? = null,
+    val away: PredictionTeamDto? = null,
+)
+
+@Serializable
+data class PredictionTeamDto(
+    val league: PredictionLeagueFormDto? = null,
+    @SerialName("last_5") val lastFive: PredictionLastFiveDto? = null,
+)
+
+@Serializable
+data class PredictionLeagueFormDto(
+    val form: String? = null,
+    @SerialName("clean_sheet") val cleanSheet: PredictionTotalsDto? = null,
+    val goals: PredictionGoalsDto? = null,
+)
+
+@Serializable
+data class PredictionLastFiveDto(
+    val form: String? = null,
+    val att: String? = null,
+    @SerialName("def") val defence: String? = null,
+)
+
+@Serializable
+data class PredictionTotalsDto(
+    val home: Int? = null,
+    val away: Int? = null,
+    val total: Int? = null,
+)
+
+@Serializable
+data class PredictionGoalsDto(
+    @SerialName("for") val scored: PredictionGoalSideDto? = null,
+    val against: PredictionGoalSideDto? = null,
+)
+
+@Serializable
+data class PredictionGoalSideDto(val average: PredictionAverageDto? = null)
+
+@Serializable
+data class PredictionAverageDto(val total: String? = null)

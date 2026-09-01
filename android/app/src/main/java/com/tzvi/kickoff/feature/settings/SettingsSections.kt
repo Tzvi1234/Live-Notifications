@@ -145,7 +145,7 @@ internal fun LiveCardSection(
                 },
                 text = when {
                     status.reachesAmbientSurfaces -> "Chip, lock screen and AOD are allowed."
-                    status.supportsPromotion -> "Promotion is off for Kickoff - shade only."
+                    status.supportsPromotion -> "Promotion is off for matchUP - shade only."
                     else -> "This device cannot promote notifications - shade only."
                 },
             )
@@ -236,7 +236,7 @@ internal fun AlertsSection(
     ) {
         if (!access.granted) {
             Notice(
-                text = "Notifications are switched off for Kickoff, so none of these alerts " +
+                text = "Notifications are switched off for matchUP, so none of these alerts " +
                     "can appear.",
                 actionLabel = if (access.requestSpent) {
                     "Open notification settings"
@@ -420,7 +420,7 @@ internal fun DataSourceSection(
             OutlinedTextField(
                 value = form.backendUrlInput,
                 onValueChange = onBackendUrlChange,
-                label = { Text("Kickoff backend URL") },
+                label = { Text("matchUP backend URL") },
                 placeholder = { Text("https://your-app.onrender.com") },
                 singleLine = true,
                 isError = form.backendUrlError != null,
@@ -503,7 +503,7 @@ internal fun AppearanceSection(
             onCheckedChange = onSetDynamicColor,
         )
         Text(
-            text = "Dynamic colour replaces Kickoff's own palette with hues derived from your " +
+            text = "Dynamic colour replaces matchUP's own palette with hues derived from your " +
                 "wallpaper. Club colours, the live pill and the card colours stay as they are.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -525,7 +525,7 @@ internal fun AboutSection(
     SettingsCard(
         title = "About",
         icon = Icons.Outlined.Info,
-        summary = "Kickoff $version",
+        summary = "matchUP $version",
         expanded = expanded,
         onToggle = onToggle,
         modifier = modifier,
@@ -538,7 +538,7 @@ internal fun AboutSection(
             Spacer(Modifier.width(RowGap))
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = "Kickoff",
+                    text = "matchUP",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -767,7 +767,7 @@ private const val LIVE_CARD_HELP =
         "rules a real match uses, then tells you which rendering the system actually chose."
 
 private const val DATA_SOURCE_HELP =
-    "Kickoff has no feed of its own.\n\n" +
+    "matchUP has no feed of its own.\n\n" +
         "An API-Football key works with nothing deployed, but the free tier allows 100 " +
         "requests a day - roughly one match followed loosely.\n\n" +
         "A backend holds the key itself, polls on behalf of every device, and is the only " +

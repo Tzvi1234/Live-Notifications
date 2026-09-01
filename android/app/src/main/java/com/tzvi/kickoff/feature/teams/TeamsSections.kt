@@ -373,8 +373,8 @@ internal fun TeamsFailureState(
         TeamsFailure.NO_SOURCE -> EmptyState(
             modifier = modifier,
             title = "No data source yet",
-            body = "Kickoff cannot list $subject until Settings holds an API-Football " +
-                "key or the URL of a Kickoff backend.",
+            body = "matchUP cannot list $subject until Settings holds an API-Football " +
+                "key or the URL of a matchUP backend.",
             icon = Icons.Outlined.Key,
         )
 

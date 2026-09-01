@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tracker symbol for a booking. One solid slab, tilted the way a referee holds it,
+     and white so that the tint applied at post time is what says whether it was the
+     yellow or the red - the shape carries no other information and needs none. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <group
+        android:pivotX="24"
+        android:pivotY="24"
+        android:rotation="14">
+        <path
+            android:pathData="M16,8L32,8Q35,8,35,11L35,37Q35,40,32,40L16,40Q13,40,13,37L13,11Q13,8,16,8Z"
+            android:fillColor="#FFFFFFFF" />
+    </group>
+</vector>

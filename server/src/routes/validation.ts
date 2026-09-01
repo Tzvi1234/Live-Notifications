@@ -33,6 +33,19 @@ export function serviceUnavailable(message: string): HttpError {
   return new HttpError(503, message);
 }
 
+export function forbidden(message: string): HttpError {
+  return new HttpError(403, message);
+}
+
+/** The kick-off lock and the invite-code race both report this. */
+export function conflict(message: string): HttpError {
+  return new HttpError(409, message);
+}
+
+export function tooManyRequests(message: string): HttpError {
+  return new HttpError(429, message);
+}
+
 /** An FCM registration token is ~200 characters; this is pure abuse defence. */
 const MAX_TOKEN_LENGTH = 4096;
 
@@ -189,6 +202,56 @@ export function optionalBodyString(
   if (value.length === 0) return undefined;
   if (value.length > maxLength) {
     throw badRequest(`"${field}" must be at most ${maxLength} characters.`);
+  }
+  return value;
+}
+
+export function requireBodyString(raw: unknown, field: string, maxLength: number): string {
+  const value = optionalBodyString(raw, field, maxLength);
+  if (value === undefined) {
+    throw badRequest(`"${field}" is required and must be a non-empty string.`);
+  }
+  return value;
+}
+
+/**
+ * Distinguishes "leave it alone" from "clear it": an absent key is undefined, an explicit
+ * `null` (or `""`) is null. A PATCH that could not clear a field would leave a user stuck
+ * with an avatar they set once.
+ */
+export function patchableBodyString(
+  raw: unknown,
+  field: string,
+  maxLength: number,
+): string | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  const value = optionalBodyString(raw, field, maxLength);
+  return value ?? null;
+}
+
+/** Anything a client could put in an <img> without it being a way to reach this network. */
+export function requireHttpUrl(value: string, field: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw badRequest(`"${field}" must be an absolute http(s) URL.`);
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw badRequest(`"${field}" must be an http(s) URL; got "${parsed.protocol}".`);
+  }
+  return value;
+}
+
+/**
+ * A predicted or actual goal count. Capped rather than unbounded: the column is a SMALLINT,
+ * and a scoreline nobody has ever played is a typo or an attempt to overflow it.
+ */
+export function requireGoalCount(raw: unknown, field: string, max: number): number {
+  const value = typeof raw === 'string' ? Number(raw) : raw;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > max) {
+    throw badRequest(`"${field}" must be a whole number between 0 and ${max}.`);
   }
   return value;
 }

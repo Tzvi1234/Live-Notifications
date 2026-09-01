@@ -65,11 +65,11 @@ private val RAIL_HEIGHT = 4.dp
 internal data class StepCopy(val title: String, val subtitle: String)
 
 internal fun copyFor(step: OnboardingStep, state: OnboardingUiState): StepCopy = when (step) {
-    OnboardingStep.WELCOME -> StepCopy("Kickoff", "")
+    OnboardingStep.WELCOME -> StepCopy("matchUP", "")
 
     OnboardingStep.SOURCE -> StepCopy(
         title = "Where do scores come from?",
-        subtitle = "Kickoff has no feed of its own. Pick one.",
+        subtitle = "matchUP has no feed of its own. Pick one.",
     )
 
     // The only step whose heading depends on an answer: it is showing one thing, and it
@@ -92,7 +92,7 @@ internal fun copyFor(step: OnboardingStep, state: OnboardingUiState): StepCopy =
 
         else -> StepCopy(
             title = "Nothing picked yet",
-            subtitle = "Go back one step and choose how Kickoff should fetch.",
+            subtitle = "Go back one step and choose how matchUP should fetch.",
         )
     }
 
@@ -113,7 +113,7 @@ internal fun copyFor(step: OnboardingStep, state: OnboardingUiState): StepCopy =
 
     OnboardingStep.READY -> StepCopy(
         title = "That's everything",
-        subtitle = "Here is what Kickoff will do from now on.",
+        subtitle = "Here is what matchUP will do from now on.",
     )
 }
 

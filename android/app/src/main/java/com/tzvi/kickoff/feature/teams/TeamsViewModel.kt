@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.IOException
+import java.time.Instant
 import javax.inject.Inject
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -53,34 +54,64 @@ class TeamsViewModel @Inject constructor(
         .flatMapLatest { query -> searchFlow(query) }
 
     /**
-     * Only a followed team's fixtures are in the cache, so this is a filter rather than a
-     * fetch. It is keyed on the open sheet so the query is not running behind a closed one.
+     * The open club's own results and fixtures, fetched for the club rather than filtered
+     * out of the cache.
+     *
+     * It used to read [FootballRepository.upcomingForFavourites], which meant a club you
+     * had only just searched for showed nothing at all and the sheet explained that by
+     * telling you to follow it first. Looking a club up is exactly when you have not
+     * decided to follow it, so the sheet now asks the source directly - and gets the
+     * played matches too, which that flow never had.
      */
-    private val sheetFixtures: Flow<List<Match>> = local
+    private val sheetFixtures: Flow<TeamMatches> = local
         .map { it.sheet?.team?.id }
         .distinctUntilChanged()
         .flatMapLatest { teamId ->
             if (teamId == null) {
-                flowOf(emptyList())
+                flowOf(TeamMatches())
             } else {
-                footballRepository.upcomingForFavourites.map { matches ->
-                    matches
-                        .filter { it.home.id == teamId || it.away.id == teamId }
-                        .sortedBy { it.kickoffAt }
-                        .take(SHEET_FIXTURE_LIMIT)
+                flow {
+                    emit(TeamMatches(loading = true))
+                    val outcome = runCatching { footballRepository.teamFixtures(teamId) }
+                    emit(
+                        outcome.fold(
+                            onSuccess = { matches ->
+                                val now = Instant.now()
+                                TeamMatches(
+                                    fixtures = matches
+                                        .filter { it.kickoffAt >= now || it.phase.isLive }
+                                        .sortedBy { it.kickoffAt }
+                                        .take(SHEET_FIXTURE_LIMIT),
+                                    results = matches
+                                        .filter { it.kickoffAt < now && !it.phase.isLive }
+                                        .sortedByDescending { it.kickoffAt }
+                                        .take(SHEET_FIXTURE_LIMIT),
+                                )
+                            },
+                            onFailure = { TeamMatches(failed = true) },
+                        ),
+                    )
                 }
             }
         }
 
     /** Fetched once per opened sheet; a closed sheet fetches nothing. */
-    private val sheetSquad: Flow<List<LineupPlayer>> = local
+    private val sheetSquad: Flow<SquadState> = local
         .map { it.sheet?.team?.id }
         .distinctUntilChanged()
         .flatMapLatest { teamId ->
             if (teamId == null) {
-                flowOf(emptyList())
+                flowOf(SquadState())
             } else {
-                flow { emit(footballRepository.squad(teamId)) }
+                flow {
+                    emit(SquadState(loading = true))
+                    emit(
+                        SquadState(
+                            players = runCatching { footballRepository.squad(teamId) }
+                                .getOrDefault(emptyList()),
+                        ),
+                    )
+                }
             }
         }
 
@@ -94,7 +125,7 @@ class TeamsViewModel @Inject constructor(
         local,
         search,
         sheetExtras,
-    ) { favourites, leagues, state, searchState, (fixtures, squad) ->
+    ) { favourites, leagues, state, searchState, (teamMatches, squad) ->
         val favouriteIds = favourites.mapTo(mutableSetOf()) { it.id }
         TeamsUiState(
             isLoading = false,
@@ -121,9 +152,12 @@ class TeamsViewModel @Inject constructor(
                     leagueId = target.leagueId,
                     leagueName = target.leagueName,
                     isFavourite = isFavourite,
-                    fixtures = fixtures,
-                    fixturesLoading = isFavourite && state.fixturesRefreshing,
-                    squad = squad,
+                    fixtures = teamMatches.fixtures,
+                    results = teamMatches.results,
+                    fixturesLoading = teamMatches.loading || state.fixturesRefreshing,
+                    fixturesFailed = teamMatches.failed,
+                    squad = squad.players,
+                    squadLoading = squad.loading,
                 )
             },
         )
@@ -321,6 +355,19 @@ class TeamsViewModel @Inject constructor(
     )
 
     private data class SheetTarget(val team: Team, val leagueId: Int?, val leagueName: String?)
+
+    /** One club's matches, split at now, with the fetch's own state alongside them. */
+    private data class TeamMatches(
+        val fixtures: List<Match> = emptyList(),
+        val results: List<Match> = emptyList(),
+        val loading: Boolean = false,
+        val failed: Boolean = false,
+    )
+
+    private data class SquadState(
+        val players: List<LineupPlayer> = emptyList(),
+        val loading: Boolean = false,
+    )
 
     private companion object {
         const val SUBSCRIPTION_TIMEOUT_MS = 5_000L

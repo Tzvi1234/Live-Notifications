@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "clean": "node -e \"import('node:fs').then(({ rmSync }) => rmSync('dist', { recursive: true, force: true }))\"",
-    "build": "npm run clean && tsc -p . && node -e \"import('node:fs').then(({ cpSync }) => cpSync('src/store/schema.sql', 'dist/store/schema.sql'))\"",
+    "build": "npm run clean && tsc -p . && node -e \"import('node:fs').then(({ cpSync }) => cpSync('src/store/migrations', 'dist/store/migrations', { recursive: true }))\"",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
@@ -20,6 +20,7 @@
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
+    "@clerk/express": "^2.1.64",
     "express": "^5.2.1",
     "firebase-admin": "^14.3.0",
     "pg": "^8.23.0"

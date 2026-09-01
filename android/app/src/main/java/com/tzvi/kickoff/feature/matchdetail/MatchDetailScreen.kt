@@ -272,6 +272,14 @@ private fun MatchTabContent(
         label = "match-tab",
     ) { tab ->
         when (tab) {
+            MatchDetailTab.PREVIEW -> MatchPreviewSection(
+                match = match,
+                prediction = state.prediction,
+                headToHead = state.headToHead,
+                isLoading = state.predictionLoading,
+                predictionsCovered = state.coverage?.predictions != false,
+                modifier = Modifier.padding(horizontal = ScreenPadding),
+            )
             MatchDetailTab.TIMELINE -> MatchTimeline(
                 entries = state.timeline,
                 match = match,
@@ -281,6 +289,7 @@ private fun MatchTabContent(
                 lineups = state.lineups,
                 match = match,
                 modifier = Modifier.padding(horizontal = ScreenPadding),
+                lineupsCovered = state.coverage?.lineups != false,
                 onPlayerTap = onPlayerTap,
             )
             MatchDetailTab.STATS -> MatchStatsSection(
@@ -338,7 +347,7 @@ private fun MatchUnavailable(state: MatchDetailUiState, onRetry: () -> Unit) {
         when {
             state.sourceMissing -> EmptyState(
                 title = "No data source",
-                body = "Kickoff has nowhere to fetch this match from. Add a backend URL " +
+                body = "matchUP has nowhere to fetch this match from. Add a backend URL " +
                     "or an API-Football key in Settings.",
                 icon = Icons.Outlined.CloudOff,
             )

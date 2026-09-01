@@ -407,7 +407,7 @@ private fun CatalogueFailureState(
         when (failure.kind) {
             CatalogueFailure.NO_SOURCE -> EmptyState(
                 title = "No data source yet",
-                body = "Kickoff cannot list $subject until it has an API-Football key or " +
+                body = "matchUP cannot list $subject until it has an API-Football key or " +
                     "the URL of a backend. That is the previous step.",
                 icon = Icons.Outlined.Key,
                 actionLabel = "Back to the source step",

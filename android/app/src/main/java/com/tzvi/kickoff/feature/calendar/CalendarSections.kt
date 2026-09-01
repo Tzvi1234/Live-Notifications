@@ -350,16 +350,16 @@ internal fun AgendaEmptyState(
 
         CalendarEmptyReason.PROVIDER_UNAVAILABLE -> EmptyState(
             title = "No calendar provider",
-            body = "Kickoff asked Android for the calendar database and got nothing back. " +
+            body = "matchUP asked Android for the calendar database and got nothing back. " +
                 "Some builds ship without one; installing a calendar app that syncs into " +
-                "the system provider gives Kickoff something to read.",
+                "the system provider gives matchUP something to read.",
             icon = Icons.Outlined.CloudOff,
             modifier = modifier,
         )
 
         CalendarEmptyReason.NO_CALENDARS -> EmptyState(
             title = "No calendars on this device",
-            body = "Kickoff can read your calendars, there just aren't any yet. Add or " +
+            body = "matchUP can read your calendars, there just aren't any yet. Add or " +
                 "sync one in your calendar app and it will show up here.",
             icon = Icons.Outlined.CalendarMonth,
             modifier = modifier,
@@ -376,7 +376,7 @@ internal fun AgendaEmptyState(
 
         CalendarEmptyReason.NONE_SELECTED -> EmptyState(
             title = "No calendars selected",
-            body = "Every calendar below is switched off for Kickoff. Turn one on and " +
+            body = "Every calendar below is switched off for matchUP. Turn one on and " +
                 "its events fill this agenda - and its live cards come back with it.",
             icon = Icons.Outlined.EventBusy,
             modifier = modifier,
@@ -406,14 +406,14 @@ internal fun CalendarPermissionGate(
     modifier: Modifier = Modifier,
 ) {
     EmptyState(
-        title = "Kickoff can't see your calendar",
+        title = "matchUP can't see your calendar",
         body = if (canRequestPermission) {
-            "Kickoff reads the events already on this device so it can raise a live card " +
+            "matchUP reads the events already on this device so it can raise a live card " +
                 "shortly before one starts, exactly as it does for a match. It only ever " +
                 "reads, it never writes to a calendar, and nothing it reads leaves the phone."
         } else {
             "Android stops offering the permission dialog after a second refusal, so " +
-                "calendar access can now only be turned on from Kickoff's own app settings. " +
+                "calendar access can now only be turned on from matchUP's own app settings. " +
                 "It stays read-only, and nothing it reads leaves the phone."
         },
         icon = Icons.Outlined.CalendarMonth,

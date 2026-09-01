@@ -3,7 +3,7 @@ package com.tzvi.kickoff.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * Kickoff brand palette.
+ * matchUP brand palette.
  *
  * Generated from the brand seed #00C853 ("pitch green") with the Material 3
  * `Content` scheme variant, which keeps the seed itself as `primaryContainer`

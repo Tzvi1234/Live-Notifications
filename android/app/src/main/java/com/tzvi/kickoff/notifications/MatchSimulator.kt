@@ -73,15 +73,25 @@ class MatchSimulator @Inject constructor(
         val assist: String? = null,
     )
 
+    /**
+     * The script covers every symbol the live card can draw - goal, penalty scored,
+     * penalty missed, yellow, red - on both sides, because the bar's marks and its
+     * tracker icon are otherwise only visible during a real match with the right things
+     * happening in it.
+     *
+     * No player repeats an incident type: the demo event key is (type, team, player),
+     * so a second Saka goal would dedupe against the first and never reach the card.
+     */
     private val script = listOf(
         Beat(9, MatchEventType.YELLOW_CARD, MatchSide.AWAY, "Cucurella"),
         Beat(18, MatchEventType.GOAL, MatchSide.HOME, "Saka", "Ødegaard"),
         Beat(31, MatchEventType.GOAL, MatchSide.AWAY, "Palmer", "Neto"),
         Beat(44, MatchEventType.YELLOW_CARD, MatchSide.HOME, "Rice"),
         Beat(52, MatchEventType.SUBSTITUTION, MatchSide.HOME, "Trossard", "Martinelli"),
-        Beat(58, MatchEventType.GOAL, MatchSide.HOME, "Havertz", "Rice"),
+        Beat(58, MatchEventType.PENALTY_GOAL, MatchSide.HOME, "Havertz"),
         Beat(71, MatchEventType.RED_CARD, MatchSide.AWAY, "Fofana"),
-        Beat(84, MatchEventType.GOAL, MatchSide.HOME, "Saka", "Timber"),
+        Beat(79, MatchEventType.PENALTY_MISSED, MatchSide.AWAY, "Jackson"),
+        Beat(84, MatchEventType.GOAL, MatchSide.HOME, "Martinelli", "Timber"),
     )
 
     fun start() {

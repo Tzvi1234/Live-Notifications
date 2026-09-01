@@ -80,6 +80,23 @@ interface MatchDao {
     @Query("SELECT * FROM matches WHERE phase IN (:livePhases) ORDER BY kickoffAt ASC")
     fun observeLive(livePhases: List<String>): Flow<List<MatchEntity>>
 
+    /**
+     * Every fixture for these teams inside a window, past included.
+     *
+     * [observeUpcomingForTeams] only ever looks forward, which is right for a "what is
+     * next" list and useless for a season's results. This one takes both ends so the
+     * matches screen can show a followed team's whole run of form.
+     */
+    @Query(
+        """
+        SELECT * FROM matches
+        WHERE (homeTeamId IN (:teamIds) OR awayTeamId IN (:teamIds))
+          AND kickoffAt BETWEEN :from AND :to
+        ORDER BY kickoffAt ASC
+        """
+    )
+    fun observeTimelineForTeams(teamIds: List<Int>, from: Long, to: Long): Flow<List<MatchEntity>>
+
     @Query(
         """
         SELECT * FROM matches
@@ -96,6 +113,24 @@ interface MatchDao {
     @Upsert
     suspend fun upsert(match: MatchEntity)
 
+    /**
+     * Prunes old fixtures, but keeps the followed teams' history.
+     *
+     * A flat cutoff over the whole table is right for the thousands of rows a date
+     * browser accumulates and wrong for the handful the user actually came to see: it
+     * silently ate their own teams' results the moment they scrolled back far enough.
+     */
+    @Query(
+        """
+        DELETE FROM matches
+        WHERE kickoffAt < :before
+          AND homeTeamId NOT IN (:keepTeamIds)
+          AND awayTeamId NOT IN (:keepTeamIds)
+        """
+    )
+    suspend fun deleteOlderThan(before: Long, keepTeamIds: List<Int>)
+
+    /** The hard floor: even a followed team's history stops somewhere. */
     @Query("DELETE FROM matches WHERE kickoffAt < :before")
     suspend fun deleteOlderThan(before: Long)
 

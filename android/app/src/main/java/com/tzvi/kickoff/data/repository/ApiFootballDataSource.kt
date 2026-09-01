@@ -3,6 +3,7 @@ package com.tzvi.kickoff.data.repository
 import com.tzvi.kickoff.core.model.League
 import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
+import com.tzvi.kickoff.core.model.MatchPrediction
 import com.tzvi.kickoff.core.model.PlayerMatchStats
 import com.tzvi.kickoff.core.model.PlayerProfile
 import com.tzvi.kickoff.core.model.Team
@@ -122,6 +123,41 @@ class ApiFootballDataSource @Inject constructor(
         }.map { it.await() }.flatten().distinctBy { it.id }.sortedBy { it.kickoffAt }
     }
 
+    /**
+     * One team's recent results and next fixtures.
+     *
+     * `last` and `next` are the provider's own windows and are capped at 99 each, which
+     * is why this takes counts rather than dates: asking for "the last ten" is one cheap
+     * request, while asking for a date range needs a season and returns the whole lot.
+     */
+    override suspend fun teamFixtures(teamId: Int, last: Int, next: Int): List<Match> =
+        coroutineScope {
+            val pastDeferred = async {
+                if (last <= 0) emptyList() else runCatching {
+                    service.fixtures(team = teamId, last = last.coerceAtMost(PROVIDER_WINDOW_MAX))
+                        .requireOk().response.map(ApiFootballMapper::match)
+                }.getOrDefault(emptyList())
+            }
+            val nextDeferred = async {
+                if (next <= 0) emptyList() else runCatching {
+                    service.fixtures(team = teamId, next = next.coerceAtMost(PROVIDER_WINDOW_MAX))
+                        .requireOk().response.map(ApiFootballMapper::match)
+                }.getOrDefault(emptyList())
+            }
+            (pastDeferred.await() + nextDeferred.await())
+                .distinctBy { it.id }
+                .sortedBy { it.kickoffAt }
+        }
+
+    override suspend fun predictions(matchId: Long): MatchPrediction? =
+        service.predictions(matchId).requireOk().response
+            .firstOrNull()
+            ?.let(ApiFootballMapper::prediction)
+
+    override suspend fun headToHead(homeTeamId: Int, awayTeamId: Int, last: Int): List<Match> =
+        service.headToHead("$homeTeamId-$awayTeamId", last.coerceAtMost(PROVIDER_WINDOW_MAX))
+            .requireOk().response.map(ApiFootballMapper::match)
+
     override suspend fun liveFixtures(teamIds: List<Int>): List<Match> {
         // One request covers every in-play match worldwide; filtering is done locally
         // so that following ten teams still costs exactly one call.
@@ -167,26 +203,61 @@ class ApiFootballDataSource @Inject constructor(
         const val FREE_PLAN_LAST_SEASON = 2023
 
         val DATE: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE
-        const val MAX_TEAMS_PER_REFRESH = 8
+        /**
+         * How many followed teams a fixture refresh will fan out over.
+         *
+         * One request per team, so this is the single most expensive thing the app does.
+         * Twenty rather than eight because the plan behind the key now has the headroom;
+         * it is still a cap, because a user following fifty clubs would otherwise spend a
+         * free day's allowance on one pull.
+         */
+        const val MAX_TEAMS_PER_REFRESH = 20
 
-        /** Competitions offered first during onboarding. */
+        /** `last`/`next` are two-digit provider params. */
+        const val PROVIDER_WINDOW_MAX = 99
+
+        /**
+         * Competitions offered first during onboarding.
+         *
+         * Deliberately a set of ids rather than "everything the provider has": /leagues
+         * returns over twelve hundred competitions, and an onboarding list that long is
+         * not a choice, it is a wall. The English and Israeli pyramids are carried down
+         * to the domestic cups because those are the ones actually followed here.
+         */
         val FEATURED_LEAGUE_IDS = setOf(
+            // England, top to bottom, plus the three domestic cups.
             39,   // Premier League
+            40,   // Championship
+            41,   // League One
+            42,   // League Two
+            45,   // FA Cup
+            48,   // League Cup (Carabao)
+            528,  // Community Shield
+            // Israel.
+            383,  // Ligat ha'Al
+            382,  // Liga Leumit
+            384,  // State Cup
+            385,  // Toto Cup Ligat Al
+            // The rest of the big five, and the leagues people follow a player into.
             140,  // La Liga
             135,  // Serie A
             78,   // Bundesliga
             61,   // Ligue 1
-            2,    // UEFA Champions League
-            3,    // UEFA Europa League
             88,   // Eredivisie
             94,   // Primeira Liga
             203,  // Süper Lig
-            383,  // Ligat ha'Al (Israel)
             253,  // Major League Soccer
             71,   // Brasileirão Série A
             128,  // Liga Profesional (Argentina)
+            // Europe and international.
+            2,    // UEFA Champions League
+            3,    // UEFA Europa League
+            848,  // UEFA Europa Conference League
+            531,  // UEFA Super Cup
+            5,    // UEFA Nations League
             1,    // World Cup
             4,    // Euro Championship
+            15,   // FIFA Club World Cup
         )
     }
 

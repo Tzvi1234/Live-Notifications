@@ -1,6 +1,12 @@
 package com.tzvi.kickoff.data.remote
 
 import com.tzvi.kickoff.core.model.League
+import com.tzvi.kickoff.data.remote.dto.PredictionTeamDto
+import com.tzvi.kickoff.data.remote.dto.PredictionResponse
+import com.tzvi.kickoff.core.model.TeamForm
+import com.tzvi.kickoff.core.model.MatchPrediction
+import com.tzvi.kickoff.data.remote.dto.CoverageDto
+import com.tzvi.kickoff.core.model.LeagueCoverage
 import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
@@ -51,18 +57,78 @@ object ApiFootballMapper {
 
     fun league(dto: LeagueCatalogueResponse): League? {
         val id = dto.league?.id ?: return null
-        val season = dto.seasons.firstOrNull { it.current }?.year
-            ?: dto.seasons.maxOfOrNull { it.year }
-            ?: currentSeason()
+        val season = dto.seasons.firstOrNull { it.current }
+            ?: dto.seasons.maxByOrNull { it.year }
         return League(
             id = id,
             name = dto.league.name ?: "League $id",
             countryName = dto.country?.name,
             logoUrl = dto.league.logo ?: ApiFootballService.leagueLogoUrl(id),
-            season = season,
+            season = season?.year ?: currentSeason(),
             type = dto.league.type,
+            coverage = coverage(season?.coverage),
         )
     }
+
+    /**
+     * Absent coverage means "we were not told", not "nothing is covered".
+     *
+     * The provider omits the block on some responses, and a competition that has not
+     * kicked off yet legitimately reports everything false. Treating either as "no
+     * line-ups here" would make the app announce a limitation that does not exist, so the
+     * optimistic default from [LeagueCoverage] stands until the API says otherwise.
+     */
+    private fun coverage(dto: CoverageDto?): LeagueCoverage {
+        if (dto == null) return LeagueCoverage()
+        val fixtures = dto.fixtures
+        return LeagueCoverage(
+            lineups = fixtures?.lineups ?: true,
+            events = fixtures?.events ?: true,
+            fixtureStatistics = fixtures?.statisticsFixtures ?: true,
+            playerStatistics = fixtures?.statisticsPlayers ?: true,
+            standings = dto.standings,
+            injuries = dto.injuries,
+            predictions = dto.predictions,
+        )
+    }
+
+    fun prediction(dto: PredictionResponse): MatchPrediction? {
+        val block = dto.predictions ?: return null
+        return MatchPrediction(
+            homePercent = block.percent?.home.toPercent(),
+            drawPercent = block.percent?.draw.toPercent(),
+            awayPercent = block.percent?.away.toPercent(),
+            advice = block.advice?.takeIf { it.isNotBlank() },
+            winnerName = block.winner?.name,
+            winnerComment = block.winner?.comment,
+            goalsLine = block.underOver?.takeIf { it.isNotBlank() },
+            homeForm = dto.teams?.home.toForm(),
+            awayForm = dto.teams?.away.toForm(),
+        ).takeIf { it.hasNumbers }
+    }
+
+    /** The provider sends "45%", not 45. */
+    private fun String?.toPercent(): Int? =
+        this?.trim()?.removeSuffix("%")?.trim()?.toIntOrNull()
+
+    private fun PredictionTeamDto?.toForm(): TeamForm? {
+        if (this == null) return null
+        val form = TeamForm(
+            // The season-long string is the useful one; last_5's is a five-game slice of
+            // the same thing and is dropped rather than shown twice.
+            recentResults = league?.form?.takeLast(RECENT_FORM_GAMES)?.takeIf { it.isNotBlank() },
+            attackRating = lastFive?.att,
+            defenceRating = lastFive?.defence,
+            goalsForAverage = league?.goals?.scored?.average?.total,
+            goalsAgainstAverage = league?.goals?.against?.average?.total,
+            cleanSheets = league?.cleanSheet?.total,
+        )
+        return form.takeIf {
+            it.recentResults != null || it.attackRating != null || it.goalsForAverage != null
+        }
+    }
+
+    private const val RECENT_FORM_GAMES = 6
 
     fun match(dto: FixtureResponse): Match {
         val status = dto.fixture.status

@@ -100,7 +100,7 @@ class TodayViewModel @Inject constructor(
     }
 
     val uiState: StateFlow<TodayUiState> = combine(
-        footballRepository.liveMatches,
+        footballRepository.liveForFavourites,
         footballRepository.upcomingForFavourites,
         footballRepository.favouriteTeams,
         calendarState,

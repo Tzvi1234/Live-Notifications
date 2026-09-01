@@ -5,6 +5,7 @@ import com.tzvi.kickoff.core.model.LineupPlayer
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
 import com.tzvi.kickoff.core.model.MatchLineups
+import com.tzvi.kickoff.core.model.MatchPrediction
 import com.tzvi.kickoff.core.model.MatchStatistics
 import com.tzvi.kickoff.core.model.PlayerMatchStats
 import com.tzvi.kickoff.core.model.PlayerProfile
@@ -40,6 +41,26 @@ interface FootballDataSource {
      * same five fields with the pitch coordinates left null. Empty = not supported here.
      */
     suspend fun squad(teamId: Int): List<LineupPlayer> = emptyList()
+
+    /**
+     * One club's recent results and next fixtures, whether or not it is followed.
+     *
+     * Separate from [fixturesForTeams] because that one exists to fill the local window
+     * for the teams the user tracks; this answers a browsing question about a club they
+     * have only just looked up, and must not write anything or assume a season.
+     */
+    suspend fun teamFixtures(teamId: Int, last: Int, next: Int): List<Match> = emptyList()
+
+    /**
+     * The provider's pre-match read: win percentages, form, a one-line call.
+     *
+     * Null when the source cannot supply it, which includes every competition whose
+     * [League.coverage] has predictions off.
+     */
+    suspend fun predictions(matchId: Long): MatchPrediction? = null
+
+    /** Past meetings between two clubs, newest first. Empty = not supported here. */
+    suspend fun headToHead(homeTeamId: Int, awayTeamId: Int, last: Int): List<Match> = emptyList()
 }
 
 data class MatchDetail(
@@ -52,7 +73,7 @@ data class MatchDetail(
 
 /** Raised when no data source is configured at all - neither backend nor API key. */
 class NoFootballSourceException : IllegalStateException(
-    "No football data source configured. Point the app at a Kickoff backend, " +
+    "No football data source configured. Point the app at a matchUP backend, " +
         "or paste an API-Football key in Settings.",
 )
 

@@ -268,7 +268,7 @@ private fun CalendarBody(
             Column(Modifier.padding(top = SectionGap)) {
                 SectionHeader(title = "Calendars")
                 Text(
-                    text = "Which calendars Kickoff reads - both for this agenda and for " +
+                    text = "Which calendars matchUP reads - both for this agenda and for " +
                         "the live card.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

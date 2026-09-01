@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Kickoff</string>
+    <string name="app_name">matchUP</string>
 
     <!-- Notification channels -->
     <string name="channel_live_match">Live matches</string>

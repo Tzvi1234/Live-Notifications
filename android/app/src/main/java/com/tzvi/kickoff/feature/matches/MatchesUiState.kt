@@ -3,6 +3,41 @@ package com.tzvi.kickoff.feature.matches
 import com.tzvi.kickoff.core.model.Match
 import java.time.LocalDate
 
+/**
+ * The two questions this screen answers.
+ *
+ * They used to be one: a date browser with a "my teams" filter, which could only ever
+ * show the followed teams on the day you happened to be standing on. Asking "how has my
+ * team been going" meant tapping backwards through a week strip one day at a time.
+ */
+enum class MatchesTab(val label: String) {
+    MY_TEAMS("My teams"),
+    BY_DATE("By date"),
+}
+
+/** Which way the followed teams' fixtures are cut. */
+enum class TimelineFilter(val label: String) {
+    UPCOMING("Upcoming"),
+    ALL("All"),
+    RESULTS("History"),
+}
+
+/** One run of a followed team's fixtures under a date heading. */
+data class TimelineSection(
+    val key: String,
+    val header: String,
+    val matches: List<Match>,
+)
+
+/** Why the followed teams' timeline came back empty. */
+enum class TimelineEmptyReason {
+    NO_SOURCE,
+    NO_FOLLOWED_TEAMS,
+    NOTHING_UPCOMING,
+    NO_HISTORY,
+    NOTHING_AT_ALL,
+}
+
 /** The three cuts of a day's schedule the segmented control offers. */
 enum class MatchFilter(val label: String) {
     ALL("All"),
@@ -44,6 +79,13 @@ enum class MatchesEmptyReason {
 }
 
 data class MatchesUiState(
+    val tab: MatchesTab = MatchesTab.MY_TEAMS,
+    val timelineFilter: TimelineFilter = TimelineFilter.UPCOMING,
+    val timeline: List<TimelineSection> = emptyList(),
+    val timelineLoading: Boolean = true,
+    val timelineRefreshing: Boolean = false,
+    /** Fixtures held for the followed teams before [timelineFilter] is applied. */
+    val timelineTotal: Int = 0,
     val days: List<DayChip> = emptyList(),
     val selectedDate: LocalDate = LocalDate.now(),
     val isOnToday: Boolean = true,
@@ -80,4 +122,14 @@ data class MatchesUiState(
 
     /** A failed refresh that still has cached fixtures underneath it gets a banner, not a page. */
     val staleMessage: String? get() = errorMessage?.takeIf { groups.isNotEmpty() }
+
+    val timelineEmptyReason: TimelineEmptyReason?
+        get() = when {
+            timeline.isNotEmpty() -> null
+            sourceMissing -> TimelineEmptyReason.NO_SOURCE
+            followedTeamCount == 0 -> TimelineEmptyReason.NO_FOLLOWED_TEAMS
+            timelineTotal == 0 -> TimelineEmptyReason.NOTHING_AT_ALL
+            timelineFilter == TimelineFilter.UPCOMING -> TimelineEmptyReason.NOTHING_UPCOMING
+            else -> TimelineEmptyReason.NO_HISTORY
+        }
 }

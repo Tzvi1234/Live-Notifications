@@ -9,9 +9,16 @@
 import {
   DEFAULT_SUBSCRIPTION_PREFERENCES,
   type DeviceRecord,
+  type GroupMemberRecord,
+  type GroupMessageRecord,
+  type GroupRecord,
+  type LeaderboardRow,
+  type PredictionRecord,
+  type ScoreJson,
   type SubscriptionPreferences,
   type SubscriptionRecord,
   type TrackedMatchState,
+  type UserRecord,
 } from '../types.js';
 import type { Logger } from '../logger.js';
 
@@ -99,7 +106,132 @@ export interface Store {
   acquireLeaderLock(ttlMs: number): Promise<boolean>;
   releaseLeaderLock(): Promise<void>;
 
+  /* -- Accounts ---------------------------------------------------------- */
+
+  /**
+   * Called by `requireUser` on every authenticated request, so it is one statement and it
+   * also serves as the "seen at" touch. `profile` only ever *fills in* a missing display
+   * name or avatar: the values a session token carries are Clerk's, and overwriting on
+   * every request would undo `PATCH /v1/me` on the user's very next call.
+   */
+  upsertUser(clerkUserId: string, profile?: UserProfileSeed | undefined): Promise<UserRecord>;
+  getUser(clerkUserId: string): Promise<UserRecord | undefined>;
+  /** Only the keys present are written; returns undefined for an unknown user. */
+  updateUserProfile(clerkUserId: string, patch: UserProfilePatch): Promise<UserRecord | undefined>;
+
+  /* -- Groups ------------------------------------------------------------ */
+
+  createGroup(input: CreateGroupInput): Promise<GroupRecord>;
+  getGroup(groupId: number): Promise<GroupRecord | undefined>;
+  getGroupByInviteCode(inviteCode: string): Promise<GroupRecord | undefined>;
+  listGroupsForUser(userId: string): Promise<GroupRecord[]>;
+  /** Owner-only at the route; returns undefined for an unknown group. */
+  updateGroup(groupId: number, patch: UpdateGroupPatch): Promise<GroupRecord | undefined>;
+  deleteGroup(groupId: number): Promise<boolean>;
+  listGroupMembers(groupId: number): Promise<GroupMemberRecord[]>;
+  /**
+   * The gate every group route runs first. It is a membership test rather than a fetch
+   * because a non-member must not be able to tell an existing group from an absent one.
+   */
+  isGroupMember(groupId: number, userId: string): Promise<boolean>;
+  /** False when the user was already a member, so joining twice is not an error. */
+  addGroupMember(groupId: number, userId: string): Promise<boolean>;
+  removeGroupMember(groupId: number, userId: string): Promise<boolean>;
+
+  /* -- Predictions ------------------------------------------------------- */
+
+  /**
+   * Returns undefined when the fixture has already kicked off — the write is refused by the
+   * `kickoff_at > now()` clause itself, not by a check above it, so a handler that forgot
+   * the 409 still cannot let a late prediction through.
+   */
+  putPrediction(input: PutPredictionInput): Promise<PredictionRecord | undefined>;
+  /**
+   * The caller's own rows plus, for fixtures that have kicked off, everyone else's. The
+   * `kickoff_at <= now()` half is part of the query and not a filter applied to its result:
+   * a prediction that must stay private is never read out of the table at all.
+   */
+  listPredictions(input: ListPredictionsInput): Promise<PredictionRecord[]>;
+  leaderboard(groupId: number): Promise<LeaderboardRow[]>;
+
+  /**
+   * Fixture ids with unscored predictions whose kick-off is between `notBefore` and
+   * `notAfter` — the poller's settlement queue. The lower bound is what stops a fixture the
+   * provider never resolves (cancelled, or an id withdrawn) from costing one request per
+   * tick forever; those predictions simply stay unscored and count zero.
+   */
+  fixturesAwaitingSettlement(
+    notBefore: Date,
+    notAfter: Date,
+    limit: number,
+  ): Promise<number[]>;
+  /** Scores every unsettled prediction for the fixture; returns how many rows it scored. */
+  settleFixture(fixtureId: number, finalScore: ScoreJson): Promise<number>;
+  /**
+   * Moves the kick-off snapshot of a postponed fixture's unsettled predictions. The lock and
+   * the visibility rule both read that column, so a rescheduled match re-opens for edits and
+   * leaves the settlement queue until its new date.
+   */
+  rescheduleFixture(fixtureId: number, kickoffAt: Date): Promise<number>;
+
+  /* -- Chat -------------------------------------------------------------- */
+
+  postGroupMessage(input: PostGroupMessageInput): Promise<GroupMessageRecord>;
+  listGroupMessages(groupId: number, since: Date): Promise<GroupMessageRecord[]>;
+  /** Backs the per-user post rate limit. */
+  countRecentGroupMessages(groupId: number, userId: string, since: Date): Promise<number>;
+
   close(): Promise<void>;
+}
+
+export interface UserProfileSeed {
+  displayName?: string | undefined;
+  avatarUrl?: string | undefined;
+}
+
+/** `null` clears the field; an absent key leaves it alone. */
+export interface UserProfilePatch {
+  displayName?: string | null | undefined;
+  avatarUrl?: string | null | undefined;
+}
+
+export interface CreateGroupInput {
+  name: string;
+  ownerId: string;
+  inviteCode: string;
+  leagueIds: number[];
+  teamIds: number[];
+}
+
+export interface UpdateGroupPatch {
+  name?: string | undefined;
+  leagueIds?: number[] | undefined;
+  teamIds?: number[] | undefined;
+}
+
+export interface PutPredictionInput {
+  groupId: number;
+  fixtureId: number;
+  userId: string;
+  home: number;
+  away: number;
+  /** Read from the provider fixture at write time; see the column comment in 002. */
+  kickoffAt: Date;
+  now: Date;
+}
+
+export interface ListPredictionsInput {
+  groupId: number;
+  fixtureIds: number[];
+  /** The only user whose unlocked predictions are readable. */
+  viewerId: string;
+  now: Date;
+}
+
+export interface PostGroupMessageInput {
+  groupId: number;
+  userId: string;
+  text: string;
 }
 
 export interface StoreConfig {

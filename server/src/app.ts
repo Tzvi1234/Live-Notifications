@@ -18,12 +18,17 @@ import express, {
   type Response,
 } from 'express';
 
+import { createClerkAuth } from './auth/clerk.js';
 import type { ApiDeps } from './routes/deps.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createCatalogueRouter } from './routes/catalogue.js';
+import { createConfigRouter } from './routes/config.js';
 import { createDevicesRouter } from './routes/devices.js';
 import { createFixturesRouter } from './routes/fixtures.js';
+import { createGroupsRouter } from './routes/groups.js';
 import { createHealthRouter } from './routes/health.js';
+import { createMeRouter } from './routes/me.js';
+import { createPlayersRouter } from './routes/players.js';
 import { createSubscriptionsRouter } from './routes/subscriptions.js';
 import { HttpError } from './routes/validation.js';
 import { ProviderError, QuotaExhaustedError } from './provider/apiFootball.js';
@@ -60,12 +65,21 @@ export function createApp(deps: ApiDeps): Express {
     res.json({ service: 'kickoff', health: '/v1/health' });
   });
 
+  // Built once, here rather than in index.ts, so the routers that need it are handed the
+  // same instance and an unconfigured Clerk is one warning at startup instead of one per
+  // route. `auth.requireUser` answers 503 when there are no credentials; see auth/clerk.ts.
+  const auth = createClerkAuth({ config: deps.config, store: deps.store, logger: deps.logger });
+
   const v1 = express.Router();
   v1.use(createHealthRouter(deps));
+  v1.use(createConfigRouter(deps, auth));
   v1.use(createCatalogueRouter(deps));
   v1.use(createFixturesRouter(deps));
+  v1.use(createPlayersRouter(deps));
   v1.use(createDevicesRouter(deps));
   v1.use(createSubscriptionsRouter(deps));
+  v1.use(createMeRouter(deps, auth));
+  v1.use(createGroupsRouter(deps, auth));
   v1.use(createAdminRouter(deps));
   app.use('/v1', v1);
 
@@ -122,7 +136,10 @@ function corsForReads(): RequestHandler {
   return (req: Request, res: Response, next: NextFunction) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Request-Id');
+    // Authorization is allowed through so that a browser can read the authenticated GETs
+    // (/v1/me, a group's leaderboard). The *methods* are unchanged: the writes still carry
+    // credentials the app alone should be sending, so a browser is refused at the preflight.
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Request-Id');
     res.setHeader('Access-Control-Max-Age', '86400');
     if (req.method === 'OPTIONS') {
       res.status(204).end();

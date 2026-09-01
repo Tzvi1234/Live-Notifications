@@ -203,7 +203,7 @@ private fun TeamsList(
                 EmptyState(
                     title = "No teams yet",
                     body = "Search for a club at the top, or open a competition below, " +
-                        "and tap its star. Kickoff only tracks matches for the teams " +
+                        "and tap its star. matchUP only tracks matches for the teams " +
                         "you follow.",
                     icon = Icons.Outlined.Groups,
                 )
@@ -236,7 +236,7 @@ private fun TeamsList(
             item(key = "browse-empty") {
                 EmptyState(
                     title = "No competitions saved",
-                    body = "The competition list is written the first time Kickoff " +
+                    body = "The competition list is written the first time matchUP " +
                         "reaches its data source. Pull it in now, or search for a club " +
                         "by name instead.",
                     icon = Icons.Outlined.SportsSoccer,

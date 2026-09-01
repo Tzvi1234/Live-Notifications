@@ -269,7 +269,7 @@ class SettingsViewModel @Inject constructor(
             // A refused post and a post throttled behind the previous one are
             // indistinguishable from here, so the copy has to cover both.
             null ->
-                "Nothing was posted. Check that notifications are allowed for Kickoff, " +
+                "Nothing was posted. Check that notifications are allowed for matchUP, " +
                     "and give the last card a couple of seconds before asking again."
         }
 

@@ -33,7 +33,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * The Kickoff mark, drawn rather than loaded, so every part of it can move.
+ * The matchUP mark, drawn rather than loaded, so every part of it can move.
  *
  * Three elements, and they are the same three everywhere the mark appears - launcher
  * icon, splash, onboarding, loader, settings: a dark green ring open at the top right, a
@@ -99,12 +99,17 @@ fun KickoffLogo(
 }
 
 /**
- * The mark arriving, in three beats.
+ * The mark arriving, in four beats.
  *
- * The football drops in from above and bounces to rest; the ring then draws itself from
- * the top edge of the opening round to the other side; and the moment it arrives, the
- * loose ball pops in over the gap. Squash on each bounce is what sells the weight -
- * a ball that lands without deforming reads as a sticker, not a ball.
+ * The ball is struck from off the bottom-left corner and lobs across the frame, spinning
+ * as it travels; it drops to the middle and bounces to rest; the ring then draws itself
+ * from the top edge of the opening all the way round; and the loose ball pops in over the
+ * gap last. Squash on each bounce is what sells the weight - a ball that lands without
+ * deforming reads as a sticker, not a ball.
+ *
+ * The whole thing runs over three seconds, which is long for an animation and deliberate:
+ * it plays once, on the first screen anyone ever sees, and it is the only chance the mark
+ * gets to explain what it is. Every later appearance is the static [KickoffLogo].
  */
 @Composable
 fun AnimatedKickoffLogo(
@@ -112,28 +117,51 @@ fun AnimatedKickoffLogo(
     size: Dp = 96.dp,
     onFinished: () -> Unit = {},
 ) {
+    val flight = remember { Animatable(0f) }
     val drop = remember { Animatable(0f) }
     val ring = remember { Animatable(0f) }
     val pop = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
-        // Slower than feels necessary, on purpose: this plays once, on the first screen
-        // anyone ever sees, and it is the only place the mark gets to explain itself.
-        drop.animateTo(1f, tween(durationMillis = 900, easing = BounceOutEasing))
-        ring.animateTo(1f, tween(durationMillis = 1_000, easing = ArcEasing))
-        pop.animateTo(1f, tween(durationMillis = 420, easing = OvershootEasing))
+        flight.animateTo(1f, tween(durationMillis = 760, easing = LaunchEasing))
+        drop.animateTo(1f, tween(durationMillis = 880, easing = BounceOutEasing))
+        ring.animateTo(1f, tween(durationMillis = 1_180, easing = ArcEasing))
+        pop.animateTo(1f, tween(durationMillis = 480, easing = OvershootEasing))
         onFinished()
     }
 
     Canvas(modifier = modifier.size(size)) {
         val dim = this.size.minDimension
+        // Both beats draw the ball, so the flight yields the moment the bounce starts -
+        // otherwise the frame after the handover has two of them stacked.
+        if (flight.value > 0f && drop.value == 0f) {
+            val t = flight.value
+            // Struck from off-frame and lobbed: the parabola term lifts the middle of the
+            // path so it arcs over rather than sliding across in a straight line.
+            val x = (1f - t) * -FLIGHT_REACH * dim
+            val lob = 4f * t * (1f - t) * FLIGHT_ARC * dim
+            val y = (FLIGHT_START_Y + (BOUNCE_HEIGHT - FLIGHT_START_Y) * t) * dim - lob
+            // It hands over to the bounce still turning, and the bounce takes that last
+            // rotation to zero - so the spin decays across the two beats rather than
+            // stopping dead at the seam between them.
+            val spin = -((1f - t) * FLIGHT_SPIN_DEG + SETTLE_SPIN_DEG)
+            translate(left = x, top = y) {
+                rotate(degrees = spin, pivot = center) {
+                    drawCentreBall(scale = 1f)
+                }
+            }
+        }
         if (drop.value > 0f) {
-            // Falls from one radius above; squash tracks how recently it hit the floor.
-            val y = (1f - drop.value) * -dim * 0.5f
+            // Falls the last half-radius; squash tracks how recently it hit the floor.
+            val y = (1f - drop.value) * BOUNCE_HEIGHT * dim
             val squash = 1f - 0.22f * bounceImpact(drop.value)
             translate(top = y) {
                 scale(scaleX = 2f - squash, scaleY = squash, pivot = center) {
-                    drawCentreBall(scale = 1f)
+                    // A last slow half-turn while it settles, so the ball never freezes
+                    // between one beat and the next.
+                    rotate(degrees = -(1f - drop.value) * SETTLE_SPIN_DEG, pivot = center) {
+                        drawCentreBall(scale = 1f)
+                    }
                 }
             }
         }
@@ -141,6 +169,16 @@ fun AnimatedKickoffLogo(
         if (pop.value > 0f) drawSatellite(scale = pop.value)
     }
 }
+
+/** How far off-frame the ball is struck from, and how high the lob carries it. */
+private const val FLIGHT_REACH = 1.15f
+private const val FLIGHT_ARC = 0.55f
+private const val FLIGHT_START_Y = 0.85f
+private const val FLIGHT_SPIN_DEG = 900f
+
+/** Where the flight hands over to the bounce: half a radius above the resting point. */
+private const val BOUNCE_HEIGHT = -0.5f
+private const val SETTLE_SPIN_DEG = 140f
 
 /**
  * The loading state: the same football turning inside the same green ring.
@@ -327,6 +365,11 @@ private fun bounceImpact(fraction: Float): Float {
     val value = BounceOutEasing.transform(fraction)
     // Near 1f means near the floor; squash spikes at the touches and dies by the end.
     return ((value - 0.9f) / 0.1f).coerceIn(0f, 1f) * (1f - fraction) * abs(1f - fraction * 0.4f)
+}
+
+/** A struck ball: all its speed at the start, coasting as it comes down. */
+val LaunchEasing = Easing { fraction ->
+    1f - (1f - fraction) * (1f - fraction)
 }
 
 /** Fast out, gentle landing - the ring being drawn by a confident hand. */

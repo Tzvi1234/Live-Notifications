@@ -171,31 +171,56 @@ internal fun TeamSheetBody(
         Spacer(Modifier.height(18.dp))
         FavouriteButton(isFavourite = state.isFavourite, onClick = onToggleFavourite)
 
-        if (state.squad.isNotEmpty()) {
-            Spacer(Modifier.height(6.dp))
-            SectionHeader(title = "Squad")
-            SquadGrid(players = state.squad, onPlayerTap = onPlayerTap)
-            Spacer(Modifier.height(10.dp))
+        when {
+            state.squad.isNotEmpty() -> {
+                Spacer(Modifier.height(6.dp))
+                SectionHeader(title = "Squad")
+                SquadGrid(players = state.squad, onPlayerTap = onPlayerTap)
+                Spacer(Modifier.height(10.dp))
+            }
+
+            state.squadLoading -> {
+                Spacer(Modifier.height(6.dp))
+                SectionHeader(title = "Squad")
+                InlineLoader("Pulling in the squad")
+                Spacer(Modifier.height(10.dp))
+            }
         }
 
         Spacer(Modifier.height(6.dp))
         SectionHeader(title = "Next fixtures")
         FixtureBlock(
             state = state,
-            onToggleFavourite = onToggleFavourite,
+            matches = state.fixtures,
+            emptyTitle = "Nothing scheduled",
+            emptyBody = "${state.team.name} has no fixture on the books yet.",
             onOpenMatch = onOpenMatch,
         )
+
+        if (state.results.isNotEmpty() || state.fixturesLoading) {
+            Spacer(Modifier.height(10.dp))
+            SectionHeader(title = "Recent results")
+            FixtureBlock(
+                state = state,
+                matches = state.results,
+                emptyTitle = "No results yet",
+                emptyBody = "${state.team.name} has not played a match the source knows about.",
+                onOpenMatch = onOpenMatch,
+            )
+        }
     }
 }
 
 @Composable
 private fun FixtureBlock(
     state: TeamSheetState,
-    onToggleFavourite: () -> Unit,
+    matches: List<Match>,
+    emptyTitle: String,
+    emptyBody: String,
     onOpenMatch: (Long) -> Unit,
 ) {
     when {
-        state.fixtures.isNotEmpty() -> state.fixtures.forEach { match ->
+        matches.isNotEmpty() -> matches.forEach { match ->
             FixtureRow(
                 match = match,
                 teamId = state.team.id,
@@ -205,22 +230,15 @@ private fun FixtureBlock(
 
         state.fixturesLoading -> InlineLoader("Pulling in fixtures")
 
-        // Fixtures are only cached for followed teams, so an unfollowed club has an
-        // empty list for a reason the user can act on rather than a failure.
-        !state.isFavourite -> EmptyState(
-            title = "Fixtures follow the star",
-            body = "Kickoff only pulls fixtures for teams you follow. Add " +
-                "${state.team.name} and their next matches show up here, on Today, " +
-                "and as live cards.",
+        state.fixturesFailed -> EmptyState(
+            title = "Couldn't reach the source",
+            body = "${state.team.name}'s matches did not come back this time.",
             icon = Icons.Outlined.SportsSoccer,
-            actionLabel = "Add to my teams",
-            onAction = onToggleFavourite,
         )
 
         else -> EmptyState(
-            title = "Nothing scheduled",
-            body = "${state.team.name} has no fixture in the next two weeks, which is " +
-                "as far ahead as Kickoff keeps them.",
+            title = emptyTitle,
+            body = emptyBody,
             icon = Icons.Outlined.SportsSoccer,
         )
     }

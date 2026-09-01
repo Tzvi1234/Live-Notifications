@@ -1,6 +1,10 @@
--- Kickoff backend schema. Applied on every boot by src/store/postgres.ts, so every
--- statement must be idempotent (IF NOT EXISTS) and safe to run against a live database
--- while the previous instance is still serving during a Render deploy.
+-- Migration 001: the schema this service shipped with.
+--
+-- This file was `src/store/schema.sql`, replayed on every boot before the migration runner
+-- existed. It is folded in here unchanged so that a database created by that older build is
+-- already in this state: every statement is IF NOT EXISTS, so applying 001 to it is a no-op
+-- that only writes the schema_migrations row. Later migrations are NOT written this way —
+-- they run exactly once and may alter what 001 created.
 
 -- A device is identified by its FCM registration token, not by device_id: the token is
 -- what FCM accepts, what comes back as unregistered when the app is uninstalled, and the

@@ -75,7 +75,7 @@ internal fun WelcomePage(
         AnimatedKickoffLogo(size = 148.dp)
         Spacer(Modifier.height(30.dp))
         Text(
-            text = "Kickoff",
+            text = "matchUP",
             style = MaterialTheme.typography.displaySmall,
             color = MaterialTheme.colorScheme.onSurface,
         )

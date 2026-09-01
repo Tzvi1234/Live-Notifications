@@ -195,7 +195,7 @@ internal fun SettingsContent(
             // A plain scrolling column rather than a lazy list: the two text fields must
             // keep their focus and their contents when the group scrolls out of view.
             // One card open at a time. Seven sections expanded at once is what made this
-            // screen a wall; an accordion keeps the whole list of what Kickoff can do on
+            // screen a wall; an accordion keeps the whole list of what matchUP can do on
             // one screenful, and opens only the thing you came for.
             else -> Column(
                 modifier = Modifier
@@ -334,7 +334,7 @@ private fun previewState(
         apiKeyStored = true,
         backendUrlInput = "https://kickoff.onrender.com",
         backendUrlStored = true,
-        activeSourceName = "Kickoff backend",
+        activeSourceName = "matchUP backend",
     ),
 ) = SettingsUiState(
     isLoading = isLoading,

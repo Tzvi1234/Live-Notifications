@@ -47,7 +47,7 @@ class SourceProbes @Inject constructor(
                 val body = response.body?.string().orEmpty()
                 when {
                     response.code == 404 -> SourceProbe.Failed(
-                        "$base answered, but there is no Kickoff backend on it (404). Check " +
+                        "$base answered, but there is no matchUP backend on it (404). Check " +
                             "the address against the one Render shows for your service, and " +
                             "that the deploy actually succeeded.",
                     )
@@ -60,9 +60,9 @@ class SourceProbes @Inject constructor(
                     !response.isSuccessful ->
                         SourceProbe.Failed("$base answered HTTP ${response.code}.")
 
-                    // A 200 from something that is not Kickoff is still the wrong address.
+                    // A 200 from something that is not matchUP is still the wrong address.
                     !body.contains("\"status\"") -> SourceProbe.Failed(
-                        "Something answered at $base, but it is not a Kickoff backend.",
+                        "Something answered at $base, but it is not a matchUP backend.",
                     )
 
                     else -> SourceProbe.Ok("Reached the backend.")

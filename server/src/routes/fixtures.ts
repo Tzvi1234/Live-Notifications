@@ -99,22 +99,28 @@ export function createFixturesRouter(deps: ApiDeps): Router {
     const match = toMatch(fixture);
     const homeTeamId = match.home.id;
 
-    // Three more requests per detail view, so each is asked for only when it can exist:
-    // a fixture that has not kicked off has no events and no statistics (its lineups are
-    // published about an hour before), and a postponed one never will.
+    // `/fixtures?id=` already carries events, lineups and statistics INLINE, so in the
+    // normal case this whole view costs the one request above. The dedicated endpoints are
+    // only reached when a section is absent from that response — an older edge cache, or a
+    // plan whose coverage omits it — and even then each is asked for only when it can
+    // exist: a fixture that has not kicked off has no events and no statistics (its lineups
+    // are published about an hour before), and a postponed one never will.
     const abandoned = match.phase === 'OFF';
     const started = !abandoned && match.phase !== 'SCHEDULED';
 
     const [rawEvents, rawLineups, rawStats] = await Promise.all([
-      started
-        ? optionalSection(logger, matchId, 'events', () => deps.provider.events(matchId))
-        : [],
-      abandoned
-        ? []
-        : optionalSection(logger, matchId, 'lineups', () => deps.provider.lineups(matchId)),
-      started
-        ? optionalSection(logger, matchId, 'statistics', () => deps.provider.statistics(matchId))
-        : [],
+      fixture.events ??
+        (started
+          ? optionalSection(logger, matchId, 'events', () => deps.provider.events(matchId))
+          : []),
+      fixture.lineups ??
+        (abandoned
+          ? []
+          : optionalSection(logger, matchId, 'lineups', () => deps.provider.lineups(matchId))),
+      fixture.statistics ??
+        (started
+          ? optionalSection(logger, matchId, 'statistics', () => deps.provider.statistics(matchId))
+          : []),
     ]);
 
     // Read, never bumped: `nextSequence` belongs to the poller, and a client refresh must
@@ -252,8 +258,11 @@ function enumerateDays(from: string, to: string): string[] {
  * Provider fixtures -> the client's list shape: mapped, de-duplicated (per-team range
  * queries return a derby twice), filtered, and ordered by kick-off so the app can render
  * the array as it arrives.
+ *
+ * Exported because every list endpoint owes the client the same guarantees; a second copy
+ * of it elsewhere would be a second place for the ordering or the de-duplication to drift.
  */
-function presentMatches(raw: ApiFixture[], teamIds: number[], leagueIds: number[]): MatchJson[] {
+export function presentMatches(raw: ApiFixture[], teamIds: number[], leagueIds: number[]): MatchJson[] {
   const teams = new Set(teamIds);
   const leagues = new Set(leagueIds);
 
