@@ -18,7 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Group
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -48,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tzvi.kickoff.core.model.GroupFixture
+import com.tzvi.kickoff.feature.auth.AccountRequired
 import com.tzvi.kickoff.ui.component.EmptyState
 import com.tzvi.kickoff.ui.component.LoadingState
 import com.tzvi.kickoff.ui.component.SectionHeader
@@ -56,9 +56,8 @@ import com.tzvi.kickoff.ui.theme.KickoffTheme
 /**
  * The guessing game: a group, its fixtures, its table and its chat.
  *
- * It replaced the calendar tab, which read the device's own agenda and told you nothing
- * about football that the rest of the app did not already say better. This is the one
- * screen that is worth opening when there is no match on.
+ * The one screen worth opening when there is no match on - everywhere else in the app is
+ * reporting what happened, and this is the only place the user has a stake in it.
  */
 @Composable
 fun PredictScreen(onSignIn: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
@@ -115,13 +114,11 @@ internal fun PredictContent(
             when {
                 state.isLoading -> LoadingState(label = "Loading your groups")
 
-                state.blocker == PredictBlocker.NEEDS_ACCOUNT -> EmptyState(
+                state.blocker == PredictBlocker.NEEDS_ACCOUNT -> AccountRequired(
                     title = "Sign in to play",
-                    body = "Guessing scores against other people needs an account, so " +
-                        "everyone's guesses can be kept until kick-off. Everything else " +
-                        "in matchUP works without one.",
-                    icon = Icons.Outlined.Lock,
-                    actionLabel = "Sign in",
+                    body = "Guessing against other people needs an account, so nobody's " +
+                        "call can be seen before kick-off and everybody's survives a " +
+                        "reinstall. Everything else in matchUP works without one.",
                     onAction = onSignIn,
                     modifier = Modifier.fillMaxSize(),
                 )

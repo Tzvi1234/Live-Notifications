@@ -47,7 +47,7 @@ import com.tzvi.kickoff.ui.motion.containerTransform
 import com.tzvi.kickoff.ui.theme.KickoffTheme
 
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onOpenProfile: () -> Unit) {
     val viewModel: SettingsViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -67,6 +67,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     SettingsContent(
         state = state,
         onBack = onBack,
+        onOpenProfile = onOpenProfile,
         onSelectLiveCardStyle = viewModel::setLiveCardStyle,
         onOpenPromotionSettings = {
             viewModel.promotionSettingsIntent()?.let { intent ->
@@ -115,6 +116,7 @@ fun SettingsScreen(onBack: () -> Unit) {
 internal fun SettingsContent(
     state: SettingsUiState,
     onBack: () -> Unit,
+    onOpenProfile: () -> Unit,
     onSelectLiveCardStyle: (LiveCardStyle) -> Unit,
     onOpenPromotionSettings: () -> Unit,
     onPreviewCard: () -> Unit,
@@ -262,6 +264,11 @@ internal fun SettingsContent(
                     onSelectTheme = onSelectTheme,
                     onSetDynamicColor = onSetDynamicColor,
                 )
+                AccountSection(
+                    expanded = openCard == SettingsCardId.ACCOUNT,
+                    onToggle = { toggle(SettingsCardId.ACCOUNT) },
+                    onOpenProfile = onOpenProfile,
+                )
                 AboutSection(
                     version = state.appVersion,
                     expanded = openCard == SettingsCardId.ABOUT,
@@ -275,7 +282,9 @@ internal fun SettingsContent(
 }
 
 /** Identifies which card the accordion currently has open. */
-internal enum class SettingsCardId { DATA_SOURCE, LIVE_CARD, ALERTS, DEMO, APPEARANCE, ABOUT }
+internal enum class SettingsCardId {
+    DATA_SOURCE, LIVE_CARD, ALERTS, DEMO, APPEARANCE, ACCOUNT, ABOUT
+}
 
 private val ScreenPadding = 16.dp
 private val SectionGap = 10.dp
@@ -289,6 +298,7 @@ private fun SettingsPreview(state: SettingsUiState) {
         SettingsContent(
             state = state,
             onBack = {},
+            onOpenProfile = {},
             onSelectLiveCardStyle = {},
             onOpenPromotionSettings = {},
             onPreviewCard = {},

@@ -34,10 +34,9 @@ object Routes {
 /**
  * The four top-level destinations in the navigation bar.
  *
- * Predictions took the calendar's place. The calendar read the device's own agenda and
- * offered to tell you a match clashed with something - which the fixture list already
- * said, better, without a permission prompt. This is the tab worth opening when there is
- * no match on.
+ * Three of them answer "what is happening": today, the full fixture list, the clubs
+ * behind it. Predict is the fourth because it is the one worth opening when there is no
+ * match on at all.
  */
 enum class TopLevelDestination(
     val route: String,

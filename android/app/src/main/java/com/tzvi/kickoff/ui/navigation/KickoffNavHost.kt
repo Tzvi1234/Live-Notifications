@@ -131,7 +131,12 @@ fun KickoffNavHost(
                     popEnterTransition = NavTransitions.backEnter,
                     popExitTransition = NavTransitions.expandExit,
                 ) {
-                    Scoped { SettingsScreen(onBack = { navController.popBackStack() }) }
+                    Scoped {
+                        SettingsScreen(
+                            onBack = { navController.popBackStack() },
+                            onOpenProfile = { navController.navigate(Routes.PROFILE) },
+                        )
+                    }
                 }
 
                 // Opened from a settings row, like Settings itself is.

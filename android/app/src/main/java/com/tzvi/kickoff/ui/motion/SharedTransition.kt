@@ -39,7 +39,6 @@ object TransformKeys {
     fun teamCrest(teamId: Int) = "team-crest-$teamId"
     fun teamCard(teamId: Int) = "team-card-$teamId"
     const val SETTINGS = "settings-container"
-    const val CALENDAR = "calendar-container"
     const val ISLAND = "dynamic-island"
 }
 

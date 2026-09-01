@@ -1,8 +1,5 @@
 package com.tzvi.kickoff.feature.today
 
-import android.Manifest
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,9 +23,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.tzvi.kickoff.core.model.CalendarEvent
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchPhase
 import com.tzvi.kickoff.core.model.Score
@@ -55,18 +50,6 @@ fun TodayScreen(
     val viewModel: TodayViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    val calendarPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { viewModel.onCalendarPermissionChanged() }
-
-    // A grant made in system Settings - the only route left once Android has stopped
-    // showing the dialog - arrives with no callback at all, so the state is re-read on
-    // the way back into the app.
-    LifecycleResumeEffect(viewModel) {
-        viewModel.onCalendarPermissionChanged()
-        onPauseOrDispose { }
-    }
-
     TodayContent(
         state = state,
         onOpenMatch = onOpenMatch,
@@ -74,11 +57,6 @@ fun TodayScreen(
         onOpenTeams = onOpenTeams,
         onRefresh = viewModel::refresh,
         onDismissError = viewModel::dismissError,
-        // Fired only from the button in the calendar section. Asking on cold start would
-        // burn the one dialog Android grants us on a user who is not looking for it.
-        onRequestCalendarPermission = {
-            calendarPermission.launch(Manifest.permission.READ_CALENDAR)
-        },
     )
 }
 
@@ -91,7 +69,6 @@ internal fun TodayContent(
     onOpenTeams: () -> Unit,
     onRefresh: () -> Unit,
     onDismissError: () -> Unit,
-    onRequestCalendarPermission: () -> Unit,
     animateIn: Boolean = true,
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -143,7 +120,6 @@ internal fun TodayContent(
                     onOpenTeams = onOpenTeams,
                     onRefresh = onRefresh,
                     onDismissError = onDismissError,
-                    onRequestCalendarPermission = onRequestCalendarPermission,
                 )
             }
         }
@@ -159,7 +135,6 @@ private fun TodayList(
     onOpenTeams: () -> Unit,
     onRefresh: () -> Unit,
     onDismissError: () -> Unit,
-    onRequestCalendarPermission: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -243,38 +218,6 @@ private fun TodayList(
             }
         }
 
-        val calendar = state.calendar
-        if (calendar.syncEnabled && (!calendar.permissionGranted || calendar.events.isNotEmpty())) {
-            item(key = "calendar-header") {
-                SectionHeader(
-                    title = "Your calendar",
-                    modifier = Modifier
-                        .revealed(reveals[SECTION_CALENDAR])
-                        .padding(top = SectionGap),
-                )
-            }
-            if (!calendar.permissionGranted) {
-                item(key = "calendar-permission") {
-                    CalendarPermissionState(
-                        onRequestPermission = onRequestCalendarPermission,
-                        modifier = Modifier.revealed(reveals[SECTION_CALENDAR]),
-                    )
-                }
-            } else {
-                items(
-                    items = calendar.events,
-                    key = { "event-${it.eventId}-${it.instanceStart.toEpochMilli()}" },
-                ) { event ->
-                    CalendarEventRow(
-                        event = event,
-                        modifier = Modifier
-                            .revealed(reveals[SECTION_CALENDAR])
-                            .padding(bottom = ItemGap),
-                    )
-                }
-            }
-        }
-
         item(key = "teams-header") {
             SectionHeader(
                 title = "Your teams",
@@ -329,9 +272,8 @@ private fun Modifier.revealed(reveal: SectionReveal): Modifier = graphicsLayer {
 private const val SECTION_BANNER = 0
 private const val SECTION_LIVE = 1
 private const val SECTION_UPCOMING = 2
-private const val SECTION_CALENDAR = 3
-private const val SECTION_TEAMS = 4
-private const val SECTION_COUNT = 5
+private const val SECTION_TEAMS = 3
+private const val SECTION_COUNT = 4
 private const val STAGGER_STEP_MILLIS = 70L
 
 private val ScreenPadding = 16.dp
@@ -405,25 +347,6 @@ private fun previewState(): TodayUiState {
             ),
         ),
         favouriteTeams = listOf(arsenal, chelsea, spurs, liverpool),
-        calendar = CalendarState(
-            syncEnabled = true,
-            permissionGranted = true,
-            events = listOf(
-                CalendarEvent(
-                    eventId = 10,
-                    instanceStart = now.plus(90, ChronoUnit.MINUTES),
-                    instanceEnd = now.plus(150, ChronoUnit.MINUTES),
-                    title = "Sprint review",
-                    location = "Room 4B",
-                    description = null,
-                    isAllDay = false,
-                    calendarId = 1,
-                    calendarName = "Work",
-                    accountName = null,
-                    color = 0xFF3F51B5.toInt(),
-                ),
-            ),
-        ),
     )
 }
 
@@ -438,7 +361,6 @@ private fun TodayScreenPreview() {
             onOpenTeams = {},
             onRefresh = {},
             onDismissError = {},
-            onRequestCalendarPermission = {},
             animateIn = false,
         )
     }
@@ -455,7 +377,6 @@ private fun TodayScreenLoadingPreview() {
             onOpenTeams = {},
             onRefresh = {},
             onDismissError = {},
-            onRequestCalendarPermission = {},
             animateIn = false,
         )
     }
@@ -472,27 +393,6 @@ private fun TodayScreenNoSourcePreview() {
             onOpenTeams = {},
             onRefresh = {},
             onDismissError = {},
-            onRequestCalendarPermission = {},
-            animateIn = false,
-        )
-    }
-}
-
-@Preview(name = "Today - calendar permission", heightDp = 900)
-@Composable
-private fun TodayScreenCalendarPermissionPreview() {
-    KickoffTheme {
-        TodayContent(
-            state = TodayUiState(
-                isLoading = false,
-                calendar = CalendarState(syncEnabled = true, permissionGranted = false),
-            ),
-            onOpenMatch = {},
-            onOpenSettings = {},
-            onOpenTeams = {},
-            onRefresh = {},
-            onDismissError = {},
-            onRequestCalendarPermission = {},
             animateIn = false,
         )
     }

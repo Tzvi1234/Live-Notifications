@@ -76,27 +76,27 @@ abstract class KickoffDatabase : RoomDatabase() {
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(connection: SQLiteConnection) {
                 connection.execSQL(
-                    "CREATE TABLE tracked_activities_new (" +
+                    "CREATE TABLE `tracked_activities_new` (" +
                         "`key` TEXT NOT NULL, " +
-                        "kind TEXT NOT NULL, " +
-                        "matchId INTEGER, " +
-                        "startsAt INTEGER NOT NULL, " +
-                        "endsAt INTEGER, " +
-                        "dismissed INTEGER NOT NULL DEFAULT 0, " +
-                        "lastSequence INTEGER NOT NULL, " +
-                        "updatedAt INTEGER NOT NULL, " +
+                        "`kind` TEXT NOT NULL, " +
+                        "`matchId` INTEGER, " +
+                        "`startsAt` INTEGER NOT NULL, " +
+                        "`endsAt` INTEGER, " +
+                        "`dismissed` INTEGER NOT NULL DEFAULT 0, " +
+                        "`lastSequence` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, " +
                         "PRIMARY KEY(`key`))",
                 )
                 connection.execSQL(
-                    "INSERT INTO tracked_activities_new " +
-                        "(`key`, kind, matchId, startsAt, endsAt, dismissed, lastSequence, " +
-                        "updatedAt) " +
-                        "SELECT `key`, kind, matchId, startsAt, endsAt, dismissed, " +
-                        "lastSequence, updatedAt FROM tracked_activities",
+                    "INSERT INTO `tracked_activities_new` " +
+                        "(`key`, `kind`, `matchId`, `startsAt`, `endsAt`, `dismissed`, " +
+                        "`lastSequence`, `updatedAt`) " +
+                        "SELECT `key`, `kind`, `matchId`, `startsAt`, `endsAt`, `dismissed`, " +
+                        "`lastSequence`, `updatedAt` FROM `tracked_activities`",
                 )
-                connection.execSQL("DROP TABLE tracked_activities")
+                connection.execSQL("DROP TABLE `tracked_activities`")
                 connection.execSQL(
-                    "ALTER TABLE tracked_activities_new RENAME TO tracked_activities",
+                    "ALTER TABLE `tracked_activities_new` RENAME TO `tracked_activities`",
                 )
             }
         }

@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.CenterFocusStrong
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.SportsSoccer
 import androidx.compose.material.icons.outlined.Style
@@ -319,6 +321,46 @@ private fun PreMatchLeadRow(minutes: Int, onCommit: (Int) -> Unit, modifier: Mod
             onValueChangeFinished = { onCommit(draft.roundToInt()) },
             valueRange = PRE_MATCH_LEAD_MIN.toFloat()..PRE_MATCH_LEAD_MAX.toFloat(),
             steps = LEAD_STEPS,
+        )
+    }
+}
+
+// ---- 3. account ---------------------------------------------------------------------
+
+/**
+ * The door to the profile screen.
+ *
+ * The name and the picture are edited there rather than in this card because they are
+ * the only settings that leave the device: a second copy of those two fields would be a
+ * second place for them to disagree with what the account actually holds.
+ */
+@Composable
+internal fun AccountSection(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onOpenProfile: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SettingsCard(
+        title = "Account",
+        icon = Icons.Outlined.AccountCircle,
+        summary = "Your name and picture",
+        expanded = expanded,
+        onToggle = onToggle,
+        modifier = modifier,
+    ) {
+        SettingsRow(
+            title = "Profile",
+            subtitle = "The name and face that go beside your predictions.",
+            icon = Icons.Outlined.Person,
+            onClick = onOpenProfile,
+            trailing = {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
         )
     }
 }

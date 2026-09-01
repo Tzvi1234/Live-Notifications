@@ -17,8 +17,7 @@ import javax.inject.Singleton
  * The periodic backbone.
  *
  * WorkManager is what survives process death and reboots; the foreground service only
- * exists for the ninety minutes a match is actually in play, and the calendar
- * ContentObserver only exists while the process does.
+ * exists for the ninety minutes a match is actually in play.
  */
 @Singleton
 class KickoffWorkScheduler @Inject constructor(

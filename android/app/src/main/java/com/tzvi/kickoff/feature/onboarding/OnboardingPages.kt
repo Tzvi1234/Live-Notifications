@@ -20,7 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Casino
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Notifications
@@ -81,8 +81,8 @@ internal fun WelcomePage(
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            text = "Live match cards on your lock screen, and the rest of your day in the " +
-                "same place.",
+            text = "Live match cards on your lock screen, and every fixture you follow " +
+                "in the same place.",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -98,8 +98,8 @@ internal fun WelcomePage(
                 text = "Line-ups and the countdown an hour before kick-off",
             )
             FeatureLine(
-                icon = Icons.Outlined.CalendarMonth,
-                text = "Your own calendar beside the fixtures, read-only",
+                icon = Icons.Outlined.Casino,
+                text = "A prediction game to play against everyone in your group",
             )
         }
         Spacer(Modifier.weight(1f))
@@ -492,7 +492,7 @@ internal fun AlertsPage(
 
         entrance.Block(2) {
             Text(
-                text = "You can finish without this. Fixtures, line-ups and the calendar " +
+                text = "You can finish without this. Fixtures, line-ups and predictions " +
                     "all still work - only the live card needs the permission.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
