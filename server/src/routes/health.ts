@@ -26,6 +26,8 @@ export function createHealthRouter(deps: ApiDeps): Router {
       // The four counters only: the inferred minute-window boundary is an operator's
       // diagnostic and lives on /v1/admin/status, not in the client contract.
       quota: toQuotaJson(deps.provider.getQuota()),
+      // Read per request, not captured at boot: the store fails over while running.
+      store: deps.store.kind,
     };
     res.json(body);
   });

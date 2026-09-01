@@ -125,7 +125,12 @@ export function createFixturesRouter(deps: ApiDeps): Router {
 
     // Read, never bumped: `nextSequence` belongs to the poller, and a client refresh must
     // not make the payload it just fetched look newer than the push that follows it.
-    const state = await deps.store.getMatchState(matchId);
+    //
+    // And never fatal. This decorates the response with a sequence number the client uses
+    // to order pushes; the match itself came from the provider and is complete without it.
+    // When the database went missing this one optional read was turning a perfectly good
+    // fixture into a 500.
+    const state = await optionalState(logger, matchId, () => deps.store.getMatchState(matchId));
 
     const detail: MatchDetailJson = {
       match,
@@ -145,6 +150,26 @@ export function createFixturesRouter(deps: ApiDeps): Router {
  * missing statistics feed should not hide the score. A blown budget still propagates —
  * that one is not a per-section problem and the client has to be told to back off.
  */
+/**
+ * A store read that decorates a response rather than being it.
+ *
+ * The sequence number lets a client order this payload against the pushes that follow it;
+ * the fixture came from the provider and is complete without one. When the database
+ * disappeared, this single optional read was turning every match screen into a 500.
+ */
+async function optionalState<T>(
+  logger: Logger,
+  matchId: number,
+  read: () => Promise<T | undefined>,
+): Promise<T | undefined> {
+  try {
+    return await read();
+  } catch (error) {
+    logger.warn('match state unavailable', { matchId, error });
+    return undefined;
+  }
+}
+
 async function optionalSection<T>(
   logger: Logger,
   matchId: number,

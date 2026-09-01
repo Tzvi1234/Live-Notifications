@@ -238,6 +238,14 @@ export interface HealthJson {
   version: string;
   provider: string;
   pollingEnabled: boolean;
+  /**
+   * Which store is actually serving.
+   *
+   * `memory` on a deployment that has DATABASE_URL set means the database is gone and
+   * this instance is running degraded - visible here rather than only in the logs,
+   * because "why did my group disappear" is asked long after the log has rotated.
+   */
+  store?: 'postgres' | 'memory' | undefined;
   /** Last rate-limit headers the provider returned; undefined fields mean "not yet told". */
   quota?: ProviderQuotaJson | undefined;
 }

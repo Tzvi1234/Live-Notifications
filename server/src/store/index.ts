@@ -354,9 +354,35 @@ export async function createStore(config: StoreConfig, logger: Logger): Promise<
   const databaseUrl = config.databaseUrl;
   if (databaseUrl) {
     const { createPostgresStore } = await import('./postgres.js');
-    const store = await createPostgresStore(databaseUrl, logger);
-    logger.info('store: postgres', { kind: store.kind });
-    return store;
+    const { classifyConnectionFault, withDatabaseFallback } = await import('./resilience.js');
+    const makeMemory = async (): Promise<Store> => {
+      const { createMemoryStore } = await import('./memory.js');
+      return createMemoryStore(logger);
+    };
+    try {
+      const store = await createPostgresStore(databaseUrl, logger);
+      logger.info('store: postgres', { kind: store.kind });
+      // The database can also die later, and did: Render deletes a free instance after
+      // thirty days without the URL ever ceasing to parse.
+      const fallback = await makeMemory();
+      return withDatabaseFallback(store, () => fallback, logger);
+    } catch (error) {
+      const fault = classifyConnectionFault(error);
+      // A database that is there and refusing us is a misconfiguration somebody has to
+      // see. Serving happily on memory would hide a wrong password behind a service that
+      // looks fine until the day somebody asks where the data went.
+      if (fault !== 'unreachable') throw error;
+      const store = await makeMemory();
+      logger.error(
+        'store: DATABASE_URL is set but the database cannot be reached, so this instance ' +
+          'is running in memory. Football, the catalogue and notifications all work; ' +
+          'accounts, groups and predictions will not survive a restart, and already-' +
+          'notified events can be pushed again. On Render a free Postgres is deleted ' +
+          'after 30 days - create a new one and update DATABASE_URL.',
+        { error, kind: store.kind },
+      );
+      return store;
+    }
   }
 
   const { createMemoryStore } = await import('./memory.js');
