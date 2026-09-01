@@ -1,7 +1,6 @@
 package com.tzvi.kickoff.feature.settings
 
 import com.tzvi.kickoff.core.model.AppSettings
-import com.tzvi.kickoff.core.model.IslandCutout
 import com.tzvi.kickoff.core.model.LiveCardStyle
 
 /**
@@ -26,11 +25,6 @@ data class NotificationAccess(
     val granted: Boolean = true,
     /** Android grants one dialog; after a denial only the system settings screen is left. */
     val requestSpent: Boolean = false,
-)
-
-data class IslandStatus(
-    val overlayPermissionGranted: Boolean = false,
-    val floatingEnabled: Boolean = false,
 )
 
 data class DataSourceForm(
@@ -65,8 +59,6 @@ data class SettingsUiState(
     val settings: AppSettings = AppSettings(),
     val liveUpdate: LiveUpdateStatus = LiveUpdateStatus(),
     val notifications: NotificationAccess = NotificationAccess(),
-    val island: IslandStatus = IslandStatus(),
-    val islandCutout: IslandCutout = IslandCutout.Unset,
     val dataSource: DataSourceForm = DataSourceForm(),
     val demo: DemoStatus = DemoStatus(),
     val appVersion: String = "",

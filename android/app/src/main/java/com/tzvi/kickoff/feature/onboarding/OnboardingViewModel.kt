@@ -146,7 +146,11 @@ class OnboardingViewModel @Inject constructor(
                         // list would enable Next and then fetch no squads at all.
                         selectedLeagueIds = it.selectedLeagueIds
                             .intersect(leagues.mapTo(mutableSetOf()) { league -> league.id }),
-                        leaguesFailure = if (leagues.isEmpty()) CatalogueFailure.EMPTY else null,
+                        leaguesFailure = if (leagues.isEmpty()) {
+                            CatalogueError(CatalogueFailure.EMPTY)
+                        } else {
+                            null
+                        },
                     )
                 }
             } catch (cancelled: CancellationException) {
@@ -183,7 +187,7 @@ class OnboardingViewModel @Inject constructor(
             }
             val chosen = mutableState.value.leagues.filter { it.id in leagueIds }
             val collected = mutableListOf<TeamOption>()
-            var failure: CatalogueFailure? = null
+            var failure: CatalogueError? = null
             for (league in chosen) {
                 try {
                     // One request per league, and the result is held in state afterwards:
@@ -202,7 +206,7 @@ class OnboardingViewModel @Inject constructor(
                     teams = collected.sortedBy { option -> option.team.name },
                     // One league failing is not worth throwing away the ones that answered.
                     teamsFailure = if (collected.isEmpty()) {
-                        failure ?: CatalogueFailure.EMPTY
+                        failure ?: CatalogueError(CatalogueFailure.EMPTY)
                     } else {
                         null
                     },
@@ -277,12 +281,16 @@ class OnboardingViewModel @Inject constructor(
         }
     }
 
-    private fun Throwable.asCatalogueFailure(): CatalogueFailure =
-        if (this is NoFootballSourceException) {
+    private fun Throwable.asCatalogueFailure(): CatalogueError = CatalogueError(
+        kind = if (this is NoFootballSourceException) {
             CatalogueFailure.NO_SOURCE
         } else {
             CatalogueFailure.UNREACHABLE
-        }
+        },
+        // The class name alone ("HttpException") tells nobody anything, so it is only
+        // used when the exception carried no message of its own.
+        detail = message?.takeIf { it.isNotBlank() } ?: this::class.simpleName,
+    )
 
     private companion object {
         const val SUBSCRIPTION_TIMEOUT_MS = 5_000L

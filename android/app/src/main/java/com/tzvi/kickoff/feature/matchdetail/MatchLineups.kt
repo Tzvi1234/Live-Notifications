@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -154,24 +155,42 @@ private fun PlayerDisc(player: LineupPlayer, isHome: Boolean, onTap: () -> Unit)
             .clickable(onClick = onTap),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
-            modifier = Modifier
-                .size(DiscSize)
-                .clip(KickoffShapeTokens.crest)
-                .background(if (isHome) light else turf)
-                .border(1.5.dp, light, KickoffShapeTokens.crest),
-            contentAlignment = Alignment.Center,
-        ) {
-            // The face where the provider has one; the shirt number where it does not.
-            // CrestImage already falls back to text itself, but its initials fallback is
-            // meant for club names - a number reads better on a shirt.
-            if (player.photoUrl != null) {
-                CrestImage(url = player.photoUrl, fallback = player.surname, size = DiscSize)
-            } else {
+        // The face fills the disc, with the shirt number riding its top-left corner -
+        // the arrangement every scores app uses, because a photo identifies a player
+        // faster than a number and the number disambiguates the photo.
+        Box(contentAlignment = Alignment.TopStart) {
+            Box(
+                modifier = Modifier
+                    .size(DiscSize)
+                    .clip(KickoffShapeTokens.crest)
+                    .background(light)
+                    .border(1.5.dp, light, KickoffShapeTokens.crest),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (player.photoUrl != null) {
+                    CrestImage(
+                        url = player.photoUrl,
+                        fallback = player.surname,
+                        size = DiscSize,
+                    )
+                } else {
+                    Text(
+                        text = player.number?.toString().orEmpty(),
+                        style = KickoffTextStyles.shirtNumber,
+                        color = turf,
+                    )
+                }
+            }
+            if (player.photoUrl != null && player.number != null) {
                 Text(
-                    text = player.number?.toString().orEmpty(),
+                    text = player.number.toString(),
                     style = KickoffTextStyles.shirtNumber,
-                    color = if (isHome) turf else light,
+                    color = light,
+                    modifier = Modifier
+                        .offset(x = (-4).dp, y = (-2).dp)
+                        .clip(KickoffShapeTokens.crest)
+                        .background(turf)
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
                 )
             }
         }

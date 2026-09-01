@@ -79,7 +79,6 @@ import com.tzvi.kickoff.core.model.AppSettings
 import com.tzvi.kickoff.core.model.LiveCardStyle
 import com.tzvi.kickoff.ui.component.KickoffLogo
 import com.tzvi.kickoff.ui.component.SectionHeader
-import com.tzvi.kickoff.core.model.IslandCutout
 import com.tzvi.kickoff.ui.component.SettingsRow
 import com.tzvi.kickoff.ui.theme.KickoffShapes
 import com.tzvi.kickoff.ui.theme.KickoffTheme
@@ -111,6 +110,7 @@ internal fun LiveCardSection(
         highlighted = status.reachesAmbientSurfaces,
         expanded = expanded,
         onToggle = onToggle,
+        help = LIVE_CARD_HELP,
         modifier = modifier,
     ) {
         Column(
@@ -124,27 +124,16 @@ internal fun LiveCardSection(
                 onSelect = onSelectStyle,
             )
 
-            Column(verticalArrangement = Arrangement.spacedBy(TightGap)) {
-                LiveCardStyle.entries.forEach { option ->
-                    StyleExplanation(option = option, selected = option == style)
-                }
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Text(
-                text = "On this device",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // Only the chosen style explains itself; the other three are one tap away
+            // under the "?" rather than three paragraphs you scroll past every time.
+            StyleExplanation(option = style, selected = true)
 
             StatusLine(
                 tone = if (status.supportsProgressStyle) StatusTone.OK else StatusTone.INFO,
                 text = if (status.supportsProgressStyle) {
-                    "ProgressStyle is supported, so the card can draw a real match clock."
+                    "The card can draw a real match clock."
                 } else {
-                    "ProgressStyle needs Android 16. Below that the card falls back to a " +
-                        "plain layout with the score in the text."
+                    "No match-clock bar - that needs Android 16."
                 },
             )
 
@@ -155,15 +144,9 @@ internal fun LiveCardSection(
                     else -> StatusTone.INFO
                 },
                 text = when {
-                    status.reachesAmbientSurfaces ->
-                        "Promoted notifications are allowed, so a live card can reach the " +
-                            "status-bar chip, the lock screen and the always-on display."
-                    status.supportsPromotion ->
-                        "Promoted notifications are turned off for Kickoff. Live cards stay " +
-                            "inside the shade: no chip, no lock screen, no always-on display."
-                    else ->
-                        "This device cannot promote notifications - that arrived in Android 16 " +
-                            "QPR1. Live cards will appear in the shade only."
+                    status.reachesAmbientSurfaces -> "Chip, lock screen and AOD are allowed."
+                    status.supportsPromotion -> "Promotion is off for Kickoff - shade only."
+                    else -> "This device cannot promote notifications - shade only."
                 },
             )
 
@@ -174,8 +157,7 @@ internal fun LiveCardSection(
                     }
                 } else {
                     Text(
-                        text = "This build has no screen for that switch. Look for it under " +
-                            "Kickoff's notification settings.",
+                        text = "No screen for that switch on this build.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -183,14 +165,6 @@ internal fun LiveCardSection(
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Text(
-                text = "Posts a sample match card through the same builder and the same " +
-                    "eligibility rules a real match uses, then tells you which of the three " +
-                    "the system actually chose.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
 
             Row(horizontalArrangement = Arrangement.spacedBy(RowGap)) {
                 FilledTonalButton(onClick = onPreviewCard) { Text("Preview the live card") }
@@ -257,6 +231,7 @@ internal fun AlertsSection(
         highlighted = !access.granted,
         expanded = expanded,
         onToggle = onToggle,
+        help = ALERTS_HELP,
         modifier = modifier,
     ) {
         if (!access.granted) {
@@ -348,115 +323,6 @@ private fun PreMatchLeadRow(minutes: Int, onCommit: (Int) -> Unit, modifier: Mod
     }
 }
 
-// ---- 3. dynamic island --------------------------------------------------------------
-
-@Composable
-internal fun IslandSection(
-    status: IslandStatus,
-    cutout: IslandCutout,
-    expanded: Boolean,
-    onToggle: () -> Unit,
-    onSetEnabled: (Boolean) -> Unit,
-    onGrantOverlayPermission: () -> Unit,
-    onCalibrateCutout: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    SettingsCard(
-        title = "Dynamic Island",
-        icon = Icons.Outlined.Layers,
-        summary = islandSummary(status, cutout),
-        badge = if (status.floatingEnabled) "ON" else null,
-        highlighted = status.floatingEnabled,
-        expanded = expanded,
-        onToggle = onToggle,
-        modifier = modifier,
-    ) {
-        SettingsNavigationRow(
-            title = "Calibrate around the camera",
-            subtitle = if (cutout.enabled) {
-                "Wrapping a ${cutout.diameterDp} dp hole at " +
-                    "${(cutout.centerXFraction * 100).roundToInt()}% across, " +
-                    "${cutout.centerYDp} dp down."
-            } else {
-                "Line a ring up with your camera and the island puts the score on one " +
-                    "side of it and the clock on the other."
-            },
-            icon = Icons.Outlined.CenterFocusStrong,
-            onClick = onCalibrateCutout,
-        )
-        SettingsToggleRow(
-            title = "Float over other apps",
-            subtitle = "Keeps the live island on screen while you are somewhere else.",
-            icon = Icons.Outlined.Layers,
-            checked = status.floatingEnabled,
-            enabled = status.overlayPermissionGranted,
-            onCheckedChange = onSetEnabled,
-        )
-        Column(
-            modifier = Modifier.padding(horizontal = GroupPadding, vertical = TightGap),
-            verticalArrangement = Arrangement.spacedBy(TightGap),
-        ) {
-            Text(
-                text = "Floating needs Android's \"display over other apps\" permission, which " +
-                    "is granted on a system page rather than in a dialog. The island inside " +
-                    "Kickoff needs no permission at all and is always available.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (!status.overlayPermissionGranted) {
-                FilledTonalButton(onClick = onGrantOverlayPermission) {
-                    Text("Grant permission")
-                }
-            }
-        }
-    }
-}
-
-/** A settings row that opens a screen of its own rather than flipping a switch. */
-@Composable
-private fun SettingsNavigationRow(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = GroupPadding, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(22.dp),
-        )
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
-        )
-    }
-}
-
 // ---- 4. data source -----------------------------------------------------------------
 
 @Composable
@@ -486,6 +352,7 @@ internal fun DataSourceSection(
         highlighted = !form.hasSource,
         expanded = expanded,
         onToggle = onToggle,
+        help = DATA_SOURCE_HELP,
         modifier = modifier,
     ) {
         Column(
@@ -878,6 +745,53 @@ private fun EraseEverythingRow(
     }
 }
 
+
+// ---- the long explanations, one tap away ---------------------------------------------
+//
+// These used to be printed inline under every control. They are worth keeping - each one
+// answers a question the setting itself raises - but not at the price of scrolling three
+// paragraphs to reach a switch, so they live behind the "?" in each card's header.
+
+private const val LIVE_CARD_HELP =
+    "Clock draws the match as a progress bar: two halves, a mark at every goal, the ball " +
+        "on the current minute.\n\n" +
+        "Commentary lists the last five things that happened. Long text is the only kind " +
+        "Android carries onto the always-on display in full, so pick this one if the lock " +
+        "screen is where you actually read it.\n\n" +
+        "Plain is the system's own template, and the only style that never asks to be " +
+        "promoted.\n\n" +
+        "Scoreboard draws its own card - crest, big score, crest. Android refuses to " +
+        "promote custom layouts, so that one stays in the shade and on the lock screen " +
+        "and never reaches the status-bar chip or the always-on display.\n\n" +
+        "Preview posts a sample card through the same builder and the same eligibility " +
+        "rules a real match uses, then tells you which rendering the system actually chose."
+
+private const val DATA_SOURCE_HELP =
+    "Kickoff has no feed of its own.\n\n" +
+        "An API-Football key works with nothing deployed, but the free tier allows 100 " +
+        "requests a day - roughly one match followed loosely.\n\n" +
+        "A backend holds the key itself, polls on behalf of every device, and is the only " +
+        "source that can push a goal the moment it happens instead of waiting for the next " +
+        "poll. It wins over a pasted key whenever one is set.\n\n" +
+        "Push delivery needs Firebase configured on both the server and this build."
+
+private const val ALERTS_HELP =
+    "These decide which events make a sound. Everything else still updates the live card " +
+        "silently - the card is edited in place rather than reposted, which is the whole " +
+        "point of it.\n\n" +
+        "The lead time is how long before kick-off the card first appears with the line-ups " +
+        "and a countdown."
+
+private const val DEMO_HELP =
+    "Demo mode swaps the football source for a generated one: fifteen real clubs with " +
+        "their official crests, fixtures invented around right now, and one match already " +
+        "in play.\n\n" +
+        "The buttons post each stage of the live card by hand. The simulator plays a whole " +
+        "ninety minutes in about three, firing real goals, cards and substitutions through " +
+        "the same pipeline a real match uses.\n\n" +
+        "Demo outranks a key and a backend while it is on, so nothing you have saved is " +
+        "lost - turning it off hands the app straight back to your own source."
+
 // ---- closed-card summaries ----------------------------------------------------------
 //
 // A collapsed card is only worth collapsing if its one line answers the question that
@@ -895,13 +809,6 @@ private fun alertsSummary(settings: AppSettings, access: NotificationAccess): St
     if (on.isEmpty()) return "Everything silent - the card still updates in place"
     return on.joinToString(", ").replaceFirstChar { it.uppercase() } +
         " \u00b7 ${settings.preMatchLeadMinutes} min before"
-}
-
-private fun islandSummary(status: IslandStatus, cutout: IslandCutout): String = when {
-    !status.overlayPermissionGranted -> "Needs the display-over-other-apps permission"
-    !status.floatingEnabled -> "Off"
-    cutout.enabled -> "Floating, wrapped around a ${cutout.diameterDp} dp camera"
-    else -> "Floating below the status bar - not calibrated yet"
 }
 
 private fun demoSummary(demo: DemoStatus): String = when {
@@ -945,6 +852,7 @@ internal fun DemoSection(
         highlighted = demo.enabled,
         expanded = expanded,
         onToggle = onToggle,
+        help = DEMO_HELP,
         modifier = modifier,
     ) {
         Column(

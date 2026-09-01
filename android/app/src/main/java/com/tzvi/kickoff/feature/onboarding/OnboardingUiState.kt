@@ -46,6 +46,19 @@ enum class ConfiguredSource { NONE, API_FOOTBALL, BACKEND, DEMO }
 /** Why a catalogue fetch produced nothing. Each case gets its own copy on screen. */
 enum class CatalogueFailure { NO_SOURCE, UNREACHABLE, EMPTY }
 
+/**
+ * A failure plus what the source actually said.
+ *
+ * The kind alone drove the copy for a long time, and it hid the one sentence that made
+ * a problem fixable: "leagues load, teams do not" reads as a broken app until you can
+ * see the provider answering "your plan does not include this season".
+ */
+data class CatalogueError(
+    val kind: CatalogueFailure,
+    /** Verbatim from the provider or the transport. Null when there was nothing to say. */
+    val detail: String? = null,
+)
+
 /** A selectable team, carrying the league it came from so the favourite keeps that link. */
 data class TeamOption(val team: Team, val league: League?)
 
@@ -61,12 +74,12 @@ data class OnboardingUiState(
 
     val leaguesLoading: Boolean = false,
     val leagues: List<League> = emptyList(),
-    val leaguesFailure: CatalogueFailure? = null,
+    val leaguesFailure: CatalogueError? = null,
     val selectedLeagueIds: Set<Int> = emptySet(),
 
     val teamsLoading: Boolean = false,
     val teams: List<TeamOption> = emptyList(),
-    val teamsFailure: CatalogueFailure? = null,
+    val teamsFailure: CatalogueError? = null,
     /** The league set [teams] was fetched for; re-entering the page must not refetch. */
     val teamsLoadedFor: Set<Int>? = null,
     val teamQuery: String = "",

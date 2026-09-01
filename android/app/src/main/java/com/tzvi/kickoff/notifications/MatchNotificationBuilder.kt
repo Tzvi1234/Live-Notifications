@@ -366,18 +366,20 @@ class MatchNotificationBuilder @Inject constructor(
             setTextViewText(R.id.home_score, score?.home?.toString() ?: "\u2013")
             setTextViewText(R.id.away_score, score?.away?.toString() ?: "\u2013")
             setTextViewText(R.id.clock, clock)
-            setTextViewText(R.id.home_name, match.home.name)
-            setTextViewText(R.id.away_name, match.away.name)
+            setTextViewText(R.id.home_name, match.home.code)
+            setTextViewText(R.id.away_name, match.away.code)
+            setTextViewText(R.id.league_line, match.leagueName)
+            // The venue when nothing has happened yet, the last event once something has:
+            // the reference card's bottom line is context, and a goal is better context
+            // than a stadium name.
             setTextViewText(
                 R.id.event_line,
-                activity.latestEvent?.headline() ?: match.leagueName,
+                activity.latestEvent?.headline() ?: match.venue.orEmpty(),
             )
         }
 
         builder.setCustomContentView(compact)
             .setCustomBigContentView(big)
-            // The dark card carries its own contrast; the accent would tint the small
-            // icon anyway, so it stays.
             .setColor(ContextCompat.getColor(context, R.color.brand_green))
     }
 

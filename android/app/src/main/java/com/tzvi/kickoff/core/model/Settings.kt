@@ -44,7 +44,8 @@ data class AppSettings(
     val calendarLeadMinutes: Int = 30,
     val enabledCalendarIds: Set<Long> = emptySet(),
     val pushEnabled: Boolean = true,
-    val useDynamicColor: Boolean = false,
+    /** On by default: Material You is the platform default look, not an opt-in. */
+    val useDynamicColor: Boolean = true,
     val darkTheme: DarkThemePreference = DarkThemePreference.SYSTEM,
 ) {
     enum class DarkThemePreference { SYSTEM, LIGHT, DARK }

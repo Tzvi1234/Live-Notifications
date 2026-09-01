@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -25,7 +26,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -109,9 +109,11 @@ fun AnimatedKickoffLogo(
     val pop = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
-        drop.animateTo(1f, tween(durationMillis = 520, easing = BounceOutEasing))
-        ring.animateTo(1f, tween(durationMillis = 560, easing = ArcEasing))
-        pop.animateTo(1f, tween(durationMillis = 240, easing = OvershootEasing))
+        // Slower than feels necessary, on purpose: this plays once, on the first screen
+        // anyone ever sees, and it is the only place the mark gets to explain itself.
+        drop.animateTo(1f, tween(durationMillis = 900, easing = BounceOutEasing))
+        ring.animateTo(1f, tween(durationMillis = 1_000, easing = ArcEasing))
+        pop.animateTo(1f, tween(durationMillis = 420, easing = OvershootEasing))
         onFinished()
     }
 
@@ -133,46 +135,82 @@ fun AnimatedKickoffLogo(
 }
 
 /**
- * The loading state is the mark playing keep-ups: the loose ball leaves its spot and
- * runs laps around the ring while the football holds the centre. It is the logo, still
- * moving - not a spinner borrowed from somewhere else.
+ * The loading state: a proper black-and-white football turning inside the green ring.
+ *
+ * The previous one orbited a mint dot around the outside, which read as a spinner with a
+ * ball glued to it. A ball that actually spins - panels sweeping round behind the seam -
+ * is the thing itself moving, and it is legible at 18dp inside a button.
  */
 @Composable
 fun KickoffLoader(
     modifier: Modifier = Modifier,
     size: Dp = 48.dp,
     ringColor: Color = KickoffRingLight,
-    panelColor: Color = ballColorFor(),
+    panelColor: Color = KickoffRingDark,
 ) {
     val transition = rememberInfiniteTransition(label = "kickoff-loader")
-    val lap by transition.animateFloat(
+    val spin by transition.animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(1_200, easing = LinearEasing)),
-        label = "lap",
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(animation = tween(1_600, easing = LinearEasing)),
+        label = "spin",
+    )
+    // The ring breathes round behind it so the whole mark is alive, not just the ball.
+    val sweepHead by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(animation = tween(2_400, easing = LinearEasing)),
+        label = "sweep",
     )
 
     Canvas(modifier = modifier.size(size)) {
-        val dim = this.size.minDimension
-        // The full ring as a faint track, so the orbit has somewhere to be.
-        drawRing(sweepFraction = 1f, alpha = 0.18f)
-        drawFootball(scale = 0.9f, color = panelColor)
-
-        // The ball, with a short comet tail of ring segments behind it.
-        val angle = lap * 360f
-        val tailSweep = 64f
-        drawTail(headDeg = angle, sweepDeg = tailSweep, color = ringColor)
-        val ballAngle = Math.toRadians(angle.toDouble())
-        drawCircle(
-            color = panelColor,
-            radius = dim * DOT_RADIUS * 0.72f,
-            center = Offset(
-                x = center.x + dim * RING_RADIUS * cos(ballAngle).toFloat(),
-                y = center.y + dim * RING_RADIUS * sin(ballAngle).toFloat(),
-            ),
-        )
+        drawRing(sweepFraction = 1f, alpha = 0.22f)
+        drawTail(headDeg = ARC_START_DEG + sweepHead, sweepDeg = 120f, color = ringColor)
+        rotate(degrees = spin, pivot = center) {
+            drawSpinningBall(radius = this.size.minDimension * BALL_RADIUS, seam = panelColor)
+        }
     }
 }
+
+/**
+ * A recognisable football: white sphere, black pentagon at the pole, five black panels
+ * around it. Filled shapes rather than outlines, because a 1px outline disappears the
+ * moment the loader is drawn at button size.
+ */
+private fun DrawScope.drawSpinningBall(radius: Float, seam: Color) {
+    if (radius <= 0f) return
+    drawCircle(color = KickoffBallWhite, radius = radius, center = center)
+
+    val pentagonRadius = radius * 0.40f
+    val path = Path()
+    listOf(-90f, -18f, 54f, 126f, 198f).forEachIndexed { index, degrees ->
+        val angle = Math.toRadians(degrees.toDouble())
+        val x = center.x + pentagonRadius * cos(angle).toFloat()
+        val y = center.y + pentagonRadius * sin(angle).toFloat()
+        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    path.close()
+    drawPath(path, seam)
+
+    // The five outer panels, tucked just inside the edge so the sphere keeps its rim.
+    listOf(-90f, -18f, 54f, 126f, 198f).forEach { degrees ->
+        val angle = Math.toRadians((degrees + 36).toDouble())
+        val cx = center.x + radius * 0.68f * cos(angle).toFloat()
+        val cy = center.y + radius * 0.68f * sin(angle).toFloat()
+        rotate(degrees = degrees + 36f + 90f, pivot = Offset(cx, cy)) {
+            drawOval(
+                color = seam,
+                topLeft = Offset(cx - radius * 0.30f, cy - radius * 0.17f),
+                size = Size(radius * 0.60f, radius * 0.34f),
+            )
+        }
+    }
+}
+
+private const val BALL_RADIUS = 0.20f
+
+/** The ball in the loader is a real football, so it is properly white. */
+private val KickoffBallWhite = Color(0xFFFFFFFF)
 
 /**
  * On a dark surface the ball is its natural mint white; on a light one it keeps a
@@ -191,35 +229,49 @@ private fun Color.luminance(): Float = 0.299f * red + 0.587f * green + 0.114f * 
 // ---- drawing --------------------------------------------------------------------------
 
 /**
- * The ring as short strokes so the two greens can run into each other along the sweep.
- * A sweep gradient cannot start mid-circle, and rotating the canvas to fake it fights
- * the progressive draw; sixty segments are cheap and exactly right.
+ * One stroke with a sweep gradient, not sixty short ones.
+ *
+ * The segmented build drew visible seams at every joint - at logo size the ring read as
+ * a striped barcode rather than a solid arc. A sweep gradient rotated so its seam falls
+ * inside the ring's own opening gives the same two-tone run with nothing to see.
  */
 private fun DrawScope.drawRing(sweepFraction: Float, alpha: Float = 1f) {
     if (sweepFraction <= 0f) return
     val dim = size.minDimension
     val radius = dim * RING_RADIUS
     val strokeWidth = dim * RING_STROKE
-    val topLeft = Offset(center.x - radius, center.y - radius)
-    val arcSize = Size(radius * 2, radius * 2)
-    val drawn = (RING_SEGMENTS * sweepFraction).toInt().coerceAtLeast(1)
 
-    for (i in 0 until drawn) {
-        val f0 = i / RING_SEGMENTS.toFloat()
-        val f1 = (i + 1) / RING_SEGMENTS.toFloat()
-        val isEdge = i == 0 || i == drawn - 1
+    // The gradient's own 0/360 seam is parked in the gap, where there is no stroke to
+    // show it.
+    //
+    // The stop order looks backwards and is not. A sweep gradient runs clockwise from
+    // fraction 0, while this arc is drawn counter-clockwise from its start - so the
+    // arc's START sits at fraction 1 and its END at GRADIENT_END. Light therefore
+    // belongs at 1 and dark at GRADIENT_END; the span below GRADIENT_END is the gap and
+    // never gets painted.
+    val brush = Brush.sweepGradient(
+        0f to KickoffRingDark,
+        GRADIENT_END to KickoffRingDark,
+        1f to KickoffRingLight,
+        center = center,
+    )
+
+    rotate(degrees = ARC_START_DEG, pivot = center) {
         drawArc(
-            color = lerp(KickoffRingLight, KickoffRingDark, (f0 + f1) / 2f).copy(alpha = alpha),
-            startAngle = ARC_START_DEG + ARC_SWEEP_DEG * f0,
-            // Slight overlap between inner segments closes the hairline seams.
-            sweepAngle = ARC_SWEEP_DEG * (f1 - f0) - if (isEdge) 0f else ARC_SWEEP_DEG * 0.1f / RING_SEGMENTS,
+            brush = brush,
+            startAngle = 0f,
+            sweepAngle = ARC_SWEEP_DEG * sweepFraction,
             useCenter = false,
-            topLeft = topLeft,
-            size = arcSize,
-            style = Stroke(width = strokeWidth, cap = if (isEdge) StrokeCap.Round else StrokeCap.Butt),
+            topLeft = Offset(center.x - radius, center.y - radius),
+            size = Size(radius * 2, radius * 2),
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+            alpha = alpha,
         )
     }
 }
+
+/** Where the arc ends as a fraction of the full circle, for the gradient's dark stop. */
+private val GRADIENT_END = (360f + ARC_SWEEP_DEG) / 360f
 
 /** The comet tail behind the loader's orbiting ball, fading as it trails. */
 private fun DrawScope.drawTail(headDeg: Float, sweepDeg: Float, color: Color) {

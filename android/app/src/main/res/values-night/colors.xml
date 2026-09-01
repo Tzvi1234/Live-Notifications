@@ -3,4 +3,7 @@
     <color name="notif_surface">#FF0D150D</color>
     <color name="notif_accent">#FF3FE56C</color>
     <color name="notif_live">#FFFFB4AB</color>
+    <color name="notif_surface_variant">#FF25302A</color>
+    <color name="notif_on_surface">#FFE6EDE7</color>
+    <color name="notif_on_surface_muted">#FFB4C2B8</color>
 </resources>

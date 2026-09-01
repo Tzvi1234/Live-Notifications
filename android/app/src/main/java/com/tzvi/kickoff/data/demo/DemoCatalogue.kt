@@ -284,9 +284,10 @@ object DemoCatalogue {
             LineupPlayer(
                 // Negative and derived from the team, so a demo id can never collide with
                 // a real API-Football one and the tap-through has something to key on.
-                // photoUrl stays null on purpose: real headshots are addressed by the
-                // provider's own player ids, and inventing one would show a real face
-                // under the wrong name.
+                // No photo: real headshots are addressed by the provider's own player
+                // ids, and pointing an invented id at that CDN would put a real face
+                // under the wrong name. The pitch falls back to the shirt number, which
+                // is honest; real sources show the real faces.
                 id = demoPlayerId(team.id, index),
                 name = name,
                 number = index + 1,

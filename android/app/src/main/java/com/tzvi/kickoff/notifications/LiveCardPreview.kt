@@ -45,7 +45,9 @@ class LiveCardPreview @Inject constructor(
         stage: LiveActivity.MatchActivity.Stage = LiveActivity.MatchActivity.Stage.LIVE,
     ): MatchNotificationBuilder.Rendering? {
         val activity = sampleActivity(stage)
-        return notifier.postMatch(activity, style)?.rendering
+        // Swiping the last preview away must not disable the button that made it.
+        notifier.clearDismissal(activity.key)
+        return notifier.postMatch(activity, style, userRequested = true)?.rendering
     }
 
     fun hide() {

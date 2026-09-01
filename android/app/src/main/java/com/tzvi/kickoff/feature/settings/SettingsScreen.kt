@@ -47,7 +47,7 @@ import com.tzvi.kickoff.ui.motion.containerTransform
 import com.tzvi.kickoff.ui.theme.KickoffTheme
 
 @Composable
-fun SettingsScreen(onBack: () -> Unit, onCalibrateCutout: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit) {
     val viewModel: SettingsViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -96,11 +96,6 @@ fun SettingsScreen(onBack: () -> Unit, onCalibrateCutout: () -> Unit) {
                 notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         },
-        onSetFloatingIsland = viewModel::setFloatingIslandEnabled,
-        onGrantOverlayPermission = {
-            runCatching { context.startActivity(viewModel.overlayPermissionIntent()) }
-        },
-        onCalibrateCutout = onCalibrateCutout,
         onApiKeyChange = viewModel::onApiKeyChange,
         onToggleApiKeyVisibility = viewModel::toggleApiKeyVisibility,
         onSaveApiKey = viewModel::saveApiKey,
@@ -136,9 +131,6 @@ internal fun SettingsContent(
     onSetLineups: (Boolean) -> Unit,
     onSetLeadMinutes: (Int) -> Unit,
     onRequestNotifications: () -> Unit,
-    onSetFloatingIsland: (Boolean) -> Unit,
-    onGrantOverlayPermission: () -> Unit,
-    onCalibrateCutout: () -> Unit,
     onApiKeyChange: (String) -> Unit,
     onToggleApiKeyVisibility: () -> Unit,
     onSaveApiKey: () -> Unit,
@@ -239,15 +231,6 @@ internal fun SettingsContent(
                     onPreviewCard = onPreviewCard,
                     onDismissPreview = onDismissPreview,
                 )
-                IslandSection(
-                    status = state.island,
-                    cutout = state.islandCutout,
-                    expanded = openCard == SettingsCardId.ISLAND,
-                    onToggle = { toggle(SettingsCardId.ISLAND) },
-                    onSetEnabled = onSetFloatingIsland,
-                    onGrantOverlayPermission = onGrantOverlayPermission,
-                    onCalibrateCutout = onCalibrateCutout,
-                )
                 AlertsSection(
                     settings = state.settings,
                     access = state.notifications,
@@ -292,7 +275,7 @@ internal fun SettingsContent(
 }
 
 /** Identifies which card the accordion currently has open. */
-internal enum class SettingsCardId { DATA_SOURCE, LIVE_CARD, ISLAND, ALERTS, DEMO, APPEARANCE, ABOUT }
+internal enum class SettingsCardId { DATA_SOURCE, LIVE_CARD, ALERTS, DEMO, APPEARANCE, ABOUT }
 
 private val ScreenPadding = 16.dp
 private val SectionGap = 10.dp
@@ -322,9 +305,6 @@ private fun SettingsPreview(state: SettingsUiState) {
             onSetLineups = {},
             onSetLeadMinutes = {},
             onRequestNotifications = {},
-            onSetFloatingIsland = {},
-            onGrantOverlayPermission = {},
-            onCalibrateCutout = {},
             onApiKeyChange = {},
             onToggleApiKeyVisibility = {},
             onSaveApiKey = {},
@@ -349,7 +329,6 @@ private fun previewState(
         canOpenPromotionSettings = true,
     ),
     notifications: NotificationAccess = NotificationAccess(granted = true),
-    island: IslandStatus = IslandStatus(overlayPermissionGranted = true, floatingEnabled = true),
     dataSource: DataSourceForm = DataSourceForm(
         apiKeyInput = "0123456789abcdef0123456789abcdef",
         apiKeyStored = true,
@@ -363,7 +342,6 @@ private fun previewState(
     settings = AppSettings(),
     liveUpdate = liveUpdate,
     notifications = notifications,
-    island = island,
     dataSource = dataSource,
     appVersion = "1.0.0 (1)",
 )
@@ -386,7 +364,6 @@ private fun SettingsPromotionOffPreview() {
                 canOpenPromotionSettings = true,
             ),
             notifications = NotificationAccess(granted = false),
-            island = IslandStatus(overlayPermissionGranted = false, floatingEnabled = false),
         ),
     )
 }

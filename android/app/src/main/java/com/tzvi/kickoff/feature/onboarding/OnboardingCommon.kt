@@ -32,9 +32,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -133,8 +130,6 @@ internal fun StepHeader(
     copy: StepCopy,
     status: String?,
     modifier: Modifier = Modifier,
-    /** Where the progress rail sits on screen - the ball-hop's landing strip. */
-    onRailPositioned: (Offset) -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -169,13 +164,7 @@ internal fun StepHeader(
             }
         }
 
-        StepProgress(
-            step = step,
-            modifier = Modifier.onGloballyPositioned { coords ->
-                val bounds = coords.boundsInRoot()
-                onRailPositioned(bounds.center)
-            },
-        )
+        StepProgress(step = step)
         Spacer(Modifier.height(2.dp))
 
         Text(

@@ -66,13 +66,22 @@ class LiveActivityNotifier @Inject constructor(
         activity: LiveActivity.MatchActivity,
         style: LiveCardStyle,
         alertingEvent: MatchEvent? = null,
+        /**
+         * Set when a person asked for this card by name - the Preview button.
+         *
+         * Swiping a card away means "not this match, not today", which is why a dismissed
+         * key is never posted again on its own. It cannot also mean "never show me a
+         * preview again": the user is standing in Settings pressing a button, and the
+         * only honest answer to that press is the card.
+         */
+        userRequested: Boolean = false,
     ): Posted? = postLock.withLock {
         if (!canPost()) return null
-        if (isDismissed(activity.key)) return null
+        if (!userRequested && isDismissed(activity.key)) return null
 
         val id = activity.notificationId
         // A genuine event always gets through; only silent refreshes are throttled.
-        if (alertingEvent == null && isRateLimited(id)) return null
+        if (alertingEvent == null && !userRequested && isRateLimited(id)) return null
 
         // Crests are only decoded when the renderer can actually use them: the promoted
         // path shows them as the progress bar's start and end icons, the rich path in the
@@ -166,6 +175,12 @@ class LiveActivityNotifier @Inject constructor(
 
     private suspend fun isDismissed(key: String): Boolean =
         trackedActivityDao.get(key)?.dismissed == true
+
+    /** Un-dismisses a card, so a deliberate repost is not silently swallowed. */
+    suspend fun clearDismissal(key: String) {
+        val existing = trackedActivityDao.get(key) ?: return
+        if (existing.dismissed) trackedActivityDao.upsert(existing.copy(dismissed = false))
+    }
 
     /**
      * The platform drops notifications above five enqueues per second per package and

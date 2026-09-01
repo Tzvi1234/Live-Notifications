@@ -51,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -395,14 +396,15 @@ private fun TeamRow(
 /** One place for the three ways a catalogue fetch can come back with nothing. */
 @Composable
 private fun CatalogueFailureState(
-    failure: CatalogueFailure,
+    failure: CatalogueError,
     subject: String,
     onRetry: () -> Unit,
     onFixSource: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        when (failure) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        when (failure.kind) {
             CatalogueFailure.NO_SOURCE -> EmptyState(
                 title = "No data source yet",
                 body = "Kickoff cannot list $subject until it has an API-Football key or " +
@@ -430,6 +432,19 @@ private fun CatalogueFailureState(
                 onAction = onRetry,
             )
         }
+
+        // The exact words the source used. Without them "could not reach the source"
+        // covers a dead network, a wrong key and a plan restriction identically.
+        failure.detail?.let { detail ->
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            )
+        }
+        }
     }
 }
 
@@ -454,7 +469,9 @@ private fun LeaguesPagePreview() {
 private fun LeaguesNoSourcePreview() {
     KickoffTheme {
         LeaguesPage(
-            state = OnboardingUiState(leaguesFailure = CatalogueFailure.NO_SOURCE),
+            state = OnboardingUiState(
+                leaguesFailure = CatalogueError(CatalogueFailure.NO_SOURCE),
+            ),
             onToggleLeague = {},
             onRetry = {},
             onFixSource = {},

@@ -27,7 +27,6 @@
 
     <!-- Opt-in only: lets the Dynamic Island float over other apps. The app is fully
          usable without it - the in-app island needs no permission at all. -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:name=".KickoffApp"
@@ -64,10 +63,6 @@
             android:name=".notifications.LiveMatchService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
-
-        <service
-            android:name=".ui.island.IslandOverlayService"
-            android:exported="false" />
 
         <service
             android:name=".notifications.KickoffMessagingService"

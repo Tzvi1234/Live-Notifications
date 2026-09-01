@@ -22,6 +22,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.HelpOutline
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -29,6 +34,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,8 +72,18 @@ internal fun SettingsCard(
     badge: String? = null,
     /** Draws the badge and the icon in the accent colour: something here wants attention. */
     highlighted: Boolean = false,
+    /**
+     * The long explanation, behind a "?" in the card's header.
+     *
+     * Every card used to print its full reasoning inline, which meant scrolling past
+     * three paragraphs to reach a switch. The reasoning is still worth having - it is
+     * what stops a setting being cargo-culted - so it moved one tap away instead of
+     * being deleted.
+     */
+    help: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    var showingHelp by remember { mutableStateOf(false) }
     val container by animateColorAsState(
         targetValue = if (expanded) {
             MaterialTheme.colorScheme.surfaceContainer
@@ -170,7 +187,22 @@ internal fun SettingsCard(
                 )
             }
 
-            Spacer(Modifier.width(6.dp))
+            if (help != null) {
+                Spacer(Modifier.width(2.dp))
+                IconButton(
+                    onClick = { showingHelp = true },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.HelpOutline,
+                        contentDescription = "What does $title do?",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(2.dp))
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
                 contentDescription = if (expanded) "Collapse $title" else "Expand $title",
@@ -194,6 +226,18 @@ internal fun SettingsCard(
                 content = content,
             )
         }
+    }
+
+    if (showingHelp && help != null) {
+        AlertDialog(
+            onDismissRequest = { showingHelp = false },
+            icon = { Icon(imageVector = icon, contentDescription = null) },
+            title = { Text(title) },
+            text = { Text(help) },
+            confirmButton = {
+                TextButton(onClick = { showingHelp = false }) { Text("Got it") }
+            },
+        )
     }
 }
 

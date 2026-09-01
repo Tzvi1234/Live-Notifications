@@ -11,7 +11,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.tzvi.kickoff.feature.calendar.CalendarScreen
-import com.tzvi.kickoff.feature.island.IslandCalibrationScreen
 import com.tzvi.kickoff.feature.matchdetail.MatchDetailScreen
 import com.tzvi.kickoff.feature.matches.MatchesScreen
 import com.tzvi.kickoff.feature.onboarding.OnboardingScreen
@@ -101,22 +100,7 @@ fun KickoffNavHost(
                     popEnterTransition = NavTransitions.backEnter,
                     popExitTransition = NavTransitions.expandExit,
                 ) {
-                    Scoped {
-                        SettingsScreen(
-                            onBack = { navController.popBackStack() },
-                            onCalibrateCutout = {
-                                navController.navigate(Routes.ISLAND_CALIBRATION)
-                            },
-                        )
-                    }
-                }
-
-                // Drawn against near-black up into the cutout row, so it slides rather
-                // than growing out of the settings row it was opened from.
-                composable(Routes.ISLAND_CALIBRATION) {
-                    Scoped {
-                        IslandCalibrationScreen(onBack = { navController.popBackStack() })
-                    }
+                    Scoped { SettingsScreen(onBack = { navController.popBackStack() }) }
                 }
 
                 composable(

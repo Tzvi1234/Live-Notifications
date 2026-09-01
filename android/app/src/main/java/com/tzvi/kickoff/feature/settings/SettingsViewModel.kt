@@ -23,7 +23,6 @@ import com.tzvi.kickoff.notifications.LiveCardPreview
 import com.tzvi.kickoff.notifications.MatchSimulator
 import com.tzvi.kickoff.notifications.LiveUpdateCapability
 import com.tzvi.kickoff.notifications.MatchNotificationBuilder
-import com.tzvi.kickoff.ui.island.IslandOverlayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -114,17 +113,13 @@ class SettingsViewModel @Inject constructor(
         )
     }
 
-    // Six sources, and `combine` is only typed up to five: pairing the two island-side
-    // flows keeps the destructured lambda instead of an untyped Array<Any>.
-    private val demoAndCutout = combine(demo, settingsRepository.islandCutout, ::Pair)
-
     val uiState: StateFlow<SettingsUiState> = combine(
         stored,
         activeSourceName,
         session,
         editor,
-        demoAndCutout,
-    ) { current, sourceName, device, form, (demoStatus, cutout) ->
+        demo,
+    ) { current, sourceName, device, form, demoStatus ->
         val loaded = current as? Stored.Loaded
         SettingsUiState(
             isLoading = false,
@@ -133,11 +128,6 @@ class SettingsViewModel @Inject constructor(
             liveUpdate = device.liveUpdate,
             demo = demoStatus,
             notifications = device.notifications,
-            island = IslandStatus(
-                overlayPermissionGranted = device.overlayPermissionGranted,
-                floatingEnabled = device.floatingIslandEnabled,
-            ),
-            islandCutout = cutout,
             dataSource = DataSourceForm(
                 apiKeyInput = form.apiKeyInput ?: loaded?.apiKey.orEmpty(),
                 apiKeyStored = !loaded?.apiKey.isNullOrBlank(),
@@ -189,22 +179,6 @@ class SettingsViewModel @Inject constructor(
         // has to offer the settings screen instead of asking again.
         session.update {
             it.copy(notifications = NotificationAccess(granted = granted, requestSpent = !granted))
-        }
-    }
-
-    // ---- dynamic island ------------------------------------------------------
-
-    fun setFloatingIslandEnabled(enabled: Boolean) {
-        val granted = IslandOverlayService.canDrawOverlay(context)
-        if (enabled && !granted) {
-            session.update {
-                it.copy(overlayPermissionGranted = false, floatingIslandEnabled = false)
-            }
-            return
-        }
-        if (enabled) IslandOverlayService.show(context) else IslandOverlayService.hide(context)
-        session.update {
-            it.copy(overlayPermissionGranted = granted, floatingIslandEnabled = enabled)
         }
     }
 
@@ -336,24 +310,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun toggleSimulation() {
-        if (uiState.value.demo.simulating) {
-            simulator.stop()
-            return
-        }
-        simulator.start()
-        // The island is where a simulated match is worth watching, and it deliberately
-        // hides while Kickoff is in front - so it is raised here and the message below
-        // tells you to leave the app to see it.
-        if (IslandOverlayService.canDrawOverlay(context)) {
-            IslandOverlayService.show(context)
-            session.update { it.copy(floatingIslandEnabled = true) }
-            editor.update {
-                it.copy(
-                    message = "Simulating. Press home - the island follows the match out " +
-                        "of the app.",
-                )
-            }
-        }
+        if (uiState.value.demo.simulating) simulator.stop() else simulator.start()
     }
 
     fun showPreMatchCard() = preview(LiveActivity.MatchActivity.Stage.PRE_MATCH)
@@ -388,8 +345,6 @@ class SettingsViewModel @Inject constructor(
     /** Null when this build has no promoted-notification settings activity to open. */
     fun promotionSettingsIntent(): Intent? = promotionSettings
 
-    fun overlayPermissionIntent(): Intent = IslandOverlayService.permissionIntent(context)
-
     fun notificationSettingsIntent(): Intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
         .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -405,7 +360,6 @@ class SettingsViewModel @Inject constructor(
     fun eraseEverything() {
         viewModelScope.launch(ioDispatcher) {
             runCatching { simulator.stop() }
-            runCatching { IslandOverlayService.hide(context) }
             runCatching {
                 context.getSystemService(android.app.NotificationManager::class.java)
                     ?.cancelAll()
@@ -432,7 +386,6 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun readSession(previous: Session? = null): Session {
-        val overlayGranted = IslandOverlayService.canDrawOverlay(context)
         return Session(
             liveUpdate = LiveUpdateStatus(
                 supportsProgressStyle = capability.supportsProgressStyle,
@@ -444,9 +397,6 @@ class SettingsViewModel @Inject constructor(
                 granted = hasNotificationPermission(),
                 requestSpent = previous?.notifications?.requestSpent == true,
             ),
-            overlayPermissionGranted = overlayGranted,
-            // Losing the grant while the app was away also takes the overlay down.
-            floatingIslandEnabled = previous?.floatingIslandEnabled == true && overlayGranted,
         )
     }
 
@@ -474,8 +424,6 @@ class SettingsViewModel @Inject constructor(
     private data class Session(
         val liveUpdate: LiveUpdateStatus,
         val notifications: NotificationAccess,
-        val overlayPermissionGranted: Boolean,
-        val floatingIslandEnabled: Boolean,
     )
 
     private data class Editor(

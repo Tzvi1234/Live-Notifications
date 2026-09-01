@@ -5,13 +5,11 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.tzvi.kickoff.core.model.AppSettings
-import com.tzvi.kickoff.core.model.IslandCutout
 import com.tzvi.kickoff.core.model.LiveCardStyle
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -44,11 +42,6 @@ class SettingsRepository @Inject constructor(
         val apiKey = stringPreferencesKey("api_football_key")
         val backendUrl = stringPreferencesKey("backend_url")
         val demoMode = booleanPreferencesKey("demo_mode")
-        val cutoutEnabled = booleanPreferencesKey("island_cutout_enabled")
-        val cutoutX = floatPreferencesKey("island_cutout_center_x")
-        val cutoutY = intPreferencesKey("island_cutout_center_y_dp")
-        val cutoutDiameter = intPreferencesKey("island_cutout_diameter_dp")
-        val cutoutCorner = intPreferencesKey("island_cutout_corner_dp")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
@@ -67,7 +60,7 @@ class SettingsRepository @Inject constructor(
             calendarLeadMinutes = p[Keys.calendarLead] ?: 30,
             enabledCalendarIds = p[Keys.calendarIds].orEmpty().mapNotNull(String::toLongOrNull).toSet(),
             pushEnabled = p[Keys.pushEnabled] ?: true,
-            useDynamicColor = p[Keys.dynamicColor] ?: false,
+            useDynamicColor = p[Keys.dynamicColor] ?: true,
             darkTheme = p[Keys.darkTheme]
                 ?.let { runCatching { AppSettings.DarkThemePreference.valueOf(it) }.getOrNull() }
                 ?: AppSettings.DarkThemePreference.SYSTEM,
@@ -89,20 +82,6 @@ class SettingsRepository @Inject constructor(
 
     val fcmToken: Flow<String> = context.dataStore.data.map { it[Keys.fcmToken].orEmpty() }
 
-    /**
-     * The calibrated camera hole. Read by both islands - the in-app one and the overlay -
-     * so a single calibration moves them together.
-     */
-    val islandCutout: Flow<IslandCutout> = context.dataStore.data.map { p ->
-        IslandCutout(
-            enabled = p[Keys.cutoutEnabled] ?: false,
-            centerXFraction = p[Keys.cutoutX] ?: IslandCutout.Unset.centerXFraction,
-            centerYDp = p[Keys.cutoutY] ?: IslandCutout.Unset.centerYDp,
-            diameterDp = p[Keys.cutoutDiameter] ?: IslandCutout.Unset.diameterDp,
-            cornerRadiusDp = p[Keys.cutoutCorner] ?: IslandCutout.Unset.cornerRadiusDp,
-        ).sanitised()
-    }
-
     suspend fun setOnboardingComplete(value: Boolean) = edit { it[Keys.onboardingComplete] = value }
     suspend fun setLiveCardStyle(style: LiveCardStyle) = edit { it[Keys.liveCardStyle] = style.name }
     suspend fun setPreMatchLeadMinutes(minutes: Int) = edit { it[Keys.preMatchLead] = minutes }
@@ -119,15 +98,6 @@ class SettingsRepository @Inject constructor(
     suspend fun setBackendUrl(url: String) = edit { it[Keys.backendUrl] = url.trim() }
     suspend fun setDemoMode(value: Boolean) = edit { it[Keys.demoMode] = value }
     suspend fun setFcmToken(token: String) = edit { it[Keys.fcmToken] = token }
-
-    suspend fun setIslandCutout(cutout: IslandCutout) = edit { p ->
-        val safe = cutout.sanitised()
-        p[Keys.cutoutEnabled] = safe.enabled
-        p[Keys.cutoutX] = safe.centerXFraction
-        p[Keys.cutoutY] = safe.centerYDp
-        p[Keys.cutoutDiameter] = safe.diameterDp
-        p[Keys.cutoutCorner] = safe.cornerRadiusDp
-    }
 
     suspend fun setDarkTheme(pref: AppSettings.DarkThemePreference) =
         edit { it[Keys.darkTheme] = pref.name }

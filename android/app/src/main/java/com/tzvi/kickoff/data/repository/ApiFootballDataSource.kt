@@ -12,6 +12,7 @@ import com.tzvi.kickoff.data.remote.dto.ApiEnvelope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.time.LocalDate
+import kotlinx.coroutines.CancellationException
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
@@ -35,24 +36,45 @@ class ApiFootballDataSource @Inject constructor(
     }
 
     override suspend fun teams(leagueId: Int?, season: Int?, query: String?): List<Team> {
-        val requested = season ?: leagueId?.let { ApiFootballMapper.currentSeason() }
-        val first = runCatching { teamsForSeason(leagueId, requested, query) }
+        // A pure search takes no season at all, so there is nothing to walk.
+        if (leagueId == null) return teamsForSeason(null, season, query)
 
-        // The free plan serves the catalogue but refuses current-season data - the error
-        // arrives as an HTTP 200 with a "plan" note, or as an empty list. Leagues load and
-        // teams don't, which looks like a broken app when it is actually a priced key. An
-        // older season answers on every plan, and club ids are stable across seasons, so
-        // the browse list it produces is the same clubs a current key would list.
-        val fallbackWorthTrying = leagueId != null &&
-            requested != null &&
-            requested > FREE_PLAN_LAST_SEASON &&
-            (first.isFailure || first.getOrThrow().isEmpty())
-        if (!fallbackWorthTrying) return first.getOrThrow()
+        // /leagues answers without a season; /teams demands one, which is the whole
+        // reason competitions load and squads do not. Three things can go wrong with the
+        // season we pick, and they are indistinguishable from here: the provider has not
+        // opened the new one yet (empty list), the plan refuses current-season data
+        // (HTTP 200 with a "plan" note), or our own July rollover is a month early. So
+        // rather than guess once, walk the candidates newest-first and keep the first
+        // that actually answers.
+        val candidates = buildList {
+            season?.let { add(it) }
+            val current = ApiFootballMapper.currentSeason()
+            add(current)
+            add(current - 1)
+            add(FREE_PLAN_LAST_SEASON)
+        }.distinct()
 
-        return runCatching { teamsForSeason(leagueId, FREE_PLAN_LAST_SEASON, query) }
-            .getOrNull()
-            ?.takeIf { it.isNotEmpty() }
-            ?: first.getOrThrow()
+        var lastError: Exception? = null
+        for (candidate in candidates) {
+            val teams = try {
+                teamsForSeason(leagueId, candidate, query)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                lastError = error
+                continue
+            }
+            if (teams.isNotEmpty()) return teams
+        }
+
+        // Nothing answered. The provider's own words are the only useful thing left, and
+        // burying them behind "could not reach the source" is what made this unfixable
+        // from the screen: a plan restriction and a dead network read identically.
+        lastError?.let { throw it }
+        throw ProviderException(
+            "No teams for league $leagueId in any of seasons ${candidates.joinToString()}. " +
+                "The competition may not have started, or your plan may not cover it.",
+        )
     }
 
     private suspend fun teamsForSeason(leagueId: Int?, season: Int?, query: String?): List<Team> =

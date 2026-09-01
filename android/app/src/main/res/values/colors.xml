@@ -10,4 +10,7 @@
     <color name="notif_surface">#FFF3FCEE</color>
     <color name="notif_accent">#FF006E2A</color>
     <color name="notif_live">#FFBA1A1A</color>
+    <color name="notif_surface_variant">#FFE4EFE2</color>
+    <color name="notif_on_surface">#FF14261A</color>
+    <color name="notif_on_surface_muted">#FF52655A</color>
 </resources>

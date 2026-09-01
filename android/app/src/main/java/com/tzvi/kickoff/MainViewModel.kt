@@ -3,7 +3,6 @@ package com.tzvi.kickoff
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tzvi.kickoff.core.model.AppSettings
-import com.tzvi.kickoff.core.model.IslandCutout
 import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.data.repository.DeviceRegistrationRepository
 import com.tzvi.kickoff.data.repository.FootballRepository
@@ -30,8 +29,6 @@ data class AppUiState(
     val loading: Boolean = true,
     val settings: AppSettings = AppSettings(),
     val liveActivity: LiveActivity.MatchActivity? = null,
-    /** Where the island must leave room for the front camera, if it has been told. */
-    val islandCutout: IslandCutout = IslandCutout.Unset,
 )
 
 @OptIn(FlowPreview::class)
@@ -62,18 +59,10 @@ class MainViewModel @Inject constructor(
             }
         }
 
-    val uiState: StateFlow<AppUiState> = combine(
-        settingsRepository.settings,
-        liveActivity,
-        settingsRepository.islandCutout,
-    ) { settings, activity, cutout ->
-        AppUiState(
-            loading = false,
-            settings = settings,
-            liveActivity = activity,
-            islandCutout = cutout,
-        )
-    }.stateIn(
+    val uiState: StateFlow<AppUiState> =
+        combine(settingsRepository.settings, liveActivity) { settings, activity ->
+            AppUiState(loading = false, settings = settings, liveActivity = activity)
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = AppUiState(),
