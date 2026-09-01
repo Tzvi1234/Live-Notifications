@@ -43,5 +43,14 @@ sealed interface AuthOutcome {
      */
     data class NeedsFields(val fields: List<String>) : AuthOutcome
 
+    /**
+     * The user backed out of a browser sign-in.
+     *
+     * Not a failure: closing the Google tab is a decision, and answering it with a red
+     * card would tell somebody who has just changed their mind that they did something
+     * wrong.
+     */
+    data object Cancelled : AuthOutcome
+
     data class Failed(val message: String) : AuthOutcome
 }

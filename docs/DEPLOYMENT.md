@@ -158,6 +158,26 @@ In the Clerk dashboard you also need to switch on the sign-in methods you want u
 **User & authentication → Email, phone, username**. matchUP uses email + password and the
 email verification code; nothing else is required.
 
+#### Turning on "Continue with Google"
+
+The app shows a **Continue with Google** button on its sign-in and sign-up pages, but the
+button can only work if the connection exists on the Clerk side. It is two clicks and no
+Google Cloud project of your own:
+
+1. Clerk dashboard → **User & authentication → SSO connections** (older dashboards call it
+   *Social connections*).
+2. **Add connection → For all users → Google**, leave *Use custom credentials* off, and
+   save.
+
+Clerk's shared development credentials are fine for a test instance. A production instance
+must use your own Google OAuth client — Clerk's own page walks through it and shows you the
+exact redirect URI to paste into Google Cloud.
+
+Nothing has to change in the app or on Render: matchUP asks Clerk which connections exist
+at run time, and if Google is off the button simply returns Clerk's own explanation instead
+of a session. Signing in with Google for the first time creates the account, so there is no
+separate "sign up with Google" to enable.
+
 ### Push (set these to enable FCM)
 
 | Name | Where the value comes from | Example |

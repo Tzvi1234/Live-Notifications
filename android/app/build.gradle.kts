@@ -40,8 +40,8 @@ android {
         applicationId = "com.tzvi.kickoff"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "2.1.0"
+        versionCode = 11
+        versionName = "2.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
 
@@ -68,7 +68,11 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".debug"
+            // No applicationId suffix. Firebase issues its config per package name, and
+            // Clerk's OAuth redirect host is derived from the same value, so a suffixed
+            // debug build would need its own client registered in both - and, side by
+            // side on a phone, two matchUP icons that are impossible to tell apart. One
+            // id, one install; the version name is what says which build you are on.
             versionNameSuffix = "-debug"
         }
         release {

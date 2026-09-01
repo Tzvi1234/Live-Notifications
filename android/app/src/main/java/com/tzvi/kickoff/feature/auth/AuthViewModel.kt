@@ -128,6 +128,24 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Hands off to Google and comes back with whatever Clerk made of it.
+     *
+     * Its own busy flag rather than [working]'s: the spinner belongs in the button that
+     * was pressed, and the email form underneath stays legible while a browser tab is
+     * open over the top of it.
+     */
+    fun continueWithGoogle() {
+        viewModelScope.launch {
+            mutableState.update { it.copy(googleBusy = true, error = null, notice = null) }
+            try {
+                apply(auth.continueWithGoogle())
+            } finally {
+                mutableState.update { it.copy(googleBusy = false) }
+            }
+        }
+    }
+
     /** The escape hatch. The app is worth using signed out and has to stay that way. */
     fun continueWithoutAccount(onDone: () -> Unit) {
         viewModelScope.launch {
@@ -154,6 +172,10 @@ class AuthViewModel @Inject constructor(
                 error = null,
                 notice = null,
             )
+
+            // Closing the browser tab is an answer, not a fault. The page it came from
+            // is still there and still filled in; saying nothing is the whole response.
+            AuthOutcome.Cancelled -> state.copy(error = null, notice = null)
 
             is AuthOutcome.Failed -> state.copy(error = outcome.message, notice = null)
         }

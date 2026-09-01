@@ -9,6 +9,10 @@
         <item name="android:windowLightStatusBar" tools:targetApi="23">true</item>
         <item name="android:enforceStatusBarContrast" tools:targetApi="29">false</item>
         <item name="android:enforceNavigationBarContrast" tools:targetApi="29">false</item>
+        <!-- Android paints an opaque yellow wash over any field it autofilled, which on
+             a dark surface reads as an olive box rather than as a text field. The fill
+             itself is what matters, not the highlight advertising it. -->
+        <item name="android:autofilledHighlight">@android:color/transparent</item>
     </style>
 
     <style name="Theme.Kickoff.Starting" parent="Theme.SplashScreen">

@@ -22,6 +22,9 @@ data class AuthUiState(
     val missingFields: List<String> = emptyList(),
     val fieldValues: Map<String, String> = emptyMap(),
     val busy: Boolean = false,
+    /** The Google redirect is in flight. Tracked apart from [busy] so the button that
+     *  started it is the one that shows the spinner. */
+    val googleBusy: Boolean = false,
     val error: String? = null,
     val notice: String? = null,
     val signedIn: Boolean = false,
@@ -29,8 +32,16 @@ data class AuthUiState(
      *  sign-out. */
     val needsOnboarding: Boolean = true,
 ) {
+    /** True while either route is mid-flight; every control on the page goes quiet. */
+    val working: Boolean get() = busy || googleBusy
+
+    /** Google is offered wherever a session can be started - not mid-verification. */
+    val googleOffered: Boolean
+        get() = availability == AccountAvailability.AVAILABLE &&
+            step in setOf(AuthStep.WELCOME, AuthStep.SIGN_IN, AuthStep.SIGN_UP)
+
     val canSubmit: Boolean
-        get() = !busy && when (step) {
+        get() = !working && when (step) {
             AuthStep.WELCOME -> true
             AuthStep.SIGN_IN -> email.isNotBlank() && password.isNotBlank()
             AuthStep.SIGN_UP -> email.contains('@') && password.length >= MIN_PASSWORD_LENGTH
@@ -43,7 +54,7 @@ data class AuthUiState(
     /** The one thing standing between this step and its button, or null. */
     val blockedReason: String?
         get() = when {
-            busy || canSubmit -> null
+            working || canSubmit -> null
             step == AuthStep.SIGN_UP && email.isNotBlank() && !email.contains('@') ->
                 "That does not look like an email address."
             step == AuthStep.SIGN_UP && password.isNotEmpty() &&

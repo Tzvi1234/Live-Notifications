@@ -9,6 +9,9 @@ import com.clerk.api.signup.SignUp
 import com.clerk.api.signup.attemptVerification
 import com.clerk.api.signup.sendEmailCode
 import com.clerk.api.signup.update
+import com.clerk.api.sso.OAuthProvider
+import com.clerk.api.sso.OAuthResult
+import com.clerk.api.sso.SSOCancellationException
 import com.clerk.api.user.User
 import com.clerk.api.user.setProfileImage
 import com.clerk.api.user.update
@@ -261,6 +264,54 @@ class AuthRepository @Inject constructor(
             "This Clerk instance needs something matchUP cannot ask for yet."
         } else {
             "This account still needs $listed, which matchUP cannot ask for yet."
+        }
+    }
+
+    // ---- Google --------------------------------------------------------------
+
+    /**
+     * One button for both halves of it: `signInWithOAuth` transfers to a sign-up itself
+     * when the Google account has never been seen here before.
+     *
+     * That transfer is why there is no separate "sign up with Google". Clerk's SSO
+     * service runs the redirect, notices that the identifier is new, and hands back a
+     * [OAuthResult] carrying a sign-up instead of a sign-in - so the screen asks the
+     * same follow-up questions it would have asked after an email sign-up, and the two
+     * routes converge on [advance].
+     */
+    suspend fun continueWithGoogle(): AuthOutcome =
+        when (val result = Clerk.auth.signInWithOAuth(OAuthProvider.GOOGLE)) {
+            is ClerkResult.Success -> resolve(result.value)
+
+            is ClerkResult.Failure ->
+                if (result.throwable is SSOCancellationException) {
+                    AuthOutcome.Cancelled
+                } else {
+                    AuthOutcome.Failed(result.readableMessage)
+                }
+        }
+
+    /** A finished sign-in, a transferred sign-up, or neither - said plainly. */
+    private suspend fun resolve(result: OAuthResult): AuthOutcome {
+        result.signUp?.let { return advance(it) }
+
+        val signIn = result.signIn ?: return AuthOutcome.Failed(
+            "Google came back without a session. Try again, or use an email address.",
+        )
+        return when (signIn.status) {
+            SignIn.Status.COMPLETE -> {
+                clearAuthGate()
+                AuthOutcome.Complete
+            }
+
+            SignIn.Status.NEEDS_SECOND_FACTOR -> AuthOutcome.Failed(
+                "This account has two-factor authentication on, which matchUP cannot " +
+                    "prompt for yet.",
+            )
+
+            else -> AuthOutcome.Failed(
+                "Google signed you in but Clerk wants another step matchUP cannot show yet.",
+            )
         }
     }
 
