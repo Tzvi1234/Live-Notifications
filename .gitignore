@@ -1,5 +1,8 @@
 # Android / Gradle
 android/.gradle/
+# Kotlin daemon session locks, written while a build is in flight and meaningless once
+# it ends. They appear as untracked files if you look at the tree mid-build.
+android/.kotlin/
 android/build/
 android/app/build/
 android/local.properties
