@@ -181,6 +181,27 @@ at run time, and if Google is off the button simply returns Clerk's own explanat
 of a session. Signing in with Google for the first time creates the account, so there is no
 separate "sign up with Google" to enable.
 
+#### The alpha and beta builds need their own redirect addresses
+
+After Google, Clerk sends the browser back into the app at an address derived from the
+package name — `clerk://<applicationId>.callback` — and it only sends the browser to
+addresses on its allowlist. The three side-by-side builds have three package names, so
+they have three addresses, and only the standard one is known to Clerk by default. On the
+other two the account picker opens, the browser comes back, and the app is told the
+sign-in was cancelled: nothing appears to happen.
+
+Clerk dashboard → **Configure → Native applications → Allowlist for mobile OAuth
+redirect** (older dashboards: **Native API**) → add, one per line:
+
+```
+clerk://com.tzvi.kickoff.callback
+clerk://com.tzvi.kickoff.alpha.callback
+clerk://com.tzvi.kickoff.beta.callback
+```
+
+No rebuild is needed; the change takes effect on the next sign-in attempt. Email sign-in
+works on all three builds without any of this.
+
 ### Push (set these to enable FCM)
 
 | Name | Where the value comes from | Example |
@@ -200,8 +221,8 @@ separate "sign up with Google" to enable.
 | `POLL_INTERVAL_SECONDS` | `30` | Cadence while at least one tracked match is in play. |
 | `POLL_IDLE_INTERVAL_SECONDS` | `300` | Cadence when nothing is live. Keeps the quota for match days. |
 | `PREMATCH_LEAD_MINUTES` | `60` | How early the pre-match card and the line-up fetch start. |
-| `DAILY_REQUEST_BUDGET` | *(unset — follow the plan)* | An explicit daily ceiling. **Leave it unset.** The provider states its own allowance in every response header and the server adopts 90% of it, so upgrading your API-Football tier takes effect on its own. Set this only to spend *less* than the plan allows. |
-| `FEATURED_LEAGUE_IDS` | *(unset — use the code's list)* | Competitions offered during onboarding. **Leave it unset.** The code ships thirty-one, and because the environment wins over the default, a value here silently freezes the catalogue at whatever it says — which is how the deployed app came to offer fourteen while the code offered thirty-one. Set it only to deliberately deviate. |
+| `DAILY_REQUEST_BUDGET_OVERRIDE` | *(unset — follow the plan)* | An explicit daily ceiling. **Leave it unset.** The provider states its own allowance in every response header and the server adopts 90% of it, so upgrading your API-Football tier takes effect on its own. Set this only to spend *less* than the plan allows. The old `DAILY_REQUEST_BUDGET` is **ignored** — it was found still pinning a 75,000-a-day plan at 7,500 on the live service, so the server reads a new name and logs a warning if it sees the old one. |
+| `FEATURED_LEAGUE_IDS_OVERRIDE` | *(unset — use the code's list)* | Competitions offered during onboarding. **Leave it unset.** The code ships thirty-one, and because the environment wins over the default, a value here silently freezes the catalogue at whatever it says — which is how the deployed app came to offer fourteen while the code offered thirty-one. The old `FEATURED_LEAGUE_IDS` is **ignored** for exactly that reason; delete it, or set the `_OVERRIDE` name to deliberately deviate. |
 | `CACHE_TTL_SECONDS` | `60` | TTL for catalogue and fixtures-by-date responses. Live calls are never cached. |
 | `ADMIN_TOKEN` | *(unset)* | When set, guards `/v1/admin/*` (quota, poller status, manual poll trigger) behind `Authorization: Bearer <token>`. Leave unset to disable those routes. |
 

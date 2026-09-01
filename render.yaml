@@ -130,15 +130,20 @@ services:
         value: "300"
       - key: PREMATCH_LEAD_MINUTES
         value: "60"
-      # DAILY_REQUEST_BUDGET is deliberately NOT set here either. The provider states its
+      # DAILY_REQUEST_BUDGET_OVERRIDE is deliberately NOT set here. The provider states its
       # own daily allowance in every response header and the server adopts 90% of it, so
       # upgrading the API-Football plan takes effect on its own. Pinned at 7500 it did the
       # opposite: the account would allow 75,000 a day and this counter still refused the
       # 7,501st, which made paying for a bigger plan buy nothing at all.
-      # FEATURED_LEAGUE_IDS is deliberately NOT set here. Pinning it froze the deployed
-      # catalogue at fourteen competitions while the code's default grew to thirty-one, and
-      # because the environment wins over the default, every league added in code was dead
-      # on arrival. Set it only to deviate from the code, and expect to maintain it.
+      # FEATURED_LEAGUE_IDS_OVERRIDE is deliberately NOT set here. Pinning it froze the
+      # deployed catalogue at fourteen competitions while the code's default grew to
+      # thirty-one, and because the environment wins over the default, every league added
+      # in code was dead on arrival. Set it only to deviate from the code, and expect to
+      # maintain it.
+      #
+      # Both keys carry the _OVERRIDE suffix because their un-suffixed ancestors are still
+      # set on the live service from an earlier blueprint, and a dashboard value outlives
+      # every commit. The server no longer reads the old names; it says so at boot.
 
       # --- API ------------------------------------------------------------------------
       - key: CACHE_TTL_SECONDS

@@ -104,6 +104,9 @@ const DEFAULT_FEATURED_LEAGUE_IDS = [
   15, // FIFA Club World Cup
 ].join(',');
 
+/** How many competitions the code ships, for the boot warning that says an override shrank it. */
+export const DEFAULT_FEATURED_LEAGUE_COUNT = DEFAULT_FEATURED_LEAGUE_IDS.split(',').length;
+
 type Env = Record<string, string | undefined>;
 
 function raw(env: Env, name: string): string | undefined {
@@ -225,12 +228,19 @@ export function loadConfig(env: Env = process.env): KickoffConfig {
   // Quota arithmetic: the live poll is one `/fixtures?live=all` call per tick, so a day of
   // continuous live polling costs 86400 / POLL_INTERVAL_SECONDS requests (2880 at the 30s
   // default). Detail fetches (events/lineups/statistics) are charged on top, per tracked
-  // match, which is why DAILY_REQUEST_BUDGET sits well under the plan limit rather than at it.
+  // match, which is why an explicit budget sits well under the plan limit rather than at it.
   // Undefined when unset, deliberately: the provider reports its own daily allowance in
   // every response header, and following it is right in both directions. A constant here
   // meant an upgraded plan changed nothing - the account would allow 75,000 a day while
   // this counter kept refusing the 7,501st. Set it only to spend LESS than the plan allows.
-  const dailyRequestBudget = optionalInt(env, 'DAILY_REQUEST_BUDGET', 100, 10_000_000);
+  //
+  // The key ends in _OVERRIDE, and that suffix is the fix for a trap this deployment fell
+  // into twice: an environment variable set once in a dashboard outlives every commit, and
+  // `env ?? default` means the dashboard silently wins for ever. The old DAILY_REQUEST_BUDGET
+  // is still set on the live service, pinning a 75,000-a-day plan at 7,500. Reading a new
+  // name is the one change that makes the code win without anybody having to find and
+  // delete the stale value. The old names are reported at boot, and ignored.
+  const dailyRequestBudget = optionalInt(env, 'DAILY_REQUEST_BUDGET_OVERRIDE', 100, 10_000_000);
 
   const clerkSecretKey = raw(env, 'CLERK_SECRET_KEY');
   const databaseUrl = raw(env, 'DATABASE_URL');
@@ -268,7 +278,10 @@ export function loadConfig(env: Env = process.env): KickoffConfig {
     pollIdleIntervalSeconds,
     preMatchLeadMinutes: readInt(env, 'PREMATCH_LEAD_MINUTES', 60, 0, 1440),
     dailyRequestBudget,
-    featuredLeagueIds: readIdList(env, 'FEATURED_LEAGUE_IDS', DEFAULT_FEATURED_LEAGUE_IDS),
+    // _OVERRIDE for the reason given at dailyRequestBudget: the un-suffixed name is still
+    // set on the live service, frozen at the fourteen competitions of a much older build,
+    // and it was silently winning over every league added in code since.
+    featuredLeagueIds: readIdList(env, 'FEATURED_LEAGUE_IDS_OVERRIDE', DEFAULT_FEATURED_LEAGUE_IDS),
 
     adminToken: raw(env, 'ADMIN_TOKEN'),
     cacheTtlSeconds: readInt(env, 'CACHE_TTL_SECONDS', 60, 0, 86_400),

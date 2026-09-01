@@ -8,7 +8,7 @@ import type { Server } from 'node:http';
 import type { Express } from 'express';
 
 import { createApp } from './app.js';
-import { config, type KickoffConfig } from './config.js';
+import { config, DEFAULT_FEATURED_LEAGUE_COUNT, type KickoffConfig } from './config.js';
 import { logger, setLogLevel } from './logger.js';
 import { createLivePoller } from './poller/livePoller.js';
 import { ApiFootballClient, ProviderError } from './provider/apiFootball.js';
@@ -244,21 +244,35 @@ function closeServer(server: Server): Promise<void> {
  * two-second diagnosis instead of an afternoon.
  */
 function warnAboutOverrides(env: NodeJS.ProcessEnv): void {
-  const leagues = env.FEATURED_LEAGUE_IDS?.trim();
+  // The un-suffixed names are no longer read at all. They are named here because a value
+  // that is set and ignored is the kind of thing that costs an afternoon: somebody edits
+  // it, nothing changes, and there is no line anywhere saying why.
+  for (const stale of ['FEATURED_LEAGUE_IDS', 'DAILY_REQUEST_BUDGET'] as const) {
+    if (env[stale]?.trim()) {
+      logger.warn(
+        `${stale} is set in the environment but is no longer read; the code's own value ` +
+          `is in effect. Delete it from the Render dashboard, or set ${stale}_OVERRIDE to ` +
+          'deliberately deviate from the code.',
+        { ignored: stale },
+      );
+    }
+  }
+
+  const leagues = env.FEATURED_LEAGUE_IDS_OVERRIDE?.trim();
   if (leagues) {
     logger.warn(
-      'FEATURED_LEAGUE_IDS is set in the environment, so it REPLACES the list the code ' +
-        'ships with. Unset it in the Render dashboard (Environment -> delete the ' +
+      'FEATURED_LEAGUE_IDS_OVERRIDE is set in the environment, so it REPLACES the list the ' +
+        'code ships with. Unset it in the Render dashboard (Environment -> delete the ' +
         'variable) to get every competition this build knows about.',
-      { configured: leagues.split(',').length, shippedWithCode: config.featuredLeagueIds.length },
+      { configured: leagues.split(',').length, shippedWithCode: DEFAULT_FEATURED_LEAGUE_COUNT },
     );
   }
 
-  const budget = env.DAILY_REQUEST_BUDGET?.trim();
+  const budget = env.DAILY_REQUEST_BUDGET_OVERRIDE?.trim();
   if (budget) {
     logger.warn(
-      'DAILY_REQUEST_BUDGET is set in the environment, so this server will refuse calls ' +
-        'past it even when the plan allows more. Unset it in the Render dashboard to ' +
+      'DAILY_REQUEST_BUDGET_OVERRIDE is set in the environment, so this server will refuse ' +
+        'calls past it even when the plan allows more. Unset it in the Render dashboard to ' +
         'follow whatever the API-Football plan permits.',
       { configured: budget },
     );

@@ -66,6 +66,20 @@ data class CatalogueError(
 /** A selectable team, carrying the league it came from so the favourite keeps that link. */
 data class TeamOption(val team: Team, val league: League?)
 
+/**
+ * Every club once, whichever competitions it turned up in, in name order.
+ *
+ * A club in a league and in that league's cup came back once per competition - and that
+ * is every club in England and Israel, the two pyramids the catalogue carries down to the
+ * domestic cups, plus every Champions League side. The picker keys its rows on the team
+ * id, and Compose refuses a duplicate key outright rather than drawing the row twice, so
+ * choosing the Premier League together with the FA Cup, or with the Champions League,
+ * crashed the step every single time. The first competition a club was seen in is the
+ * one it is labelled with.
+ */
+internal fun Collection<TeamOption>.onceEach(): List<TeamOption> =
+    distinctBy { option -> option.team.id }.sortedBy { option -> option.team.name }
+
 data class OnboardingUiState(
     val apiKeyInput: String = "",
     val apiKeySaved: Boolean = false,

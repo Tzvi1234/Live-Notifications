@@ -68,8 +68,27 @@ describe('featured league parity', () => {
       fileURLToPath(new URL('../../../render.yaml', import.meta.url)),
       'utf8',
     );
-    const pinned = /^\s*-\s*key:\s*FEATURED_LEAGUE_IDS\s*$/m.test(blueprint);
-    assert.equal(pinned, false, 'render.yaml pins FEATURED_LEAGUE_IDS; it must inherit the code default');
+    for (const key of ['FEATURED_LEAGUE_IDS', 'FEATURED_LEAGUE_IDS_OVERRIDE']) {
+      const pinned = new RegExp(`^\\s*-\\s*key:\\s*${key}\\s*$`, 'm').test(blueprint);
+      assert.equal(pinned, false, `render.yaml pins ${key}; it must inherit the code default`);
+    }
+  });
+
+  test('a stale environment value cannot freeze the list any more', () => {
+    // The trap, the second time: the blueprint was fixed but the value it had once written
+    // into the Render dashboard stayed there, and env ?? default meant fourteen leagues
+    // for ever. The server now reads a new name, so the stale one is inert...
+    const stale = loadConfig({ API_FOOTBALL_KEY: 'test', FEATURED_LEAGUE_IDS: '39,140' });
+    assert.equal(stale.featuredLeagueIds.length, loadConfig({ API_FOOTBALL_KEY: 'test' }).featuredLeagueIds.length);
+    // ...and deviating on purpose is still possible under the name that says so.
+    const deliberate = loadConfig({ API_FOOTBALL_KEY: 'test', FEATURED_LEAGUE_IDS_OVERRIDE: '39,140' });
+    assert.deepEqual([...deliberate.featuredLeagueIds], [39, 140]);
+  });
+
+  test('the same holds for the daily budget', () => {
+    // Same dashboard, same mechanism, and this one pinned a 75,000-a-day plan at 7,500.
+    assert.equal(loadConfig({ API_FOOTBALL_KEY: 'test', DAILY_REQUEST_BUDGET: '7500' }).dailyRequestBudget, undefined);
+    assert.equal(loadConfig({ API_FOOTBALL_KEY: 'test', DAILY_REQUEST_BUDGET_OVERRIDE: '7500' }).dailyRequestBudget, 7500);
   });
 
   test('the order is the order, and it has no duplicates', () => {

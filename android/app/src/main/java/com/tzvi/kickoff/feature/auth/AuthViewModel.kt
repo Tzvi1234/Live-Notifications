@@ -190,9 +190,13 @@ class AuthViewModel @Inject constructor(
                 notice = null,
             )
 
-            // Closing the browser tab is an answer, not a fault. The page it came from
-            // is still there and still filled in; saying nothing is the whole response.
-            AuthOutcome.Cancelled -> state.copy(error = null, notice = null)
+            // Not silent any more. Closing the browser tab on purpose is an answer, but the
+            // SDK reports the same "cancelled" when the browser came back WITHOUT the
+            // callback it was waiting for - which is what a build whose redirect address
+            // Clerk does not know looks like from here. On that build a Google sign-in
+            // opened the account picker, returned, and said nothing at all, and "nothing
+            // happens" is a worse thing to see than one line of text. One line it is.
+            AuthOutcome.Cancelled -> state.copy(error = null, notice = GOOGLE_CANCELLED_NOTICE)
 
             is AuthOutcome.Failed -> state.copy(error = outcome.message, notice = null)
         }
@@ -211,5 +215,8 @@ class AuthViewModel @Inject constructor(
 
     private companion object {
         const val SUBSCRIPTION_TIMEOUT_MS = 5_000L
+        const val GOOGLE_CANCELLED_NOTICE =
+            "Google sign-in came back without finishing, so nothing changed. Try again, " +
+                "or continue with your email address."
     }
 }

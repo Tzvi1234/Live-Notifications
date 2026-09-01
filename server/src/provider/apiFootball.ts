@@ -606,7 +606,7 @@ export interface ApiFootballClientOptions {
   baseUrl?: string;
   logger?: ProviderLogger;
   /**
-   * DAILY_REQUEST_BUDGET: an explicit local ceiling. Omit it to follow whatever the plan
+   * DAILY_REQUEST_BUDGET_OVERRIDE: an explicit local ceiling. Omit it to follow whatever the plan
    * allows, which the provider reports in every response header.
    */
   budget?: number | undefined;

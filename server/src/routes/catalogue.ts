@@ -89,7 +89,7 @@ export function createCatalogueRouter(deps: ApiDeps): Router {
   return router;
 }
 
-/** FEATURED_LEAGUE_IDS is an ordering as well as a filter: it is the app's tab order. */
+/** The featured list is an ordering as well as a filter: it is the app's tab order. */
 function pickFeatured(leagues: LeagueJson[], featuredIds: readonly number[]): LeagueJson[] {
   const byId = new Map(leagues.map((league) => [league.id, league]));
   const picked: LeagueJson[] = [];

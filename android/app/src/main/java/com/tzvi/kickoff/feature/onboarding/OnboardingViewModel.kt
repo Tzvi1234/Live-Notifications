@@ -264,7 +264,9 @@ class OnboardingViewModel @Inject constructor(
                     state.copy(
                         teamsLoading = remaining > 0,
                         teamsRemaining = remaining,
-                        teams = collected.sortedBy { option -> option.team.name },
+                        // onceEach, not sortedBy: a club in two chosen competitions is one
+                        // row, or the list's keys collide and the screen dies.
+                        teams = collected.onceEach(),
                         teamsFailure = null,
                     )
                 }
@@ -314,7 +316,7 @@ class OnboardingViewModel @Inject constructor(
                 state.copy(
                     teamsLoading = false,
                     teamsRemaining = 0,
-                    teams = collected.sortedBy { option -> option.team.name },
+                    teams = collected.onceEach(),
                     // One league failing is not worth throwing away the ones that answered.
                     teamsFailure = if (collected.isEmpty()) {
                         failure ?: CatalogueError(CatalogueFailure.EMPTY)
