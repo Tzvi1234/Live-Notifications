@@ -10,6 +10,12 @@ android/app/google-services.json
 *.aab
 *.keystore
 *.jks
+# ...except the two throwaway keys that sign the side-by-side test flavours. They must be
+# in the repository or nobody else can build an alpha/beta that installs over the one they
+# already have - a signing key is an identity, and a regenerated one is a different app.
+# These sign test builds only and must never reach a store; the real release key is not here.
+!android/keystores/alpha.jks
+!android/keystores/beta.jks
 
 # Node
 server/node_modules/
