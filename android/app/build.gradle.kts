@@ -75,6 +75,12 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+
+            // Signed with the debug key so a release build is installable without a
+            // keystore. The debug build is now over 30 MB unshrunk - the auth SDK's UI
+            // module alone is three dex files - so this is the build that actually gets
+            // handed to anyone. Replace this with a real signing config before publishing.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
