@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Only the user's settings are worth restoring. The football cache and the tracked-activity
+  state are rebuilt from the network on first launch, and the FCM token is specific to the
+  install it was issued to - restoring one onto a new device would point the backend at a
+  registration that no longer exists.
+
+  Listing `sharedpref` as the sole include is what excludes everything else; naming the
+  database in an <exclude> as well would be a rule about a domain that is not included,
+  which lint rejects.
+-->
+<full-backup-content>
+    <include domain="sharedpref" path="." />
+</full-backup-content>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tracker overlay for the ProgressStyle bar: the ball sitting on the match minute. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:pathData="M24,3a21,21,0,1,0,0,42a21,21,0,1,0,0,-42Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M24,11.5L34.36,19.03L30.4,31.22L17.6,31.22L13.64,19.03Z"
+        android:fillColor="#FF0B140C" />
+</vector>

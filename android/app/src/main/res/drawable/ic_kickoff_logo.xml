@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated mark: a live progress ring closing on a football panel. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M70.73,35.42A25.0,25.0,0,1,1,44.63,30.82"
+        android:strokeColor="#FF00C853"
+        android:strokeWidth="9.0"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M54.00,40.50L66.84,49.83L61.94,64.92L46.06,64.92L41.16,49.83Z"
+        android:fillColor="#FF0B140C" />
+    <path
+        android:pathData="M64.73,35.42a6.0,6.0,0,1,0,12.00,0a6.0,6.0,0,1,0,-12.00,0Z"
+        android:fillColor="#FF00C853" />
+</vector>

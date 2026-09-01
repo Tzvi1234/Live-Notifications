@@ -1,0 +1,10 @@
+{
+  // Type-checks everything, tests included, and emits nothing. `npm run typecheck` and the
+  // ESLint type-aware rules both use this project so that test files are covered too.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

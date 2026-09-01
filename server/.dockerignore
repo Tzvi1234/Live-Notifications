@@ -1,0 +1,22 @@
+# Keep the build context to sources the Dockerfile actually copies. node_modules is excluded
+# so `npm ci` resolves the tree for the image's platform instead of inheriting the host's.
+node_modules/
+dist/
+coverage/
+
+.env
+.env.*
+firebase-service-account.json
+*.pem
+
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+render.yaml
+*.md
+*.log
+.eslintcache
+.idea/
+.vscode/
+.DS_Store
