@@ -82,6 +82,7 @@ val LiveCardStyle.label: String
         LiveCardStyle.AUTO -> "Clock"
         LiveCardStyle.RICH -> "Commentary"
         LiveCardStyle.PLAIN -> "Plain"
+        LiveCardStyle.SCOREBOARD -> "Scoreboard"
     }
 
 /**
@@ -100,8 +101,13 @@ val LiveCardStyle.explanation: String
                 "Android carries onto the always-on display in full, so this is the one to " +
                 "pick if the lock screen is where you actually read it."
         LiveCardStyle.PLAIN ->
-            "The system's own template with nothing requested. The most predictable of " +
-                "the three, and the only one that never asks to be promoted."
+            "The system's own template with nothing requested. The most predictable " +
+                "option, and the only one that never asks to be promoted."
+        LiveCardStyle.SCOREBOARD ->
+            "A dark score card drawn by hand: crest, giant score, crest, like the iOS " +
+                "widget. The looks come at a documented price - Android refuses to " +
+                "promote custom layouts, so this one stays in the shade and on the " +
+                "lock screen and never reaches the chip or the always-on display."
     }
 
 val AppSettings.DarkThemePreference.label: String

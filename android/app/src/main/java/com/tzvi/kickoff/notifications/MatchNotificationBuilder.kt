@@ -74,6 +74,9 @@ class MatchNotificationBuilder @Inject constructor(
 
         /** System template, nothing requested. The fallback that always works. */
         PLAIN,
+
+        /** The hand-drawn score card. Custom views, so never promoted - by choice. */
+        SCOREBOARD,
     }
 
     data class Result(val notification: Notification, val rendering: Rendering)
@@ -92,6 +95,7 @@ class MatchNotificationBuilder @Inject constructor(
             Rendering.CLOCK -> applyClock(builder, activity, crests)
             Rendering.COMMENTARY -> applyCommentary(builder, activity, crests)
             Rendering.PLAIN -> applyPlain(builder, activity)
+            Rendering.SCOREBOARD -> applyScoreboard(builder, activity, requireNotNull(crests))
         }
         return Result(builder.build(), rendering)
     }
@@ -136,6 +140,8 @@ class MatchNotificationBuilder @Inject constructor(
 
     private fun chooseRendering(style: LiveCardStyle, crests: Crests?): Rendering = when (style) {
         LiveCardStyle.PLAIN -> Rendering.PLAIN
+        // The card IS the crests and the score; without bitmaps there is nothing to draw.
+        LiveCardStyle.SCOREBOARD -> if (crests != null) Rendering.SCOREBOARD else Rendering.PLAIN
         // BigTextStyle needs nothing from the platform and renders on every version; the
         // crests only decorate it, so this one never has to fall back.
         LiveCardStyle.RICH -> Rendering.COMMENTARY
@@ -318,6 +324,61 @@ class MatchNotificationBuilder @Inject constructor(
         event.type == com.tzvi.kickoff.core.model.MatchEventType.RED_CARD -> color(R.color.notif_live)
         event.side == MatchSide.AWAY -> AWAY_GOAL_COLOR
         else -> HOME_GOAL_COLOR
+    }
+
+    // ---- scoreboard (custom views) ------------------------------------------
+
+    /**
+     * The reference widget, remade: a near-black card with a crest and a huge score on
+     * each side, the clock small between them, and the names along the bottom.
+     *
+     * Deliberately NOT DecoratedCustomViewStyle - the system header and action row are
+     * exactly the chrome the reference does not have. Losing the Stop following button
+     * here is part of the style's stated trade; the delete intent and the tap-through
+     * still work, and the other styles keep the button.
+     */
+    private fun applyScoreboard(
+        builder: NotificationCompat.Builder,
+        activity: LiveActivity.MatchActivity,
+        crests: Crests,
+    ) {
+        val match = activity.match
+        val score = match.score
+        val clock = when (activity.stage) {
+            LiveActivity.MatchActivity.Stage.PRE_MATCH -> countdownText(match.kickoffAt)
+            LiveActivity.MatchActivity.Stage.LIVE -> match.clockLabel
+            LiveActivity.MatchActivity.Stage.FULL_TIME -> "FT"
+        }
+
+        val compact = RemoteViews(context.packageName, R.layout.notification_scoreboard).apply {
+            setImageViewBitmap(R.id.home_crest, crests.home)
+            setImageViewBitmap(R.id.away_crest, crests.away)
+            setTextViewText(
+                R.id.score,
+                score?.let { "${it.home} \u2013 ${it.away}" } ?: "vs",
+            )
+            setTextViewText(R.id.clock, clock)
+        }
+
+        val big = RemoteViews(context.packageName, R.layout.notification_scoreboard_big).apply {
+            setImageViewBitmap(R.id.home_crest, crests.home)
+            setImageViewBitmap(R.id.away_crest, crests.away)
+            setTextViewText(R.id.home_score, score?.home?.toString() ?: "\u2013")
+            setTextViewText(R.id.away_score, score?.away?.toString() ?: "\u2013")
+            setTextViewText(R.id.clock, clock)
+            setTextViewText(R.id.home_name, match.home.name)
+            setTextViewText(R.id.away_name, match.away.name)
+            setTextViewText(
+                R.id.event_line,
+                activity.latestEvent?.headline() ?: match.leagueName,
+            )
+        }
+
+        builder.setCustomContentView(compact)
+            .setCustomBigContentView(big)
+            // The dark card carries its own contrast; the accent would tint the small
+            // icon anyway, so it stays.
+            .setColor(ContextCompat.getColor(context, R.color.brand_green))
     }
 
     // ---- commentary (BigTextStyle) ------------------------------------------

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Collapsed scoreboard: one dense row, everything centred. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_scoreboard"
+    android:gravity="center"
+    android:orientation="horizontal"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
+
+    <ImageView
+        android:id="@+id/home_crest"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
+        android:importantForAccessibility="no" />
+
+    <TextView
+        android:id="@+id/score"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
+        android:fontFamily="sans-serif-black"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp" />
+
+    <ImageView
+        android:id="@+id/away_crest"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
+        android:importantForAccessibility="no" />
+
+    <TextView
+        android:id="@+id/clock"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:textColor="#9BB0A0"
+        android:textSize="12sp" />
+</LinearLayout>

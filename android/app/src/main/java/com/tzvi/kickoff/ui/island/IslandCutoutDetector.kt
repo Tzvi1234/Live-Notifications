@@ -5,7 +5,7 @@ import android.os.Build
 import android.view.View
 import androidx.annotation.RequiresApi
 import com.tzvi.kickoff.core.model.IslandCutout
-import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
@@ -17,6 +17,9 @@ import kotlin.math.roundToInt
  * and means "no idea", not "broken".
  */
 object IslandCutoutDetector {
+
+    /** Detection may not claim more than this; the arrows can, if a human insists. */
+    private const val AUTO_DIAMETER_CAP_DP = 36
 
     fun detect(view: View): IslandCutout? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
@@ -31,8 +34,11 @@ object IslandCutoutDetector {
             enabled = true,
             centerXFraction = rect.exactCenterX() / width,
             centerYDp = (rect.exactCenterY() / density).roundToInt(),
-            // Square holes and pills alike: the longer side is what has to be cleared.
-            diameterDp = (max(rect.width(), rect.height()) / density).roundToInt(),
+            // The SHORT side, capped. The reported rect is the region the system
+            // reserves, not the lens - on real hardware the long side runs several
+            // times the hole's true size and produced a comically wide island.
+            diameterDp = (min(rect.width(), rect.height()) / density).roundToInt()
+                .coerceAtMost(AUTO_DIAMETER_CAP_DP),
         ).sanitised()
     }
 

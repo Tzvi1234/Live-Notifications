@@ -41,9 +41,22 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.geometry.Offset
+import com.tzvi.kickoff.ui.component.KickoffBallTint
+import com.tzvi.kickoff.ui.component.KickoffRingDark
+import kotlin.math.abs
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,6 +98,32 @@ fun OnboardingScreen(
         scope.launch { pagerState.animateScrollToPage(page) }
     }
 
+    // ---- the ball that carries you forward -------------------------------------------
+    // Advancing kicks a small ball out of the button you pressed; it arcs across the
+    // screen and lands on the progress rail just as the rail's next segment fills. The
+    // flow already was a sequence of steps - the ball makes it read as one continuous
+    // piece of play instead of five screens taking turns.
+    val flight = remember { Animatable(0f) }
+    var flightFrom by remember { mutableStateOf<Offset?>(null) }
+    var flightTo by remember { mutableStateOf<Offset?>(null) }
+    var nextButtonCenter by remember { mutableStateOf<Offset?>(null) }
+    var railCenter by remember { mutableStateOf<Offset?>(null) }
+
+    val kickForward: (Int) -> Unit = { target ->
+        val from = nextButtonCenter
+        val to = railCenter
+        if (from != null && to != null) {
+            flightFrom = from
+            flightTo = to
+            scope.launch {
+                flight.snapTo(0f)
+                flight.animateTo(1f, tween(durationMillis = 640, easing = Motion.Easings.standard))
+                flightFrom = null
+            }
+        }
+        goTo(target)
+    }
+
     // Re-read on every resume, so a permission granted in system settings is reflected
     // the moment the user comes back - and so nothing is ever requested on cold start.
     LifecycleResumeEffect(Unit) {
@@ -119,6 +158,7 @@ fun OnboardingScreen(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
+        Box(Modifier.fillMaxSize()) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -147,6 +187,7 @@ fun OnboardingScreen(
                         step = current,
                         copy = copyFor(current, state),
                         status = state.statusFor(current),
+                        onRailPositioned = { railCenter = it },
                     )
                 }
             }
@@ -169,7 +210,7 @@ fun OnboardingScreen(
                     ) { entrance ->
                         when (pageStep) {
                             OnboardingStep.WELCOME -> WelcomePage(
-                                onGetStarted = { goTo(OnboardingStep.SOURCE.ordinal) },
+                                onGetStarted = { kickForward(OnboardingStep.SOURCE.ordinal) },
                             )
 
                             OnboardingStep.SOURCE -> SourcePage(
@@ -237,10 +278,18 @@ fun OnboardingScreen(
                     if (step == OnboardingStep.READY) {
                         viewModel.finish()
                     } else {
-                        goTo(pagerState.currentPage + 1)
+                        kickForward(pagerState.currentPage + 1)
                     }
                 },
+                onNextButtonPositioned = { nextButtonCenter = it },
             )
+        }
+
+        BallFlightOverlay(
+            progress = { flight.value },
+            from = flightFrom,
+            to = flightTo,
+        )
         }
     }
 }
@@ -259,6 +308,7 @@ private fun OnboardingFooter(
     onBack: () -> Unit,
     onNext: () -> Unit,
     modifier: Modifier = Modifier,
+    onNextButtonPositioned: (Offset) -> Unit = {},
 ) {
     // The welcome page carries its own "Get started", so its footer is empty space.
     val showButtons = step != OnboardingStep.WELCOME
@@ -279,7 +329,7 @@ private fun OnboardingFooter(
                         .padding(horizontal = OnboardingSpacing.screen, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(onClick = onBack) {
+                    TextButton(onClick = onBack, modifier = Modifier.height(52.dp)) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = null,
@@ -299,7 +349,16 @@ private fun OnboardingFooter(
                             .padding(horizontal = OnboardingSpacing.tight),
                     )
 
-                    Button(onClick = onNext, enabled = state.canAdvanceFrom(step)) {
+                    Button(
+                        onClick = onNext,
+                        enabled = state.canAdvanceFrom(step),
+                        modifier = Modifier
+                            .height(52.dp)
+                            .widthIn(min = 132.dp)
+                            .onGloballyPositioned { coords ->
+                                onNextButtonPositioned(coords.boundsInRoot().center)
+                            },
+                    ) {
                         if (state.saving) {
                             KickoffLoader(
                                 size = 18.dp,
@@ -315,6 +374,60 @@ private fun OnboardingFooter(
         }
         // Keeps the splash's bottom edge from jumping when the buttons fade in.
         if (!showButtons) Spacer(Modifier.height(24.dp))
+    }
+}
+
+/**
+ * A mint ball on a chipped arc from the pressed button up to the progress rail.
+ *
+ * Drawn over everything and reading its progress inside the draw phase, so seventy
+ * frames of flight cost zero recompositions. The squash at either end is what makes it
+ * a ball rather than a dot on a bezier.
+ */
+@Composable
+private fun BallFlightOverlay(
+    progress: () -> Float,
+    from: Offset?,
+    to: Offset?,
+    modifier: Modifier = Modifier,
+) {
+    if (from == null || to == null) return
+    val ballColor = KickoffBallTint
+    val ringColor = KickoffRingDark
+    Canvas(modifier = modifier.fillMaxSize()) {
+        val t = progress()
+        if (t <= 0f || t >= 1f) return@Canvas
+
+        // A quadratic arc whose peak sits well above the straight line: a chip, not a pass.
+        val control = Offset(
+            x = (from.x + to.x) / 2f,
+            y = minOf(from.y, to.y) - size.height * 0.12f,
+        )
+        val inv = 1f - t
+        val position = Offset(
+            x = inv * inv * from.x + 2 * inv * t * control.x + t * t * to.x,
+            y = inv * inv * from.y + 2 * inv * t * control.y + t * t * to.y,
+        )
+
+        // Launch and landing both squash; mid-flight it is round and slightly larger.
+        val ends = (1f - abs(t - 0.5f) * 2f).coerceIn(0f, 1f)
+        val radius = 7.dp.toPx() * (0.85f + 0.35f * ends)
+        val fade = when {
+            t < 0.08f -> t / 0.08f
+            t > 0.9f -> (1f - t) / 0.1f
+            else -> 1f
+        }
+
+        drawCircle(
+            color = ringColor.copy(alpha = 0.35f * fade),
+            radius = radius * 1.25f,
+            center = position,
+        )
+        drawCircle(
+            color = ballColor.copy(alpha = fade),
+            radius = radius,
+            center = position,
+        )
     }
 }
 

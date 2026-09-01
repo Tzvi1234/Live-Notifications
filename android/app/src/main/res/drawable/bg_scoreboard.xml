@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The scoreboard card's ground: near-black with the same corner radius the island
+     uses, so the two read as one family. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#0B140C" />
+    <corners android:radius="24dp" />
+</shape>

@@ -72,16 +72,6 @@ class IslandOverlayService :
     private var cutout: IslandCutout = IslandCutout.Unset
 
     /**
-     * True while Kickoff itself is on screen.
-     *
-     * The island exists to put the score where you are not looking. Floating it over the
-     * app's own match screens just stacks a second copy of the scoreline on the toolbar,
-     * so the window comes down for as long as the app is in front and goes straight back
-     * up when it leaves.
-     */
-    private var appInForeground = false
-
-    /**
      * True only after a real show() start. The foreground/background signals reach this
      * service by startService, which CREATES it if nothing was running - and a service
      * created by its own bookkeeping signal must not conjure an island the user never
@@ -115,7 +105,6 @@ class IslandOverlayService :
                 return START_NOT_STICKY
             }
             ACTION_APP_FOREGROUND -> {
-                appInForeground = true
                 if (!active) {
                     stopSelf()
                     return START_NOT_STICKY
@@ -124,7 +113,6 @@ class IslandOverlayService :
             }
 
             ACTION_APP_BACKGROUND -> {
-                appInForeground = false
                 if (!active) {
                     stopSelf()
                     return START_NOT_STICKY
@@ -144,7 +132,7 @@ class IslandOverlayService :
 
     private suspend fun start() {
         cutout = settings.islandCutout.first()
-        if (!appInForeground) showOverlay()
+        if (!appVisible) showOverlay()
     }
 
     private fun showOverlay() {
@@ -196,6 +184,9 @@ class IslandOverlayService :
                         // Collapsed, the window itself is centred on the hole and only as
                         // wide as the pill, so the content must not offset itself again.
                         cameraCenterX = if (expanded) cameraCenterXDp() else null,
+                        // Taps in the status-bar band are SystemUI's; the strip below the
+                        // pill is where a tap can actually land.
+                        touchPadBelow = TOUCH_PAD_DP.dp,
                         onToggle = {
                             expanded = !expanded
                             // A collapsed pill must not swallow taps meant for the app
@@ -324,8 +315,9 @@ class IslandOverlayService :
         private const val ACTION_APP_FOREGROUND = "com.tzvi.kickoff.action.APP_FOREGROUND"
         private const val ACTION_APP_BACKGROUND = "com.tzvi.kickoff.action.APP_BACKGROUND"
         private const val OVERLAY_TOP_MARGIN_PX = 24
-        private const val SIDE_WIDTH_DP = 92
-        private const val COLLAPSED_HEIGHT_DP = 44
+        private const val SIDE_WIDTH_DP = 74
+        private const val COLLAPSED_HEIGHT_DP = 36
+        private const val TOUCH_PAD_DP = 24
 
         fun canDrawOverlay(context: Context): Boolean = Settings.canDrawOverlays(context)
 
@@ -353,9 +345,23 @@ class IslandOverlayService :
          * Deliberately fire-and-forget: if the service is not running these do nothing,
          * which is exactly right - there is no island to take down.
          */
-        fun appForeground(context: Context) = signal(context, ACTION_APP_FOREGROUND)
+        /**
+         * Held here, not on the instance: turning the float switch on starts a FRESH
+         * service instance, and a fresh instance that cannot ask "is the app in front
+         * right now?" draws the island over the very Settings screen that launched it.
+         */
+        @Volatile
+        private var appVisible = false
 
-        fun appBackground(context: Context) = signal(context, ACTION_APP_BACKGROUND)
+        fun appForeground(context: Context) {
+            appVisible = true
+            signal(context, ACTION_APP_FOREGROUND)
+        }
+
+        fun appBackground(context: Context) {
+            appVisible = false
+            signal(context, ACTION_APP_BACKGROUND)
+        }
 
         private fun signal(context: Context, action: String) {
             if (!canDrawOverlay(context)) return

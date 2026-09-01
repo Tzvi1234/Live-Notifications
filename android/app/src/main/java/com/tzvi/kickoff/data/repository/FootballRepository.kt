@@ -16,6 +16,7 @@ import com.tzvi.kickoff.data.local.dao.MatchEventDao
 import com.tzvi.kickoff.data.local.toDomain
 import com.tzvi.kickoff.data.local.toEntity
 import com.tzvi.kickoff.data.local.toFavouriteEntity
+import com.tzvi.kickoff.notifications.MatchSimulator
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -76,9 +77,12 @@ class FootballRepository @Inject constructor(
             matchDao.observeLive(LIVE_PHASES).map { rows ->
                 rows.map { it.toDomain() }
                     .sortedWith(
-                        compareByDescending<Match> {
-                            it.home.id in followed || it.away.id in followed
-                        }.thenBy { it.kickoffAt },
+                        // The simulator's match outranks even a favourite: it exists
+                        // precisely to be watched, and the static demo fixture next to
+                        // it never moves its clock.
+                        compareByDescending<Match> { it.id == MatchSimulator.SIM_MATCH_ID }
+                            .thenByDescending { it.home.id in followed || it.away.id in followed }
+                            .thenBy { it.kickoffAt },
                     )
             }
         }

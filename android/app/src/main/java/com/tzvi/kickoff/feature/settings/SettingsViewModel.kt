@@ -14,7 +14,10 @@ import com.tzvi.kickoff.core.model.AppSettings
 import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.core.model.LiveCardStyle
 import com.tzvi.kickoff.data.repository.FootballRepository
+import com.tzvi.kickoff.data.local.KickoffDatabase
 import com.tzvi.kickoff.data.repository.SettingsRepository
+import com.tzvi.kickoff.di.IoDispatcher
+import kotlinx.coroutines.CoroutineDispatcher
 import com.tzvi.kickoff.data.demo.DemoCatalogue
 import com.tzvi.kickoff.notifications.LiveCardPreview
 import com.tzvi.kickoff.notifications.MatchSimulator
@@ -59,6 +62,8 @@ class SettingsViewModel @Inject constructor(
     private val capability: LiveUpdateCapability,
     private val liveCardPreview: LiveCardPreview,
     private val simulator: MatchSimulator,
+    private val database: KickoffDatabase,
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
 
     /**
@@ -283,6 +288,10 @@ class SettingsViewModel @Inject constructor(
                     "kind that reaches the always-on display in full."
             MatchNotificationBuilder.Rendering.PLAIN ->
                 "Posted using the plain system template."
+            MatchNotificationBuilder.Rendering.SCOREBOARD ->
+                "Posted as the scoreboard card. It lives in the shade and on the lock " +
+                    "screen; Android never promotes custom layouts, so no chip and no " +
+                    "always-on display - that is this style's trade."
             // A refused post and a post throttled behind the previous one are
             // indistinguishable from here, so the copy has to cover both.
             null ->
@@ -384,6 +393,32 @@ class SettingsViewModel @Inject constructor(
     fun notificationSettingsIntent(): Intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
         .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    /**
+     * Burn it all down, then start the app again from its first screen.
+     *
+     * The process is killed on purpose rather than navigated: singletons, caches, the
+     * foreground service and the overlay all hold state that a wipe under their feet
+     * would turn into undefined behaviour. A clean process against empty storage is the
+     * only "back to the beginning" that actually is.
+     */
+    fun eraseEverything() {
+        viewModelScope.launch(ioDispatcher) {
+            runCatching { simulator.stop() }
+            runCatching { IslandOverlayService.hide(context) }
+            runCatching {
+                context.getSystemService(android.app.NotificationManager::class.java)
+                    ?.cancelAll()
+            }
+            runCatching { database.clearAllTables() }
+            runCatching { settingsRepository.eraseEverything() }
+
+            val restart = Intent(context, com.tzvi.kickoff.MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            context.startActivity(restart)
+            Runtime.getRuntime().exit(0)
+        }
+    }
 
     // ---- internals -----------------------------------------------------------
 

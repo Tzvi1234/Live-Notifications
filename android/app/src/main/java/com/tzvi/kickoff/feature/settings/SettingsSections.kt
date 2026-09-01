@@ -31,6 +31,9 @@ import androidx.compose.material.icons.outlined.Style
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.outlined.DeleteForever
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -56,6 +59,7 @@ import com.tzvi.kickoff.ui.component.LivePill
 import com.tzvi.kickoff.ui.theme.KickoffTextStyles
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -648,6 +652,7 @@ internal fun AboutSection(
     version: String,
     expanded: Boolean,
     onToggle: () -> Unit,
+    onEraseEverything: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     SettingsCard(
@@ -682,6 +687,11 @@ internal fun AboutSection(
             text = "Fixtures, scores, line-ups and crests come from API-Football.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = GroupPadding, vertical = TightGap),
+        )
+
+        EraseEverythingRow(
+            onEraseEverything = onEraseEverything,
             modifier = Modifier.padding(horizontal = GroupPadding, vertical = TightGap),
         )
     }
@@ -799,6 +809,74 @@ private const val API_FOOTBALL_URL = "https://dashboard.api-football.com/"
 
 private const val LEAD_STEPS = (PRE_MATCH_LEAD_MAX - PRE_MATCH_LEAD_MIN) / PRE_MATCH_LEAD_STEP - 1
 
+
+/**
+ * The way out. Wipes the key, the followed teams, the cache and every preference, then
+ * relaunches into onboarding - and it asks first, because there is no way back from it.
+ */
+@Composable
+private fun EraseEverythingRow(
+    onEraseEverything: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var confirming by remember { mutableStateOf(false) }
+
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(TightGap)) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Text(
+            text = "Start over",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.error,
+        )
+        Text(
+            text = "Deletes the API key, the backend address, your teams, the cached " +
+                "matches and every setting, then opens the app at its first screen.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(
+            onClick = { confirming = true },
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.error,
+            ),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.DeleteForever,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("Erase everything")
+        }
+    }
+
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text("Erase everything?") },
+            text = {
+                Text(
+                    "Your key, backend address, teams, cached matches and settings will " +
+                        "all be deleted, and the app will restart at onboarding. This " +
+                        "cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirming = false
+                        onEraseEverything()
+                    },
+                ) {
+                    Text("Erase and start over", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirming = false }) { Text("Keep my data") }
+            },
+        )
+    }
+}
 
 // ---- closed-card summaries ----------------------------------------------------------
 //

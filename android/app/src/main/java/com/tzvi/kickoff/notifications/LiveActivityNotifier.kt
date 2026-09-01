@@ -131,8 +131,13 @@ class LiveActivityNotifier @Inject constructor(
      * device, not which of the two was chosen.
      */
     fun isPromoted(key: String): Boolean =
-        lastRendering[key] != MatchNotificationBuilder.Rendering.PLAIN &&
-            capability.canPostPromoted()
+        when (lastRendering[key]) {
+            MatchNotificationBuilder.Rendering.CLOCK,
+            MatchNotificationBuilder.Rendering.COMMENTARY,
+            -> capability.canPostPromoted()
+
+            else -> false
+        }
 
     // ---- internals -----------------------------------------------------------
 

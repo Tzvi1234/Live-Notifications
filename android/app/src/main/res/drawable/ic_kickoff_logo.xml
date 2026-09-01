@@ -1,19 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Generated mark: a live progress ring closing on a football panel. -->
+<!-- Generated: the Kickoff mark. Edit tools/logo generator, not this file. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="48dp"
-    android:height="48dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="96dp" android:height="96dp"
+    android:viewportWidth="96" android:viewportHeight="96">
     <path
-        android:pathData="M70.73,35.42A25.0,25.0,0,1,1,44.63,30.82"
-        android:strokeColor="#FF00C853"
-        android:strokeWidth="9.0"
-        android:strokeLineCap="round" />
-    <path
-        android:pathData="M54.00,40.50L66.84,49.83L61.94,64.92L46.06,64.92L41.16,49.83Z"
-        android:fillColor="#FF0B140C" />
-    <path
-        android:pathData="M64.73,35.42a6.0,6.0,0,1,0,12.00,0a6.0,6.0,0,1,0,-12.00,0Z"
-        android:fillColor="#FF00C853" />
+        android:pathData="M54.32,15.49 A33.12,33.12,0,0,0,24.58,71.42 A33.12,33.12,0,0,0,80.51,41.68"
+        android:strokeWidth="10.86"
+        android:strokeLineCap="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="sweep"
+                android:centerX="48" android:centerY="48">
+            <item android:offset="0.0" android:color="#FF0D9C4B" />
+            <item android:offset="0.7806" android:color="#FF35E36C" />
+            <item android:offset="0.9694" android:color="#FF0C9A4A" />
+            <item android:offset="1.0" android:color="#FF0D9C4B" />
+        </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M48.00,36.50L58.94,44.45L54.76,57.30L41.24,57.30L37.06,44.45Z" android:fillColor="#FFEAF5ED" />
+    <path android:pathData="M40.41,29.14 A7.59,4.23,0.0,1,0,55.59,29.14 A7.59,4.23,0.0,1,0,40.41,29.14Z" android:fillColor="#FFEAF5ED" />
+    <path android:pathData="M63.59,34.95 A7.59,4.23,72.0,1,0,68.28,49.39 A7.59,4.23,72.0,1,0,63.59,34.95Z" android:fillColor="#FFEAF5ED" />
+    <path android:pathData="M65.23,58.80 A7.59,4.23,144.0,1,0,52.95,67.72 A7.59,4.23,144.0,1,0,65.23,58.80Z" android:fillColor="#FFEAF5ED" />
+    <path android:pathData="M43.05,67.72 A7.59,4.23,216.0,1,0,30.77,58.80 A7.59,4.23,216.0,1,0,43.05,67.72Z" android:fillColor="#FFEAF5ED" />
+    <path android:pathData="M27.72,49.39 A7.59,4.23,288.0,1,0,32.41,34.95 A7.59,4.23,288.0,1,0,27.72,49.39Z" android:fillColor="#FFEAF5ED" />
+    <path android:pathData="M66.13,25.53 a8.65,8.65,0,1,0,17.30,0 a8.65,8.65,0,1,0,-17.30,0Z" android:fillColor="#FFEAF5ED" />
 </vector>

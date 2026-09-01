@@ -135,6 +135,11 @@ class SettingsRepository @Inject constructor(
     suspend fun setEnabledCalendars(ids: Set<Long>) =
         edit { it[Keys.calendarIds] = ids.map(Long::toString).toSet() }
 
+    /** Every preference gone, including onboarding-complete: the next launch starts over. */
+    suspend fun eraseEverything() {
+        context.dataStore.edit { it.clear() }
+    }
+
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         context.dataStore.edit(block)
     }

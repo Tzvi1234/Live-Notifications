@@ -60,15 +60,18 @@ internal fun WelcomePage(
     onGetStarted: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // SpaceBetween-by-hand: the logo block breathes in the upper half, the promises sit
+    // in the lower, and the button holds the bottom edge - the page owns its whole height
+    // instead of clustering in the middle with dead air above and below.
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = OnboardingSpacing.screen),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
     ) {
-        AnimatedKickoffLogo(size = 120.dp)
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.weight(1.1f))
+        AnimatedKickoffLogo(size = 148.dp)
+        Spacer(Modifier.height(30.dp))
         Text(
             text = "Kickoff",
             style = MaterialTheme.typography.displaySmall,
@@ -82,8 +85,8 @@ internal fun WelcomePage(
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(32.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Spacer(Modifier.weight(1f))
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             FeatureLine(
                 icon = Icons.Outlined.Notifications,
                 text = "A score that updates in place, not a new alert every goal",
@@ -97,10 +100,16 @@ internal fun WelcomePage(
                 text = "Your own calendar beside the fixtures, read-only",
             )
         }
-        Spacer(Modifier.height(40.dp))
-        Button(onClick = onGetStarted, modifier = Modifier.fillMaxWidth()) {
-            Text("Get started")
+        Spacer(Modifier.weight(1f))
+        Button(
+            onClick = onGetStarted,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+        ) {
+            Text("Get started", style = MaterialTheme.typography.titleMedium)
         }
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -123,7 +132,7 @@ internal fun SourcePage(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = OnboardingSpacing.screen),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         entrance.Block(0) {
             SourceTile(
@@ -207,30 +216,30 @@ private fun SourceTile(
         },
     ) {
         Row(
-            modifier = Modifier.padding(OnboardingSpacing.card),
+            modifier = Modifier.padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier.size(28.dp),
             )
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f),
                     )
                     MetaChip(text = badge)
                 }
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(3.dp))
                 Text(
                     text = body,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

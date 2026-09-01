@@ -111,6 +111,7 @@ fun SettingsScreen(onBack: () -> Unit, onCalibrateCutout: () -> Unit) {
         onSetDynamicColor = viewModel::setDynamicColor,
         onRetry = viewModel::retry,
         onDismissMessage = viewModel::dismissMessage,
+        onEraseEverything = viewModel::eraseEverything,
     )
 }
 
@@ -148,6 +149,7 @@ internal fun SettingsContent(
     onSetDynamicColor: (Boolean) -> Unit,
     onRetry: () -> Unit,
     onDismissMessage: () -> Unit,
+    onEraseEverything: () -> Unit = {},
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -281,6 +283,7 @@ internal fun SettingsContent(
                     version = state.appVersion,
                     expanded = openCard == SettingsCardId.ABOUT,
                     onToggle = { toggle(SettingsCardId.ABOUT) },
+                    onEraseEverything = onEraseEverything,
                 )
                 Spacer(Modifier.height(BottomPadding))
             }

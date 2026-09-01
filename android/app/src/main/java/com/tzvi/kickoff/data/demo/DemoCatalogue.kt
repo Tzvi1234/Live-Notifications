@@ -114,10 +114,16 @@ object DemoCatalogue {
      */
     fun fixtures(now: Instant = Instant.now()): List<Match> = listOf(
         // In play: the one the live card and the island are showing.
+        // The clock runs off the anchor rather than being written down: 72 wall minutes
+        // in is the 67th match minute (15 of them were half-time), and each refetch moves
+        // it on, so the in-play fixture never reads as frozen. It laps back to the 47th
+        // minute rather than ever reaching full time - the demo's one match is always on.
         fixture(
             id = LIVE_MATCH_ID, home = arsenal, away = chelsea,
             kickoff = now.minus(Duration.ofMinutes(72)),
-            phase = MatchPhase.SECOND_HALF, elapsed = 67, score = Score(2, 1),
+            phase = MatchPhase.SECOND_HALF,
+            elapsed = 47 + ((now.epochSecond / 60) % 43).toInt(),
+            score = Score(2, 1),
             halfTime = Score(1, 1), round = "Matchweek 24",
         ),
         // Inside the pre-match window, so the countdown card is reachable immediately.

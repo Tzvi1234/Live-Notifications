@@ -19,6 +19,15 @@ enum class LiveCardStyle {
 
     /** Plain system template. Cheapest, most predictable, least interesting. */
     PLAIN,
+
+    /**
+     * A hand-drawn dark score card - crest, giant score, crest - modelled on the iOS
+     * lock-screen sports widget. The one style that draws its own views, which is
+     * exactly why it can never be promoted: it lives in the shade and on the lock
+     * screen, and never reaches the status-bar chip or the always-on display. That
+     * trade is the user's to make, and this option is how they make it.
+     */
+    SCOREBOARD,
 }
 
 data class AppSettings(

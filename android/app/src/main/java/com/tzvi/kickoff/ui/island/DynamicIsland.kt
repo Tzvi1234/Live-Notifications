@@ -92,6 +92,12 @@ fun DynamicIsland(
     cameraCenterX: Dp? = null,
     /** Distance from this composable's top edge to the top of the pill. */
     pillTop: Dp = 0.dp,
+    /**
+     * Invisible tap area extended below the pill. The pill itself sits in the status-bar
+     * band, whose touches belong to SystemUI and never reach an app overlay - so the
+     * finger's natural landing spot just under it is what actually takes the tap.
+     */
+    touchPadBelow: Dp = 0.dp,
 ) {
     // AnimatedVisibility keeps composing its content through the exit animation, by which
     // time `activity` is already null. Holding the last non-null value lets the island
@@ -120,6 +126,7 @@ fun DynamicIsland(
                 cutout = cutout,
                 cameraCenterX = cameraCenterX,
                 pillTop = pillTop,
+                touchPadBelow = touchPadBelow,
                 onToggle = onToggle,
                 onOpenMatch = { onOpenMatch(shown.match.id) },
                 onDismiss = onDismiss,
@@ -199,6 +206,7 @@ private fun CalibratedIsland(
     cutout: IslandCutout,
     cameraCenterX: Dp?,
     pillTop: Dp,
+    touchPadBelow: Dp,
     onToggle: () -> Unit,
     onOpenMatch: () -> Unit,
     onDismiss: (() -> Unit)?,
@@ -243,20 +251,26 @@ private fun CalibratedIsland(
                 // would recompose the whole island for each one.
                 .offset { IntOffset(pillX.roundToPx(), pillTop.roundToPx()) }
                 .width(pillWidth)
-                .shadow(
-                    elevation = if (expanded) 18.dp else 10.dp,
-                    shape = RoundedCornerShape(corner),
-                    clip = false,
-                )
-                .clip(RoundedCornerShape(corner))
-                .background(IslandInk)
+                // Clickable BEFORE the padding, so the invisible strip under the pill is
+                // part of the tap target - that strip is the whole point of it.
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = onToggle,
-                ),
+                )
+                .padding(bottom = touchPadBelow),
         ) {
-            Column(Modifier.fillMaxWidth()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .shadow(
+                        elevation = if (expanded) 18.dp else 10.dp,
+                        shape = RoundedCornerShape(corner),
+                        clip = false,
+                    )
+                    .clip(RoundedCornerShape(corner))
+                    .background(IslandInk),
+            ) {
                 CutoutRow(
                     activity = activity,
                     leftWidth = (camera - pillX - gap / 2).coerceAtLeast(0.dp),
@@ -299,19 +313,19 @@ private fun CutoutRow(
             modifier = Modifier
                 .width(leftWidth)
                 .clipToBounds()
-                .padding(start = 16.dp),
+                .padding(start = 10.dp),
             contentAlignment = Alignment.CenterEnd,
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                CrestImage(match.home.crestUrl, match.home.code, size = 20.dp)
+                CrestImage(match.home.crestUrl, match.home.code, size = 16.dp)
                 Text(
                     text = scoreLabel(activity),
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    fontSize = 14.sp,
                     maxLines = 1,
                 )
             }
@@ -321,18 +335,18 @@ private fun CutoutRow(
             modifier = Modifier
                 .weight(1f)
                 .clipToBounds()
-                .padding(end = 16.dp),
+                .padding(end = 10.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                CrestImage(match.away.crestUrl, match.away.code, size = 20.dp)
+                CrestImage(match.away.crestUrl, match.away.code, size = 16.dp)
                 Text(
                     text = clockLabel(activity),
                     color = IslandMuted,
-                    style = KickoffTextStyles.clock,
+                    fontSize = 11.sp,
                     maxLines = 1,
                 )
             }
@@ -626,10 +640,10 @@ private fun clockLabel(activity: LiveActivity.MatchActivity): String {
 private val KICKOFF_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 /** The height of the bar that straddles the camera, in both states. */
-internal val COLLAPSED_HEIGHT = 44.dp
+internal val COLLAPSED_HEIGHT = 36.dp
 
 /** Each side of the gap while collapsed. Equal halves keep the hole exactly centred. */
-private val SIDE_WIDTH = 92.dp
+private val SIDE_WIDTH = 74.dp
 
 // The island is always dark, in both themes: it imitates the hardware cutout it sits
 // next to, and a light pill floating over a light app has no edge to read against.
