@@ -32,6 +32,35 @@ if (hasFirebaseConfig) {
     apply(plugin = libs.plugins.google.services.get().pluginId)
 }
 
+/**
+ * The side-by-side flavours, and the one thing that stops them building.
+ *
+ * Firebase issues its config per package name and the google-services plugin fails the
+ * build outright when no client matches - so `com.tzvi.kickoff.alpha` has nowhere to read
+ * a config from and takes the whole build down with it. These flavours do not need push:
+ * they exist to sit beside the real app and play the prediction game, and each one's own
+ * poller keeps its live cards ticking without a single notification from a server.
+ *
+ * So each gets a copy of the real config with its own package name written in, purely to
+ * satisfy the plugin. The app id inside it is not registered with Firebase, which means a
+ * token request fails and push quietly never starts - exactly the intended behaviour, and
+ * why HAS_FIREBASE is false for them below.
+ */
+fun writeFlavourFirebaseConfig(flavour: String, suffix: String) {
+    if (!hasFirebaseConfig) return
+    val source = file("google-services.json").readText()
+    val target = file("src/$flavour/google-services.json")
+    target.parentFile.mkdirs()
+    val rewritten = source.replace(
+        "\"package_name\": \"com.tzvi.kickoff\"",
+        "\"package_name\": \"com.tzvi.kickoff$suffix\"",
+    )
+    if (!target.exists() || target.readText() != rewritten) target.writeText(rewritten)
+}
+
+writeFlavourFirebaseConfig("alpha", ".alpha")
+writeFlavourFirebaseConfig("beta", ".beta")
+
 android {
     namespace = "com.tzvi.kickoff"
     compileSdk = 37
@@ -40,8 +69,8 @@ android {
         applicationId = "com.tzvi.kickoff"
         minSdk = 26
         targetSdk = 36
-        versionCode = 12
-        versionName = "2.3.0"
+        versionCode = 13
+        versionName = "2.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
 
@@ -66,6 +95,77 @@ android {
         )
     }
 
+    /**
+     * A key per flavour, so the three can genuinely coexist.
+     *
+     * Different application ids are what let Android install them side by side; different
+     * KEYS are what keep them apart afterwards. Clerk ships a shared-session content
+     * provider whose reads are restricted to callers signed with the same certificate, so
+     * three builds sharing one key would share one signed-in session - and the whole point
+     * of the exercise is three members with three accounts.
+     *
+     * The passwords are in the repository on purpose: these sign throwaway test builds
+     * that must never reach a store, and a keystore nobody can open is a keystore that
+     * stops the next person from building. The real release key is not one of these.
+     */
+    signingConfigs {
+        create("alpha") {
+            storeFile = rootProject.file("keystores/alpha.jks")
+            storePassword = "matchup"
+            keyAlias = "alpha"
+            keyPassword = "matchup"
+        }
+        create("beta") {
+            storeFile = rootProject.file("keystores/beta.jks")
+            storePassword = "matchup"
+            keyAlias = "beta"
+            keyPassword = "matchup"
+        }
+    }
+
+    /**
+     * Three installable copies of the app, so one phone can hold a whole prediction group.
+     *
+     * The game is the one feature that cannot be tested alone: a leaderboard needs
+     * opponents, a chat needs somebody to talk to, and an invite link needs somewhere to
+     * land. Android keys an installation by applicationId, so three ids means three icons
+     * side by side, each with its own account, its own storage and its own notifications.
+     *
+     * They are also SIGNED DIFFERENTLY on purpose. Two APKs with the same id cannot both
+     * be installed whatever else differs, and two with different ids but the same key can
+     * still read each other's shared-session provider - which would let the "friend" share
+     * the owner's Clerk session and defeat the whole exercise.
+     */
+    flavorDimensions += "identity"
+
+    productFlavors {
+        create("standard") {
+            dimension = "identity"
+            // No suffix: this is the real app, and its id is the one Firebase and Clerk
+            // are configured for.
+            //
+            // Still the debug key, so a release build stays installable without a keystore.
+            // Replace this with a real signing config before publishing.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+        create("alpha") {
+            dimension = "identity"
+            applicationIdSuffix = ".alpha"
+            versionNameSuffix = "-alpha"
+            signingConfig = signingConfigs.getByName("alpha")
+            // Push is Firebase's, and Firebase does not know this id. Saying so here keeps
+            // the app from waiting on a token that will never arrive.
+            buildConfigField("boolean", "HAS_FIREBASE", "false")
+        }
+        create("beta") {
+            dimension = "identity"
+            applicationIdSuffix = ".beta"
+            versionNameSuffix = "-beta"
+            signingConfig = signingConfigs.getByName("beta")
+            buildConfigField("boolean", "HAS_FIREBASE", "false")
+        }
+    }
+
     buildTypes {
         debug {
             // No applicationId suffix. Firebase issues its config per package name, and
@@ -80,11 +180,11 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 
-            // Signed with the debug key so a release build is installable without a
-            // keystore. The debug build is now over 30 MB unshrunk - the auth SDK's UI
-            // module alone is three dex files - so this is the build that actually gets
-            // handed to anyone. Replace this with a real signing config before publishing.
-            signingConfig = signingConfigs.getByName("debug")
+            // NO signingConfig here on purpose. A build type's signing config OVERRIDES
+            // the flavour's, so setting it at this level silently signed all three
+            // flavours with one key - which is exactly the thing the flavours exist to
+            // avoid, and it is invisible until you compare certificates. Each flavour
+            // names its own key instead; see productFlavors.
         }
     }
 

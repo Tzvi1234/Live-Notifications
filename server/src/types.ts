@@ -390,9 +390,27 @@ export interface LeaderboardEntryJson {
 
 export interface LeaderboardJson {
   groupId: number;
+  /** Kept for older clients; `rules` is the full picture. */
   exactPoints: number;
   outcomePoints: number;
+  /**
+   * Whoever created the group.
+   *
+   * Sent so the table can mark them even before a ball is kicked - a group with no settled
+   * matches is still a group with a captain, and a leaderboard that draws nothing until
+   * the first result is a screen that looks broken on the day people join.
+   */
+  captainUserId?: string | undefined;
+  /** The rulebook the server actually scored with. */
+  rules?: RulebookJson | undefined;
   entries: LeaderboardEntryJson[];
+}
+
+/** The scoring rules as data, so the app renders them rather than restating them. */
+export interface RulebookJson {
+  scoring: Array<{ label: string; points: number }>;
+  multipliers: Array<{ stage: string; label: string; multiplier: number }>;
+  notes: string[];
 }
 
 export interface ChatMessageJson {

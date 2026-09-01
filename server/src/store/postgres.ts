@@ -7,7 +7,14 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import type { Pool as PgPool, PoolClient, PoolConfig } from 'pg';
 
-import { CORRECT_OUTCOME_POINTS, EXACT_SCORE_POINTS } from '../game/scoring.js';
+import {
+  CORRECT_MARGIN_POINTS,
+  CORRECT_OUTCOME_POINTS,
+  EXACT_SCORE_POINTS,
+  STAGE_MULTIPLIER,
+  stageOfRound,
+} from '../game/scoring.js';
+import type { SettlementContext } from './index.js';
 import {
   MATCH_PHASES,
   type DeviceRecord,
@@ -899,24 +906,39 @@ class PostgresStore implements Store {
     return rows.map((row) => Number(row.fixture_id));
   }
 
-  async settleFixture(fixtureId: number, finalScore: ScoreJson): Promise<number> {
+  async settleFixture(
+    fixtureId: number,
+    finalScore: ScoreJson,
+    context?: SettlementContext | undefined,
+  ): Promise<number> {
     // One statement for the whole fixture rather than a read-score-write loop, so a second
-    // poller settling the same fixture writes the same values instead of racing. The point
-    // values are bound parameters: src/game/scoring.ts stays the only definition of them.
+    // poller settling the same fixture writes the same values instead of racing. Every
+    // number is a bound parameter: src/game/scoring.ts stays the only definition of them,
+    // and the stage multiplier is read there too rather than parsed in SQL.
+    const multiplier = STAGE_MULTIPLIER[stageOfRound(context?.round)];
     const result = await this.pool.query(
       `UPDATE predictions SET
          exact      = (home = $2::int AND away = $3::int),
          outcome    = sign((home - away)::numeric) = sign(($2::int - $3::int)::numeric),
-         points     = CASE
+         points     = $7::int * CASE
                         WHEN home = $2::int AND away = $3::int THEN $4::int
+                        WHEN (home - away) = ($2::int - $3::int) THEN $5::int
                         WHEN sign((home - away)::numeric)
-                             = sign(($2::int - $3::int)::numeric) THEN $5::int
+                             = sign(($2::int - $3::int)::numeric) THEN $6::int
                         ELSE 0
                       END,
          settled_at = now(),
          updated_at = now()
        WHERE fixture_id = $1 AND points IS NULL`,
-      [fixtureId, finalScore.home, finalScore.away, EXACT_SCORE_POINTS, CORRECT_OUTCOME_POINTS],
+      [
+        fixtureId,
+        finalScore.home,
+        finalScore.away,
+        EXACT_SCORE_POINTS,
+        CORRECT_MARGIN_POINTS,
+        CORRECT_OUTCOME_POINTS,
+        multiplier,
+      ],
     );
     return result.rowCount ?? 0;
   }

@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { scorePrediction } from '../game/scoring.js';
+import type { SettlementContext } from './index.js';
 import type {
   DeviceRecord,
   GroupMemberRecord,
@@ -537,11 +538,19 @@ class MemoryStore implements Store {
       .map(([fixtureId]) => fixtureId);
   }
 
-  async settleFixture(fixtureId: number, finalScore: ScoreJson): Promise<number> {
+  async settleFixture(
+    fixtureId: number,
+    finalScore: ScoreJson,
+    context?: SettlementContext | undefined,
+  ): Promise<number> {
     let settled = 0;
     for (const row of this.predictions.values()) {
       if (row.fixtureId !== fixtureId || row.points !== undefined) continue;
-      const score = scorePrediction({ home: row.home, away: row.away }, finalScore);
+      const score = scorePrediction({
+        predicted: { home: row.home, away: row.away },
+        actual: finalScore,
+        round: context?.round,
+      });
       row.points = score.points;
       row.exact = score.exact;
       row.correctOutcome = score.correctOutcome;

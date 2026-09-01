@@ -178,7 +178,18 @@ export interface Store {
     limit: number,
   ): Promise<number[]>;
   /** Scores every unsettled prediction for the fixture; returns how many rows it scored. */
-  settleFixture(fixtureId: number, finalScore: ScoreJson): Promise<number>;
+  /**
+   * Settles every open prediction on a fixture.
+   *
+   * [context] carries what the rulebook needs beyond the scoreline - the competition round,
+   * which decides the stage multiplier. Optional so a caller that only knows the score
+   * still settles correctly, at a league match's rate.
+   */
+  settleFixture(
+    fixtureId: number,
+    finalScore: ScoreJson,
+    context?: SettlementContext | undefined,
+  ): Promise<number>;
   /**
    * Moves the kick-off snapshot of a postponed fixture's unsettled predictions. The lock and
    * the visibility rule both read that column, so a rescheduled match re-opens for edits and
@@ -247,6 +258,12 @@ export interface PostGroupMessageInput {
 }
 
 export type { CacheQueryable };
+
+/** What the rulebook needs about a fixture beyond its final score. */
+export interface SettlementContext {
+  /** The provider's `league.round`, verbatim. Decides the stage multiplier. */
+  round?: string | undefined;
+}
 
 export interface StoreConfig {
   readonly databaseUrl?: string | undefined;

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Overrides the launcher label so three installs are tellable apart at a glance. -->
+<resources>
+    <string name="app_name">matchUP β</string>
+</resources>

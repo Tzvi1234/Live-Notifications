@@ -24,3 +24,9 @@ server/*.log
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated at configure time from app/google-services.json, with the flavour's package
+# name written in - see writeFlavourFirebaseConfig in app/build.gradle.kts. Derived from a
+# file that is itself ignored, so it is never the source of truth.
+android/app/src/alpha/google-services.json
+android/app/src/beta/google-services.json
