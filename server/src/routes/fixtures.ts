@@ -36,6 +36,15 @@ import {
  * season rollover needs one call per season per id, so counting teams would let a single
  * refresh quietly spend double. Ids that no longer fit are dropped from the end of the list.
  */
+/**
+ * How long one match's detail is held.
+ *
+ * Ten seconds against a twenty-second client poll: short enough that a goal is never more
+ * than a tick late, long enough that a hundred devices watching the same match cost one
+ * upstream call rather than a hundred.
+ */
+const LIVE_DETAIL_TTL_SECONDS = 10;
+
 const MAX_RANGE_REQUESTS_BY_TEAM = 10;
 
 /** Leagues carry far more fixtures per request, so fewer calls cover the same range. */
@@ -91,7 +100,15 @@ export function createFixturesRouter(deps: ApiDeps): Router {
   router.get('/matches/:id', async (req: Request, res: Response) => {
     const matchId = requirePositiveInt(req.params.id, 'id');
 
-    const [fixture] = await deps.provider.fixtures({ id: matchId });
+    // `fixtureById`, not `fixtures({ id })`. They hit the same upstream path, but the by-id
+    // method is the cacheable one, and this is the single most-repeated request in the app:
+    // an open match screen re-reads it every twenty seconds, per device. Through
+    // `fixtures({ id })` every one of those was a fresh upstream call with no cache, no
+    // in-flight coalescing and no stale fallback - so the one call the whole view depends
+    // on was also the only one with no safety net under it. The TTL is short because the
+    // thing it holds is a live scoreline; short is still the difference between one call
+    // and one call per device.
+    const fixture = await deps.provider.fixtureById(matchId, LIVE_DETAIL_TTL_SECONDS);
     if (fixture === undefined) {
       throw notFound(`No fixture with id ${matchId}.`);
     }

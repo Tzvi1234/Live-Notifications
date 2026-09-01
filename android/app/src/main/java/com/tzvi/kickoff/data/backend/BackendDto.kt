@@ -159,10 +159,29 @@ data class SubscriptionPreferencesJson(
 
 @Serializable
 data class HealthJson(
+    /** Liveness. True whenever the process is answering, even with a dead provider key. */
     val ok: Boolean = false,
     val version: String? = null,
     val provider: String? = null,
     val pollingEnabled: Boolean = false,
+    /**
+     * Whether the backend can actually fetch football data.
+     *
+     * Separate from [ok] on purpose: Render polls [ok] and would restart the instance if it
+     * went false, so it cannot also mean "this server is useful to you". Absent on a backend
+     * older than the distinction, which is why it defaults to true rather than false.
+     */
+    val dataOk: Boolean = true,
+    val providerFault: ProviderFaultJson? = null,
+)
+
+@Serializable
+data class ProviderFaultJson(
+    val kind: String? = null,
+    /** One sentence an operator can act on. Never the provider's own wording. */
+    val reason: String? = null,
+    val status: Int? = null,
+    val at: String? = null,
 )
 
 @Serializable

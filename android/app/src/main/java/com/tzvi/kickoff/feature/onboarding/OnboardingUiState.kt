@@ -94,6 +94,10 @@ data class OnboardingUiState(
     val selectedLeagueIds: Set<Int> = emptySet(),
 
     val teamsLoading: Boolean = false,
+
+    /** Leagues still to answer, for the "2 of 4" line while the rest arrive. */
+
+    val teamsRemaining: Int = 0,
     val teams: List<TeamOption> = emptyList(),
     val teamsFailure: CatalogueError? = null,
     /** The league set [teams] was fetched for; re-entering the page must not refetch. */
@@ -135,6 +139,16 @@ data class OnboardingUiState(
 
     val teamsPending: Boolean
         get() = teamsLoading || (teams.isEmpty() && teamsFailure == null)
+
+    /**
+     * Whether to hold a blocking spinner, as opposed to showing what has arrived.
+     *
+     * Only true while there is genuinely nothing yet. Once one league has answered its
+     * clubs are on screen and the rest arrive underneath them, because four leagues is
+     * four round trips and a spinner held for the sum of them reads as a hang.
+     */
+    val teamsBlocked: Boolean
+        get() = teamsPending && teams.isEmpty()
 
     fun matchingTeams(): List<TeamOption> {
         val query = teamQuery.trim()

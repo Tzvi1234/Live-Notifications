@@ -11,6 +11,7 @@ import com.tzvi.kickoff.data.auth.AuthRepository
 import com.tzvi.kickoff.data.auth.AuthState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -250,8 +251,30 @@ class OnboardingViewModel @Inject constructor(
             }
             val chosen = mutableState.value.leagues.filter { it.id in leagueIds }
             val collected = mutableListOf<TeamOption>()
+            val stubborn = mutableListOf<League>()
             var failure: CatalogueError? = null
-            for (league in chosen) {
+
+            // Published after EVERY league, not after the last one. Four leagues is four
+            // round trips, each of which the backend may turn into two upstream calls, so
+            // the step used to hold one blocking spinner for the sum of all of them and
+            // read as a hang. Now the first league's clubs are on screen while the fourth
+            // is still in flight, and the header says what is still coming.
+            suspend fun publish(remaining: Int) {
+                mutableState.update { state ->
+                    state.copy(
+                        teamsLoading = remaining > 0,
+                        teamsRemaining = remaining,
+                        teams = collected.sortedBy { option -> option.team.name },
+                        teamsFailure = null,
+                    )
+                }
+                // A breath between requests. The provider counts a rate-limited answer
+                // against the daily quota just the same, so pacing four calls costs less
+                // than four calls plus four retries.
+                if (remaining > 0) delay(BETWEEN_LEAGUES_MS)
+            }
+
+            for ((index, league) in chosen.withIndex()) {
                 try {
                     // One request per league, and the result is held in state afterwards:
                     // a free API-Football key only has 100 requests a day to spend.
@@ -261,11 +284,36 @@ class OnboardingViewModel @Inject constructor(
                     throw cancelled
                 } catch (error: Exception) {
                     failure = error.asCatalogueFailure()
+                    stubborn += league
+                }
+                publish(chosen.lastIndex - index)
+            }
+
+            // A second, slower pass over just the ones that did not answer. Most failures
+            // here are the provider's per-minute window rather than anything permanent, and
+            // it costs one more request per league to find out - far cheaper than an error
+            // screen that throws away the three leagues that did work.
+            if (stubborn.isNotEmpty() && collected.isNotEmpty()) {
+                mutableState.update { it.copy(teamsLoading = true, teamsRemaining = stubborn.size) }
+                delay(RETRY_PAUSE_MS)
+                for ((index, league) in stubborn.withIndex()) {
+                    try {
+                        footballRepository.teamsInLeague(league.id)
+                            .forEach { collected += TeamOption(it, league) }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // Twice is enough. What answered is on screen; the rest is findable
+                        // from the team search, and the step is no longer blocked on it.
+                    }
+                    publish(stubborn.lastIndex - index)
                 }
             }
+
             mutableState.update { state ->
                 state.copy(
                     teamsLoading = false,
+                    teamsRemaining = 0,
                     teams = collected.sortedBy { option -> option.team.name },
                     // One league failing is not worth throwing away the ones that answered.
                     teamsFailure = if (collected.isEmpty()) {
@@ -356,6 +404,12 @@ class OnboardingViewModel @Inject constructor(
     )
 
     private companion object {
+        /** A breath between league requests, so four of them are not one burst. */
+        const val BETWEEN_LEAGUES_MS = 250L
+
+        /** Long enough for the provider's per-minute window to have moved on. */
+        const val RETRY_PAUSE_MS = 2_000L
+
         const val SUBSCRIPTION_TIMEOUT_MS = 5_000L
         const val INVALID_URL_MESSAGE =
             "That does not look like a URL. Try https://your-app.onrender.com"

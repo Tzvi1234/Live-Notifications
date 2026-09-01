@@ -73,7 +73,19 @@ class SourceProbes @Inject constructor(
                         "Something answered at $base, but it is not a matchUP backend.",
                     )
 
-                    else -> SourceProbe.Ok("Reached the backend.")
+                    // Reached, and answering - but `ok` is liveness, not usefulness. A
+                    // deployment whose provider key has been revoked answers ok:true to
+                    // every health check while every football screen in the app fails, and
+                    // onboarding used to wave it through with "Reached the backend." The
+                    // server now says which of the two it is; say it here too, rather than
+                    // letting the user find out three screens later.
+                    else -> when (val fault = backendDataFault(body)) {
+                        null -> SourceProbe.Ok("Reached the backend.")
+                        else -> SourceProbe.Failed(
+                            "Reached the backend at $base, but it cannot fetch football " +
+                                "data right now: $fault",
+                        )
+                    }
                 }
             }
         } catch (cancelled: CancellationException) {
@@ -152,4 +164,25 @@ internal fun looksLikeBackendHealth(body: String): Boolean {
     val json = runCatching { Json.parseToJsonElement(body).jsonObject }.getOrNull() ?: return false
     val ok = json["ok"]?.jsonPrimitive?.booleanOrNull ?: return false
     return ok && json["provider"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
+}
+
+/**
+ * The reason a reachable backend still cannot serve football, or null when it can.
+ *
+ * Reads `dataOk` and `providerFault.reason`, which the server added precisely so a client
+ * could tell a live deployment from a data-dead one. An older backend sends neither; that
+ * is not a fault, it is a backend from before the distinction existed, and it is treated
+ * as fine rather than as broken.
+ */
+internal fun backendDataFault(body: String): String? {
+    val json = runCatching { Json.parseToJsonElement(body).jsonObject }.getOrNull() ?: return null
+    val dataOk = json["dataOk"]?.jsonPrimitive?.booleanOrNull ?: return null
+    if (dataOk) return null
+    val reason = json["providerFault"]
+        ?.jsonObject
+        ?.get("reason")
+        ?.jsonPrimitive
+        ?.contentOrNull
+        ?.takeIf { it.isNotBlank() }
+    return reason ?: "the server did not say why."
 }

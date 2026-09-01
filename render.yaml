@@ -136,8 +136,10 @@ services:
       # top — hence the headroom under a 7500/day plan. Free keys are 100/day: set 100.
       - key: DAILY_REQUEST_BUDGET
         value: "7500"
-      - key: FEATURED_LEAGUE_IDS
-        value: 39,140,135,78,61,2,3,88,94,203,383,253,71,128
+      # FEATURED_LEAGUE_IDS is deliberately NOT set here. Pinning it froze the deployed
+      # catalogue at fourteen competitions while the code's default grew to thirty-one, and
+      # because the environment wins over the default, every league added in code was dead
+      # on arrival. Set it only to deviate from the code, and expect to maintain it.
 
       # --- API ------------------------------------------------------------------------
       - key: CACHE_TTL_SECONDS

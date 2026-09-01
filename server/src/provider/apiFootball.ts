@@ -46,6 +46,9 @@ const SQUAD_TTL_SECONDS = 6 * 60 * 60;
 /** The provider computes these once per fixture; they do not move before kick-off. */
 const PREDICTION_TTL_SECONDS = 60 * 60;
 
+/** How long an empty answer is held. See `#fetchItems` for why it is not the full TTL. */
+const EMPTY_RESULT_TTL_MS = 60_000;
+
 /**
  * Requests left in the provider's PER-MINUTE window below which a call is held back rather
  * than issued. The daily budget is a wall the local counter refuses to walk into; the minute
@@ -882,18 +885,25 @@ export class ApiFootballClient {
     cacheTtlSeconds?: number | undefined,
   ): Promise<T[]> {
     const key = cacheKey(path, params);
-    if (!cacheable) return this.#fetchItems<T>(path, params, key, undefined);
-
-    const hit = this.#cacheGet(key);
+    const hit = cacheable ? this.#cacheGet(key) : undefined;
     if (hit) return [...hit] as T[];
 
     // Everyone who arrives while one call is in flight rides on it. Without this the cache
     // saves nothing under load: a screenful of users hitting an expired day query at once
     // would each spend a request from the daily budget for the same list of fixtures.
+    //
+    // Deliberately BEFORE the cacheable test. A live scoreline must not be served from a
+    // cache, but two devices asking for it in the same second still only need one call -
+    // and the uncacheable paths are the hot ones, so skipping coalescing for them was
+    // exactly backwards.
     const inflight = this.#inflight.get(key);
     if (inflight !== undefined) return [...(await inflight)] as T[];
 
-    const ttlMs = cacheTtlSeconds === undefined ? this.#cacheTtlMs : cacheTtlSeconds * 1000;
+    const ttlMs = !cacheable
+      ? undefined
+      : cacheTtlSeconds === undefined
+        ? this.#cacheTtlMs
+        : cacheTtlSeconds * 1000;
     const call = this.#fetchItems<T>(path, params, key, ttlMs);
     this.#inflight.set(key, call as Promise<unknown[]>);
     try {
@@ -903,7 +913,7 @@ export class ApiFootballClient {
       // answer is the difference between a stale league list and an error screen - and for
       // an outage that lasts the afternoon, between an app that works and one that does
       // not. Only cacheable paths get here, so nothing live is served out of date.
-      const stale = this.#cacheGetStale(key);
+      const stale = cacheable ? this.#cacheGetStale(key) : undefined;
       if (stale !== undefined) {
         this.#logger.warn('serving a stale answer; the refresh failed', {
           path,
@@ -929,7 +939,16 @@ export class ApiFootballClient {
     const items = Array.isArray(payload) ? (payload as T[]) : [];
     // The cached array must not be the one handed to the caller: a consumer that sorts or
     // truncates its result in place would otherwise rewrite every hit until the TTL expires.
-    if (cacheTtlMs !== undefined) this.#cacheSet(key, [...items] as unknown[], cacheTtlMs);
+    //
+    // An EMPTY list is cached briefly rather than for the full term. The provider answers
+    // a plan restriction with HTTP 200 and `response: []`, which is indistinguishable here
+    // from a competition that genuinely has no teams yet - and pinning that for twelve
+    // hours means an upgraded plan, or a cup whose draw has just been made, stays empty
+    // until tomorrow. A minute is long enough to absorb a burst, short enough to notice.
+    if (cacheTtlMs !== undefined) {
+      const ttl = items.length === 0 ? Math.min(cacheTtlMs, EMPTY_RESULT_TTL_MS) : cacheTtlMs;
+      this.#cacheSet(key, [...items] as unknown[], ttl);
+    }
     return items;
   }
 
@@ -1167,7 +1186,11 @@ export class ApiFootballClient {
     const now = this.#now();
     this.#cache.set(key, {
       expiresAt: now + ttlMs,
-      staleUntil: now + Math.max(ttlMs, STALE_GRACE_MS),
+      // The grace is added ON TOP of the TTL, not max'd with it. Taking the larger of the
+      // two collapsed the window to nothing for anything cached longer than the grace -
+      // the catalogue at twelve hours and squads at six, which are exactly the calls that
+      // must survive an outage. They had no stale fallback at all.
+      staleUntil: now + ttlMs + STALE_GRACE_MS,
       value,
     });
   }

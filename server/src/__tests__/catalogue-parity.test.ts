@@ -59,6 +59,19 @@ describe('featured league parity', () => {
     }
   });
 
+  test('the deployment blueprint does not freeze the list', () => {
+    // This is the failure that made the whole exercise pointless once already: render.yaml
+    // pinned FEATURED_LEAGUE_IDS to fourteen ids, config.ts resolves `env ?? default`, so
+    // the environment won and every competition added in code was dead on arrival. The
+    // constant being right is not the same as the deployment being right.
+    const blueprint = readFileSync(
+      fileURLToPath(new URL('../../../render.yaml', import.meta.url)),
+      'utf8',
+    );
+    const pinned = /^\s*-\s*key:\s*FEATURED_LEAGUE_IDS\s*$/m.test(blueprint);
+    assert.equal(pinned, false, 'render.yaml pins FEATURED_LEAGUE_IDS; it must inherit the code default');
+  });
+
   test('the order is the order, and it has no duplicates', () => {
     // pickFeatured uses this list as the app's tab order as well as its filter, so a
     // duplicate would draw a competition twice.

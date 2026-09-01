@@ -11,5 +11,10 @@
     <!-- Live card -->
     <string name="live_kickoff_in">Kick-off in %1$s</string>
     <string name="live_starting_soon">Starting soon</string>
+    <!-- The service's own notification, which sits quietly under the match cards. -->
+    <plurals name="live_following">
+        <item quantity="one">Following one match</item>
+        <item quantity="other">Following %1$d matches</item>
+    </plurals>
     <string name="action_stop_following">Stop following</string>
 </resources>

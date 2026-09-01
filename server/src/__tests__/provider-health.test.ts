@@ -176,6 +176,62 @@ describe('stale-while-error', () => {
     await assert.rejects(() => client.fixtures(DAY), ProviderError);
   });
 
+  test('a long TTL still gets its grace window', async () => {
+    // The grace used to be max(ttl, 6h) rather than ttl + 6h, which meant anything cached
+    // for six hours or more had a stale window of exactly zero - the catalogue and squads,
+    // the two things that most need to survive an outage, were the two with no fallback.
+    let now = 0;
+    const { client } = clientFor(
+      [
+        { status: 200, body: { errors: [], response: [{ league: { id: 39 } }] } },
+        { status: 403 },
+      ],
+      () => now,
+    );
+
+    const first = await client.leagues(true);
+    // Thirteen hours: past the twelve-hour catalogue TTL, inside the grace after it.
+    now += 13 * 60 * 60 * 1000;
+    assert.deepEqual(await client.leagues(true), first);
+  });
+
+  test('an empty answer is not pinned for the full term', async () => {
+    // The provider answers a plan restriction with HTTP 200 and an empty list, which is
+    // indistinguishable from a cup whose draw has not been made. Holding that for twelve
+    // hours means an upgraded plan stays broken until tomorrow.
+    let now = 0;
+    const { client, calls } = clientFor(
+      [
+        { status: 200, body: { errors: [], response: [] } },
+        { status: 200, body: { errors: [], response: [{ team: { id: 42 } }] } },
+      ],
+      () => now,
+    );
+
+    assert.deepEqual(await client.teams({ league: 39, season: 2026 }), []);
+    assert.equal(calls(), 1);
+
+    // Two minutes: well inside the twelve-hour catalogue TTL, past the empty-result one.
+    now += 120_000;
+    const second = await client.teams({ league: 39, season: 2026 });
+    assert.equal(calls(), 2);
+    assert.equal(second.length, 1);
+  });
+
+  test('two callers asking for the same live fixture cost one upstream call', async () => {
+    // Live fixtures are never cached, and coalescing used to be skipped for exactly that
+    // reason - which was backwards, since the uncacheable paths are the hot ones. A match
+    // screen open on two devices must not be two upstream calls.
+    const { client, calls } = clientFor(
+      [{ status: 200, body: { errors: [], response: [{ fixture: { id: 7 } }] } }],
+      () => 0,
+    );
+
+    const [a, b] = await Promise.all([client.liveFixtures(), client.liveFixtures()]);
+    assert.equal(calls(), 1);
+    assert.deepEqual(a, b);
+  });
+
   test('nothing stale is served for a call that was never cacheable', async () => {
     // Live fixtures are never cached, so an outage there must surface rather than replay
     // a scoreline from before it started.

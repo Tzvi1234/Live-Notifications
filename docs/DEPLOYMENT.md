@@ -198,7 +198,7 @@ separate "sign up with Google" to enable.
 | `POLL_IDLE_INTERVAL_SECONDS` | `300` | Cadence when nothing is live. Keeps the quota for match days. |
 | `PREMATCH_LEAD_MINUTES` | `60` | How early the pre-match card and the line-up fetch start. |
 | `DAILY_REQUEST_BUDGET` | `7500` | **Set this to your API-Football plan's daily quota.** The poller refuses to exceed it and backs off instead of being cut off. Free = `100`. |
-| `FEATURED_LEAGUE_IDS` | `39,40,41,42,45,48,528,383,382,384,385,140,135,78,61,88,94,203,253,71,128,2,3,848,531,5,1,4,15` | Competitions offered during onboarding. See §6 for the ids. |
+| `FEATURED_LEAGUE_IDS` | *(unset — use the code's list)* | Competitions offered during onboarding. **Leave it unset.** The code ships thirty-one, and because the environment wins over the default, a value here silently freezes the catalogue at whatever it says — which is how the deployed app came to offer fourteen while the code offered thirty-one. Set it only to deliberately deviate. |
 | `CACHE_TTL_SECONDS` | `60` | TTL for catalogue and fixtures-by-date responses. Live calls are never cached. |
 | `ADMIN_TOKEN` | *(unset)* | When set, guards `/v1/admin/*` (quota, poller status, manual poll trigger) behind `Authorization: Bearer <token>`. Leave unset to disable those routes. |
 

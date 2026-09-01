@@ -61,6 +61,17 @@ class AuthRepository @Inject constructor(
     private val mutableState = MutableStateFlow<AuthState>(AuthState.Initialising)
     val state: StateFlow<AuthState> = mutableState.asStateFlow()
 
+    private val clerkReady = MutableStateFlow(false)
+
+    /**
+     * Whether the SDK is genuinely loaded, as opposed to merely not-signed-in.
+     *
+     * [state] answers "is there a session"; a timeout with no network answers that with
+     * [AuthState.SignedOut], which is correct but says nothing about whether a browser
+     * redirect can be started. Only this flow gates the Google button.
+     */
+    val redirectReady: StateFlow<Boolean> = clerkReady.asStateFlow()
+
     /** Whether the auth screen has been dealt with, one way or the other. */
     val gateCleared: Flow<Boolean> = preferences.gateCleared
 
@@ -120,6 +131,7 @@ class AuthRepository @Inject constructor(
                 Clerk.initializationError,
                 Clerk.userFlow,
             ) { ready, error, user ->
+                clerkReady.value = ready && error == null
                 when {
                     // A key that Clerk itself rejects is indistinguishable, to the user,
                     // from no key at all: both mean accounts are not available here.
@@ -138,6 +150,12 @@ class AuthRepository @Inject constructor(
             // where the next call fails with Clerk's own explanation instead of silence.
             delay(READY_TIMEOUT_MS)
             if (mutableState.value == AuthState.Initialising) {
+                // Signed OUT, not signed in - but also not ready for a browser redirect.
+                // Clerk's SSO service needs a client before it can create a sign-in, and
+                // starting one against an SDK that never finished loading fails somewhere
+                // inside the bridge with nothing useful to say. The screen may offer the
+                // email form on this state; it must not offer Google.
+                clerkReady.value = false
                 mutableState.value = AuthState.SignedOut
             }
         }
@@ -279,17 +297,46 @@ class AuthRepository @Inject constructor(
      * same follow-up questions it would have asked after an email sign-up, and the two
      * routes converge on [advance].
      */
-    suspend fun continueWithGoogle(): AuthOutcome =
-        when (val result = Clerk.auth.signInWithOAuth(OAuthProvider.GOOGLE)) {
+    suspend fun continueWithGoogle(): AuthOutcome {
+        if (!clerkReady.value) {
+            return AuthOutcome.Failed(
+                "The account service has not finished loading. Check your connection and " +
+                    "try again in a moment.",
+            )
+        }
+        return when (val result = Clerk.auth.signInWithOAuth(OAuthProvider.GOOGLE)) {
             is ClerkResult.Success -> resolve(result.value)
 
-            is ClerkResult.Failure ->
-                if (result.throwable is SSOCancellationException) {
+            is ClerkResult.Failure -> {
+                // SSOCancellationException is NOT only "the user closed the tab". Clerk's
+                // SSO service raises the same type when the callback carries an error it
+                // cannot transfer - `external_account_exists` is the common one - and when
+                // the bridge activity resumes without its callback intent. Treating every
+                // one of them as a dismissal is what made a failed Google sign-in return
+                // to the auth screen with nothing said at all.
+                //
+                // Only the SDK's own dismissal sentence is silent. Anything else carries a
+                // reason, and the reason is the whole point.
+                val reason = result.throwable?.message?.trim().orEmpty()
+                if (result.throwable is SSOCancellationException && reason.isDismissal()) {
                     AuthOutcome.Cancelled
                 } else {
                     AuthOutcome.Failed(result.readableMessage)
                 }
+            }
         }
+    }
+
+    /**
+     * The SDK's wording for an actual dismissal, and nothing else.
+     *
+     * Matched on the text because the exception type does not distinguish the cases - see
+     * [continueWithGoogle]. A blank message is treated as a dismissal too: the bridge
+     * raises one of those when it resumes without a callback, which from the user's side
+     * is the same as backing out.
+     */
+    private fun String.isDismissal(): Boolean =
+        isBlank() || equals(SSO_DISMISSED, ignoreCase = true)
 
     /** A finished sign-in, a transferred sign-up, or neither - said plainly. */
     private suspend fun resolve(result: OAuthResult): AuthOutcome {
@@ -405,6 +452,9 @@ class AuthRepository @Inject constructor(
         const val NO_SIGN_UP_IN_PROGRESS =
             "That sign-up is no longer open. Start again from your email address."
         const val NOT_SIGNED_IN = "You are not signed in."
+
+        /** Clerk's literal message when the browser tab was closed by hand. */
+        const val SSO_DISMISSED = "Authentication cancelled"
 
         const val SETTLE_TIMEOUT_MS = 2_500L
         const val READY_TIMEOUT_MS = 6_000L

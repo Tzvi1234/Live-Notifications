@@ -50,14 +50,21 @@ class LiveMatchService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
     private val tracked = ConcurrentHashMap<Long, Job>()
 
-    /** The notification currently acting as the foreground-service notification. */
-    @Volatile private var adoptedForegroundId: Int? = null
+    /**
+     * The number of matches the anchor notification currently claims to be following.
+     *
+     * Kept so the anchor is only re-posted when its text would actually change: re-posting
+     * the same id is harmless, but doing it on every poll tick of every match is noise the
+     * notification shelf animates.
+     */
+    @Volatile private var anchoredCount: Int = -1
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         NotificationChannels.ensureCreated(this)
-        promoteToForeground()
+        // Within a few seconds of the service starting, before any network round trip.
+        postAnchor()
 
         when (intent?.action) {
             ACTION_TRACK -> intent.getLongExtra(EXTRA_MATCH_ID, -1L)
@@ -67,32 +74,60 @@ class LiveMatchService : Service() {
             ACTION_UNTRACK -> {
                 val id = intent.getLongExtra(EXTRA_MATCH_ID, -1L)
                 tracked.remove(id)?.cancel()
-                val key = LiveActivity.MatchActivity.matchKey(id)
-                releaseCard(key.hashCode() and 0x7FFFFFFF)
-                notifier.cancel(key)
+                // The card is an ordinary notification now, so cancelling it works. While
+                // it held the foreground-service role the platform refused this call and
+                // the card stayed on screen after the user asked for it to go.
+                notifier.cancel(LiveActivity.MatchActivity.matchKey(id))
+                postAnchor()
                 stopIfIdle()
             }
 
             ACTION_STOP -> stopEverything()
         }
-        return START_STICKY
+        // NOT sticky: a restart with a null intent would run with an empty tracked map and
+        // pin a foreground service to the anchor with nothing driving it. The alarms and
+        // the sweep worker are what bring tracking back after a process death.
+        return START_NOT_STICKY
     }
 
     /**
-     * A placeholder is posted immediately: `startForeground` must be called within a few
-     * seconds of the service starting, long before the first network round trip lands.
-     * As soon as a real match card exists, [adoptAsForeground] replaces it, so the user
-     * never ends up with a redundant "matchUP is running" notification sitting beside
-     * the scoreboard for ninety minutes.
+     * The service's own notification, on a FIXED id, for as long as the service lives.
+     *
+     * It used to hand this role over to a real match card as soon as one existed, to avoid
+     * a second "matchUP is running" notification sitting beside the scoreboard. That was a
+     * mistake, and an expensive one: attaching the foreground-service role to a card gives
+     * the PLATFORM ownership of it, and the platform enforces one notification per service.
+     * `startForeground` with a different id makes it cancel whatever held the role before
+     * (`ActiveServices`: `if (r.foregroundId != id) { cancelForegroundNotificationLocked(r) }`).
+     * So with two matches tracked, each one's poll tick tore down the other's card, twenty
+     * seconds apart, for as long as both were live - cards appearing and vanishing on a
+     * rolling cadence, which is exactly what was reported. Worse, an app cannot cancel its
+     * own foreground-service notification, so unfollowing a match left its card stuck.
+     *
+     * One fixed anchor, never moved, is the boring correct shape: the match cards are then
+     * ordinary notifications the app fully owns, and can update and cancel freely.
      */
-    private fun promoteToForeground() {
+    private fun postAnchor() {
+        val count = tracked.size
+        if (anchoredCount == count) return
+
+        val text = if (count == 0) {
+            getString(com.tzvi.kickoff.R.string.live_starting_soon)
+        } else {
+            resources.getQuantityString(com.tzvi.kickoff.R.plurals.live_following, count, count)
+        }
+
         val notification = androidx.core.app.NotificationCompat
             .Builder(this, NotificationChannels.LIVE_MATCH)
             .setSmallIcon(com.tzvi.kickoff.R.drawable.ic_stat_kickoff)
             .setContentTitle(getString(com.tzvi.kickoff.R.string.app_name))
-            .setContentText(getString(com.tzvi.kickoff.R.string.live_starting_soon))
+            .setContentText(text)
             .setOngoing(true)
             .setSilent(true)
+            // Below the match cards it sits beside: this one is bookkeeping, they are the
+            // thing the user came for.
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_MIN)
+            .setGroup(ANCHOR_GROUP)
             .build()
 
         ServiceCompat.startForeground(
@@ -105,36 +140,21 @@ class LiveMatchService : Service() {
                 0
             },
         )
-    }
-
-    /**
-     * Hands the foreground-service role to a real match card.
-     *
-     * Calling `startForeground` again with a different id moves the role rather than
-     * adding a second notification, so the placeholder can then be cancelled.
-     */
-    private fun adoptAsForeground(posted: LiveActivityNotifier.Posted) {
-        if (adoptedForegroundId == posted.notificationId) return
-        runCatching {
-            ServiceCompat.startForeground(
-                this,
-                posted.notificationId,
-                posted.notification,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                } else {
-                    0
-                },
-            )
-        }.onSuccess {
-            adoptedForegroundId = posted.notificationId
-            NotificationManagerCompat.from(this).cancel(FOREGROUND_ID)
-        }
+        anchoredCount = count
     }
 
     private fun track(matchId: Long) {
         if (tracked.containsKey(matchId)) return
-        tracked[matchId] = scope.launch { pollLoop(matchId) }
+        tracked[matchId] = scope.launch {
+            try {
+                pollLoop(matchId)
+            } finally {
+                tracked.remove(matchId)
+                postAnchor()
+                stopIfIdle()
+            }
+        }
+        postAnchor()
     }
 
     /**
@@ -180,12 +200,10 @@ class LiveMatchService : Service() {
                         repository.markEventsNotified(alerting)
                     }
                 }
-                posted?.let(::adoptAsForeground)
 
                 if (match.phase.isFinished) {
                     if (finishedAt == null) finishedAt = Instant.now()
                     if (Duration.between(finishedAt, Instant.now()) > FULL_TIME_LINGER) {
-                        releaseCard(activity.notificationId)
                         notifier.cancel(activity.key)
                         break
                     }
@@ -276,20 +294,6 @@ class LiveMatchService : Service() {
         else -> 10
     }
 
-    /**
-     * Called before a card is cancelled.
-     *
-     * A foreground service must always have a notification. If the card being taken down
-     * is the one currently carrying that role, the placeholder is put back so the service
-     * is never left foreground with nothing attached; the next tick of whichever match is
-     * still running re-adopts its own card.
-     */
-    private fun releaseCard(notificationId: Int) {
-        if (adoptedForegroundId != notificationId) return
-        adoptedForegroundId = null
-        if (tracked.size > 1) promoteToForeground()
-    }
-
     private fun stopIfIdle() {
         if (tracked.isEmpty()) stopEverything()
     }
@@ -297,7 +301,7 @@ class LiveMatchService : Service() {
     private fun stopEverything() {
         tracked.values.forEach(Job::cancel)
         tracked.clear()
-        adoptedForegroundId = null
+        anchoredCount = -1
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -318,6 +322,9 @@ class LiveMatchService : Service() {
 
     companion object {
         private const val FOREGROUND_ID = 20_001
+
+        /** Keeps the anchor out of the match cards' shelf position. */
+        private const val ANCHOR_GROUP = "com.tzvi.kickoff.live.anchor"
         private const val ACTION_TRACK = "com.tzvi.kickoff.action.TRACK_MATCH"
         private const val ACTION_UNTRACK = "com.tzvi.kickoff.action.UNTRACK_MATCH"
         private const val ACTION_STOP = "com.tzvi.kickoff.action.STOP_TRACKING"
