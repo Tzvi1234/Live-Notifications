@@ -248,6 +248,31 @@ export interface HealthJson {
   store?: 'postgres' | 'memory' | undefined;
   /** Last rate-limit headers the provider returned; undefined fields mean "not yet told". */
   quota?: ProviderQuotaJson | undefined;
+  /**
+   * Whether the football data path actually works.
+   *
+   * `ok` above is liveness - Render polls it and will restart the instance if it stops
+   * answering - so it cannot double as "the app will get data from me". This is the
+   * separate question, and a deployment whose key has been revoked is a deployment that
+   * answers `ok: true` and `dataOk: false` rather than one that looks well while every
+   * screen in the app fails.
+   */
+  dataOk?: boolean | undefined;
+  providerFault?: ProviderFaultJson | undefined;
+}
+
+/**
+ * Why the data path is down, in terms an operator can act on without opening a log host.
+ *
+ * The provider's own sentence is NOT here: it names the account's state, which is the
+ * operator's business and not an anonymous caller's. `/v1/admin/status` carries that.
+ */
+export interface ProviderFaultJson {
+  kind: 'transport' | 'auth' | 'plan' | 'rate-limited' | 'upstream' | 'malformed';
+  /** What to do about it, in one sentence. */
+  reason: string;
+  status?: number | undefined;
+  at: string;
 }
 
 export interface ProviderQuotaJson {

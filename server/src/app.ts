@@ -31,7 +31,7 @@ import { createMeRouter } from './routes/me.js';
 import { createPlayersRouter } from './routes/players.js';
 import { createSubscriptionsRouter } from './routes/subscriptions.js';
 import { HttpError } from './routes/validation.js';
-import { ProviderError, QuotaExhaustedError } from './provider/apiFootball.js';
+import { ProviderError, QuotaExhaustedError, publicFaultReason } from './provider/apiFootball.js';
 import type { Logger } from './logger.js';
 
 /**
@@ -200,10 +200,14 @@ function mapError(error: unknown): MappedError {
   }
 
   if (error instanceof ProviderError) {
-    // Deliberately generic: the provider states an invalid key or an expired plan in the
-    // body it returns, and echoing that to an anonymous caller tells them the account's
-    // state. The full detail is on the log line written above.
-    return { status: 502, message: 'The football data provider could not be reached.' };
+    // The provider states an invalid key or an expired plan in the body it returns, and
+    // echoing that verbatim to an anonymous caller tells them the account's state. The
+    // KIND of wall is not a secret, though, and it is the whole difference between "the
+    // provider is having a bad minute, try again" and "nobody is fixing this until an
+    // operator changes an environment variable" - so the kind is named and the provider's
+    // own words stay on the log line written above.
+    const status = error.kind === 'rate-limited' ? 429 : 502;
+    return { status, message: publicFaultReason(error.kind) };
   }
 
   if (error instanceof HttpError) {

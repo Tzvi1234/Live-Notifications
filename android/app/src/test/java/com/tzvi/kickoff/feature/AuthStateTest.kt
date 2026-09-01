@@ -28,18 +28,16 @@ class AuthStateTest {
     )
 
     @Test
-    fun `google is offered on the pages that can start a session`() {
-        for (step in listOf(AuthStep.WELCOME, AuthStep.SIGN_IN, AuthStep.SIGN_UP)) {
-            val state = AuthUiState(step = step, availability = AccountAvailability.AVAILABLE)
-            assertTrue("$step should offer Google", state.googleOffered)
-        }
-    }
-
-    @Test
-    fun `google is not offered part-way through a sign-up`() {
-        // Half a sign-up is already open at these steps; a second, different route into
-        // an account would abandon it silently.
-        for (step in listOf(AuthStep.VERIFY, AuthStep.DETAILS)) {
+    fun `google is offered on the front door and nowhere else`() {
+        assertTrue(
+            AuthUiState(
+                step = AuthStep.WELCOME,
+                availability = AccountAvailability.AVAILABLE,
+            ).googleOffered,
+        )
+        // Repeating it over the email form is the same button asking the same question
+        // twice; choosing email is a choice, and these pages are that choice happening.
+        for (step in listOf(AuthStep.SIGN_IN, AuthStep.SIGN_UP, AuthStep.VERIFY, AuthStep.DETAILS)) {
             val state = AuthUiState(step = step, availability = AccountAvailability.AVAILABLE)
             assertFalse("$step should not offer Google", state.googleOffered)
         }
@@ -47,8 +45,12 @@ class AuthStateTest {
 
     @Test
     fun `google is not offered when this build has no Clerk instance`() {
-        assertFalse(signUp(availability = AccountAvailability.UNAVAILABLE).googleOffered)
-        assertFalse(signUp(availability = AccountAvailability.RESOLVING).googleOffered)
+        for (availability in listOf(
+            AccountAvailability.UNAVAILABLE,
+            AccountAvailability.RESOLVING,
+        )) {
+            assertFalse(AuthUiState(availability = availability).googleOffered)
+        }
     }
 
     @Test

@@ -22,6 +22,31 @@ const LOW_QUOTA_FRACTION = 0.1;
 const MAX_CACHE_ENTRIES = 500;
 
 /**
+ * How long a cached answer stays servable AFTER its TTL, for the case where the refresh
+ * fails.
+ *
+ * A stale league table is not a good answer; it is a far better one than an error page.
+ * Only cacheable calls reach this - a live fixture is never cached - so nothing that
+ * changes minute to minute can be served out of date by it.
+ */
+const STALE_GRACE_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * How long each kind of answer is worth keeping, in seconds.
+ *
+ * CACHE_TTL_SECONDS is the general default and it is tuned for fixtures, which move. The
+ * catalogue does not: the list of competitions changes once a year and a club's badge and
+ * name change rather less often than that, so refreshing them every minute spends the
+ * day's request budget re-fetching a list that is identical. These are the numbers that
+ * make a screenful of users cost one upstream call instead of a hundred.
+ */
+const CATALOGUE_TTL_SECONDS = 12 * 60 * 60;
+/** A registered squad changes at a transfer window, not during a match. */
+const SQUAD_TTL_SECONDS = 6 * 60 * 60;
+/** The provider computes these once per fixture; they do not move before kick-off. */
+const PREDICTION_TTL_SECONDS = 60 * 60;
+
+/**
  * Requests left in the provider's PER-MINUTE window below which a call is held back rather
  * than issued. The daily budget is a wall the local counter refuses to walk into; the minute
  * window is a wall you can wait out, and waiting is strictly better than spending the day's
@@ -59,6 +84,25 @@ const NOOP_LOGGER: ProviderLogger = {
 export type QueryParams = Record<string, string | number | boolean | undefined>;
 
 /** Every API-Football response is wrapped in this envelope. */
+/**
+ * API-Football's `/status`: who the key belongs to, whether the plan is live, and how much
+ * of the day is spent.
+ *
+ * `account` is deliberately not read: the operator's name and email are of no use to this
+ * server and every field it does not carry is one it cannot leak.
+ */
+export interface ApiAccountStatus {
+  subscription?: {
+    plan?: string | null;
+    end?: string | null;
+    active?: boolean | null;
+  } | null;
+  requests?: {
+    current?: number | null;
+    limit_day?: number | null;
+  } | null;
+}
+
 export interface ApiEnvelope<T> {
   get?: string;
   parameters?: unknown;
@@ -394,22 +438,116 @@ export interface BudgetState {
   resetsAt: Date;
 }
 
+/**
+ * What kind of wall a provider call hit.
+ *
+ * The distinction is the whole point of this type: `auth` and `plan` are configuration
+ * problems only the operator can fix, `transport` and `upstream` are the provider having a
+ * bad minute, and `rate-limited` fixes itself. A 502 that says none of them - which is what
+ * this server used to answer - sends the operator to read logs on a host they do not want
+ * to open.
+ */
+export type ProviderFaultKind =
+  | 'transport'
+  | 'auth'
+  | 'plan'
+  | 'rate-limited'
+  | 'upstream'
+  | 'malformed';
+
+/** The last thing that went wrong, kept so /v1/health can stop claiming to be well. */
+export interface ProviderFault {
+  kind: ProviderFaultKind;
+  /** The HTTP status, when the call got far enough to have one. */
+  status: number | undefined;
+  at: Date;
+  /** The provider's own words. Operator-facing only - see `publicFaultReason`. */
+  detail: string | undefined;
+}
+
+export interface ProviderHealth {
+  /** False once a call has failed with nothing newer having succeeded. */
+  reachable: boolean;
+  lastSuccessAt: Date | undefined;
+  lastFault: ProviderFault | undefined;
+}
+
+/**
+ * One sentence per fault kind, written here rather than echoed from the provider.
+ *
+ * The provider names the account's state in its error body ("Your account is not
+ * subscribed", "Token is invalid"), and that is the operator's business, not an anonymous
+ * caller's. The kind alone is enough to act on.
+ */
+export function publicFaultReason(kind: ProviderFaultKind): string {
+  switch (kind) {
+    case 'auth':
+      return 'The football data key was rejected. Check API_FOOTBALL_KEY.';
+    case 'plan':
+      return 'The football data subscription is not active for this key.';
+    case 'rate-limited':
+      return 'The football data provider is rate-limiting this key.';
+    case 'transport':
+      return 'The football data provider could not be reached.';
+    case 'malformed':
+      return 'The football data provider answered with something unreadable.';
+    case 'upstream':
+      return 'The football data provider returned an error.';
+  }
+}
+
 /** A call reached the provider and came back unusable (transport, HTTP or envelope `errors`). */
 export class ProviderError extends Error {
   readonly path: string;
   readonly status: number | undefined;
   readonly detail: string | undefined;
+  readonly kind: ProviderFaultKind;
 
   constructor(
     message: string,
-    options: { path: string; status?: number | undefined; detail?: string | undefined; cause?: unknown },
+    options: {
+      path: string;
+      kind: ProviderFaultKind;
+      status?: number | undefined;
+      detail?: string | undefined;
+      cause?: unknown;
+    },
   ) {
     super(message, { cause: options.cause });
     this.name = 'ProviderError';
     this.path = options.path;
+    this.kind = options.kind;
     this.status = options.status;
     this.detail = options.detail;
   }
+}
+
+/**
+ * Reads API-Football's answer and says which wall it is.
+ *
+ * The provider reports auth and plan failures two different ways - as an HTTP 401/403 with
+ * no envelope at all, and as an HTTP 200 whose envelope carries `errors.token` or
+ * `errors.plan` - so both spellings have to be recognised or half the cases fall through
+ * to a shrug.
+ */
+export function classifyProviderProblem(
+  status: number | undefined,
+  detail: string | undefined,
+): ProviderFaultKind {
+  if (status === 401 || status === 403) return 'auth';
+  if (status === 429) return 'rate-limited';
+
+  const text = (detail ?? '').toLowerCase();
+  if (text.includes('token') || text.includes('api key') || text.includes('application key')) {
+    return 'auth';
+  }
+  if (text.includes('subscri') || text.includes('plan') || text.includes('not allowed')) {
+    return 'plan';
+  }
+  if (text.includes('rate limit') || text.includes('too many requests') || text.includes('requests')) {
+    return 'rate-limited';
+  }
+  return 'upstream';
 }
 
 /** The local daily budget is spent; the call was never issued. */
@@ -470,7 +608,10 @@ export interface TeamQuery {
 }
 
 interface CacheEntry {
+  /** Past this the value is refreshed on the next call... */
   expiresAt: number;
+  /** ...but it stays servable until this, for when that refresh fails. */
+  staleUntil: number;
   value: unknown[];
 }
 
@@ -535,6 +676,8 @@ export class ApiFootballClient {
   };
   #used = 0;
   #budgetDay: number;
+  #lastSuccessAt: number | undefined;
+  #lastFault: ProviderFault | undefined;
   #lowQuotaWarned = false;
   /** When the provider's current per-minute window is believed to have opened. */
   #minuteWindowStartedAt: number | undefined;
@@ -571,8 +714,42 @@ export class ApiFootballClient {
     this.#cache.clear();
   }
 
+  /**
+   * Whether the data path actually works, as opposed to whether the process is running.
+   *
+   * `reachable` is deliberately sticky: it flips false on a fault and only back on a later
+   * success, so a server whose key was revoked keeps saying so instead of looking well
+   * between requests.
+   */
+  getHealth(): ProviderHealth {
+    return {
+      reachable: this.#lastFault === undefined,
+      lastSuccessAt: this.#lastSuccessAt === undefined ? undefined : new Date(this.#lastSuccessAt),
+      lastFault: this.#lastFault === undefined ? undefined : { ...this.#lastFault },
+    };
+  }
+
+  /**
+   * API-Football's own account endpoint: the definitive answer to "is this key any good".
+   *
+   * Never cached and never counted against the local budget, because it is what gets called
+   * when everything else is failing and the operator needs to know why. The provider does
+   * not charge it against the plan either.
+   */
+  async accountStatus(): Promise<ApiAccountStatus | undefined> {
+    const payload = await this.#fetchEnvelope('/status', {}, { spendBudget: false });
+    // The envelope's `response` is an object here, not the list every other endpoint sends.
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
+    return payload as ApiAccountStatus;
+  }
+
   async leagues(current?: boolean): Promise<ApiLeagueCatalogueEntry[]> {
-    return this.#request<ApiLeagueCatalogueEntry>('/leagues', { current }, true);
+    return this.#request<ApiLeagueCatalogueEntry>(
+      '/leagues',
+      { current },
+      true,
+      CATALOGUE_TTL_SECONDS,
+    );
   }
 
   async teams(query: TeamQuery = {}): Promise<ApiTeamCatalogueEntry[]> {
@@ -580,6 +757,7 @@ export class ApiFootballClient {
       '/teams',
       { league: query.league, season: query.season, search: query.search },
       true,
+      CATALOGUE_TTL_SECONDS,
     );
   }
 
@@ -666,7 +844,7 @@ export class ApiFootballClient {
       '/predictions',
       { fixture: fixtureId },
       true,
-      cacheTtlSeconds,
+      cacheTtlSeconds ?? PREDICTION_TTL_SECONDS,
     );
   }
 
@@ -676,7 +854,7 @@ export class ApiFootballClient {
       '/players/squads',
       { team: teamId },
       true,
-      cacheTtlSeconds,
+      cacheTtlSeconds ?? SQUAD_TTL_SECONDS,
     );
   }
 
@@ -720,6 +898,20 @@ export class ApiFootballClient {
     this.#inflight.set(key, call as Promise<unknown[]>);
     try {
       return await call;
+    } catch (error) {
+      // The refresh failed, but this call was answerable a moment ago. Serving the old
+      // answer is the difference between a stale league list and an error screen - and for
+      // an outage that lasts the afternoon, between an app that works and one that does
+      // not. Only cacheable paths get here, so nothing live is served out of date.
+      const stale = this.#cacheGetStale(key);
+      if (stale !== undefined) {
+        this.#logger.warn('serving a stale answer; the refresh failed', {
+          path,
+          reason: error instanceof ProviderError ? error.kind : 'unknown',
+        });
+        return [...stale] as T[];
+      }
+      throw error;
     } finally {
       this.#inflight.delete(key);
     }
@@ -731,8 +923,29 @@ export class ApiFootballClient {
     params: QueryParams,
     key: string,
     cacheTtlMs: number | undefined,
+    options: { spendBudget?: boolean } = {},
   ): Promise<T[]> {
-    this.#spendBudget(path);
+    const payload = await this.#fetchEnvelope(path, params, options);
+    const items = Array.isArray(payload) ? (payload as T[]) : [];
+    // The cached array must not be the one handed to the caller: a consumer that sorts or
+    // truncates its result in place would otherwise rewrite every hit until the TTL expires.
+    if (cacheTtlMs !== undefined) this.#cacheSet(key, [...items] as unknown[], cacheTtlMs);
+    return items;
+  }
+
+  /**
+   * One call, all the way to the envelope's `response` field, whatever shape that is.
+   *
+   * Split out from `#fetchItems` because `/status` answers with an object rather than a
+   * list, and the list-shaped wrapper would quietly turn the only endpoint that can explain
+   * an outage into an empty array.
+   */
+  async #fetchEnvelope(
+    path: string,
+    params: QueryParams,
+    options: { spendBudget?: boolean } = {},
+  ): Promise<unknown> {
+    if (options.spendBudget !== false) this.#spendBudget(path);
     await this.#awaitMinuteHeadroom(path);
 
     const url = new URL(this.#baseUrl + path);
@@ -747,50 +960,92 @@ export class ApiFootballClient {
         signal: AbortSignal.timeout(this.#timeoutMs),
       });
     } catch (cause) {
-      throw new ProviderError(`Request to ${path} failed`, { path, cause });
+      throw this.#fail(
+        new ProviderError(`Request to ${path} failed`, {
+          path,
+          kind: 'transport',
+          detail: cause instanceof Error ? cause.message : undefined,
+          cause,
+        }),
+      );
     }
 
     this.#readQuotaHeaders(response.headers);
 
     if (!response.ok) {
       const body = await safeText(response);
-      throw new ProviderError(`${path} returned HTTP ${response.status}`, {
-        path,
-        status: response.status,
-        detail: body,
-      });
+      throw this.#fail(
+        new ProviderError(`${path} returned HTTP ${response.status}`, {
+          path,
+          kind: classifyProviderProblem(response.status, body),
+          status: response.status,
+          detail: body,
+        }),
+      );
     }
 
     let payload: unknown;
     try {
       payload = await response.json();
     } catch (cause) {
-      throw new ProviderError(`${path} returned a body that is not JSON`, { path, status: response.status, cause });
+      throw this.#fail(
+        new ProviderError(`${path} returned a body that is not JSON`, {
+          path,
+          kind: 'malformed',
+          status: response.status,
+          cause,
+        }),
+      );
     }
 
     // An edge proxy can answer 200 with `null` or a bare array. Reading `errors` off that
     // throws a TypeError, which sails past every `instanceof ProviderError` guard upstream
     // and turns a provider hiccup into a 500 instead of a degraded section.
     if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
-      throw new ProviderError(`${path} returned a body that is not an API-Football envelope`, {
-        path,
-        status: response.status,
-        detail: JSON.stringify(payload ?? null).slice(0, 200),
-      });
+      throw this.#fail(
+        new ProviderError(`${path} returned a body that is not an API-Football envelope`, {
+          path,
+          kind: 'malformed',
+          status: response.status,
+          detail: JSON.stringify(payload ?? null).slice(0, 200),
+        }),
+      );
     }
-    const envelope = payload as ApiEnvelope<T>;
+    const envelope = payload as ApiEnvelope<unknown>;
 
     // The HTTP status is 200 here even for a dead key or a blown plan quota.
     const problem = describeProviderErrors(envelope.errors);
     if (problem !== null) {
-      throw new ProviderError(`${path} reported "${problem}"`, { path, status: response.status, detail: problem });
+      throw this.#fail(
+        new ProviderError(`${path} reported "${problem}"`, {
+          path,
+          kind: classifyProviderProblem(response.status, problem),
+          status: response.status,
+          detail: problem,
+        }),
+      );
     }
 
-    const items = Array.isArray(envelope.response) ? envelope.response : [];
-    // The cached array must not be the one handed to the caller: a consumer that sorts or
-    // truncates its result in place would otherwise rewrite every hit until the TTL expires.
-    if (cacheTtlMs !== undefined) this.#cacheSet(key, [...items] as unknown[], cacheTtlMs);
-    return items;
+    this.#lastSuccessAt = this.#now();
+    this.#lastFault = undefined;
+    return envelope.response;
+  }
+
+  /** Records a fault before it is thrown, so /v1/health can name it afterwards. */
+  #fail(error: ProviderError): ProviderError {
+    this.#lastFault = {
+      kind: error.kind,
+      status: error.status,
+      at: new Date(this.#now()),
+      detail: error.detail,
+    };
+    this.#logger.error('provider call failed', {
+      path: error.path,
+      kind: error.kind,
+      status: error.status,
+      detail: error.detail,
+    });
+    return error;
   }
 
   /**
@@ -887,10 +1142,19 @@ export class ApiFootballClient {
     }
   }
 
+  /** A fresh hit only. An expired entry is left in place for `#cacheGetStale`. */
   #cacheGet(key: string): unknown[] | undefined {
     const entry = this.#cache.get(key);
     if (!entry) return undefined;
-    if (entry.expiresAt <= this.#now()) {
+    if (entry.expiresAt <= this.#now()) return undefined;
+    return entry.value;
+  }
+
+  /** An expired entry that has not yet aged out of its grace window. */
+  #cacheGetStale(key: string): unknown[] | undefined {
+    const entry = this.#cache.get(key);
+    if (!entry) return undefined;
+    if (entry.staleUntil <= this.#now()) {
       this.#cache.delete(key);
       return undefined;
     }
@@ -900,13 +1164,20 @@ export class ApiFootballClient {
   #cacheSet(key: string, value: unknown[], ttlMs: number): void {
     if (ttlMs <= 0) return;
     if (this.#cache.size >= MAX_CACHE_ENTRIES) this.#sweepCache();
-    this.#cache.set(key, { expiresAt: this.#now() + ttlMs, value });
+    const now = this.#now();
+    this.#cache.set(key, {
+      expiresAt: now + ttlMs,
+      staleUntil: now + Math.max(ttlMs, STALE_GRACE_MS),
+      value,
+    });
   }
 
   #sweepCache(): void {
     const now = this.#now();
+    // Only entries past their grace window go: an expired-but-servable one is exactly what
+    // the next failed refresh will want.
     for (const [key, entry] of this.#cache) {
-      if (entry.expiresAt <= now) this.#cache.delete(key);
+      if (entry.staleUntil <= now) this.#cache.delete(key);
     }
     if (this.#cache.size >= MAX_CACHE_ENTRIES) {
       const oldest = this.#cache.keys().next();

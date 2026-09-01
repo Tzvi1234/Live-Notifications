@@ -35,10 +35,16 @@ data class AuthUiState(
     /** True while either route is mid-flight; every control on the page goes quiet. */
     val working: Boolean get() = busy || googleBusy
 
-    /** Google is offered wherever a session can be started - not mid-verification. */
+    /**
+     * Google is offered once, on the front door.
+     *
+     * It covers both halves - a Google account that has never been seen here is created on
+     * the way through - so repeating it over the email form would be the same button asking
+     * the same question a second time. Choosing "sign up with email" is a choice; the pages
+     * after it are that choice being carried out.
+     */
     val googleOffered: Boolean
-        get() = availability == AccountAvailability.AVAILABLE &&
-            step in setOf(AuthStep.WELCOME, AuthStep.SIGN_IN, AuthStep.SIGN_UP)
+        get() = availability == AccountAvailability.AVAILABLE && step == AuthStep.WELCOME
 
     val canSubmit: Boolean
         get() = !working && when (step) {

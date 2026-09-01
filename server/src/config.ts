@@ -50,7 +50,58 @@ export interface KickoffConfig {
   readonly hasClerk: boolean;
 }
 
-const DEFAULT_FEATURED_LEAGUE_IDS = '39,140,135,78,61,2,3,88,94,203,383,253,71,128';
+/**
+ * The competitions the app offers, in the order it offers them.
+ *
+ * This is the same list the app's direct-API path carries in
+ * `ApiFootballDataSource.FEATURED_LEAGUE_IDS`, and the two must stay in step: they had
+ * drifted, and the result was that choosing the matchUP server - the recommended path -
+ * silently got you fourteen competitions where using your own key got you thirty. The
+ * English and Israeli pyramids run all the way down to their domestic cups because those
+ * are the ones actually followed here.
+ *
+ * An id the provider does not recognise is skipped rather than fatal (see `pickFeatured`),
+ * so the list can be edited without a redeploy being a gamble.
+ */
+const DEFAULT_FEATURED_LEAGUE_IDS = [
+  // England, top to bottom, plus the domestic cups.
+  39, // Premier League
+  40, // Championship
+  41, // League One
+  42, // League Two
+  45, // FA Cup
+  48, // League Cup (Carabao)
+  528, // Community Shield
+  // Israel.
+  383, // Ligat ha'Al
+  382, // Liga Leumit
+  384, // State Cup
+  385, // Toto Cup Ligat Al
+  // Spain, league and cup.
+  140, // La Liga
+  143, // Copa del Rey
+  141, // Segunda Division
+  // The rest of the big five.
+  135, // Serie A
+  78, // Bundesliga
+  61, // Ligue 1
+  // Leagues people follow a player into.
+  88, // Eredivisie
+  94, // Primeira Liga
+  203, // Super Lig
+  253, // Major League Soccer
+  71, // Brasileirao Serie A
+  128, // Liga Profesional (Argentina)
+  // Europe and international.
+  2, // UEFA Champions League
+  3, // UEFA Europa League
+  848, // UEFA Europa Conference League
+  531, // UEFA Super Cup
+  5, // UEFA Nations League
+  1, // World Cup
+  4, // Euro Championship
+  15, // FIFA Club World Cup
+].join(',');
 
 type Env = Record<string, string | undefined>;
 
