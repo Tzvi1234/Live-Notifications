@@ -41,6 +41,7 @@ class SettingsRepository @Inject constructor(
         val fcmToken = stringPreferencesKey("fcm_token")
         val apiKey = stringPreferencesKey("api_football_key")
         val backendUrl = stringPreferencesKey("backend_url")
+        val demoMode = booleanPreferencesKey("demo_mode")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
@@ -72,6 +73,13 @@ class SettingsRepository @Inject constructor(
     /** Empty unless a Kickoff backend has been pointed at. */
     val backendUrl: Flow<String> = context.dataStore.data.map { it[Keys.backendUrl].orEmpty() }
 
+    /**
+     * Demo mode replaces the football source with a generated one. It outranks a backend
+     * and a key rather than falling back to them, so turning it on is always a complete
+     * answer to "why is the app showing me this".
+     */
+    val demoMode: Flow<Boolean> = context.dataStore.data.map { it[Keys.demoMode] ?: false }
+
     val fcmToken: Flow<String> = context.dataStore.data.map { it[Keys.fcmToken].orEmpty() }
 
     suspend fun setOnboardingComplete(value: Boolean) = edit { it[Keys.onboardingComplete] = value }
@@ -88,6 +96,7 @@ class SettingsRepository @Inject constructor(
     suspend fun setDynamicColor(value: Boolean) = edit { it[Keys.dynamicColor] = value }
     suspend fun setApiFootballKey(key: String) = edit { it[Keys.apiKey] = key.trim() }
     suspend fun setBackendUrl(url: String) = edit { it[Keys.backendUrl] = url.trim() }
+    suspend fun setDemoMode(value: Boolean) = edit { it[Keys.demoMode] = value }
     suspend fun setFcmToken(token: String) = edit { it[Keys.fcmToken] = token }
 
     suspend fun setDarkTheme(pref: AppSettings.DarkThemePreference) =

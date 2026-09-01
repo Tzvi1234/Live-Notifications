@@ -19,7 +19,7 @@ enum class OnboardingStep {
 }
 
 /** Which source will actually serve requests, given what has been saved. */
-enum class ConfiguredSource { NONE, API_FOOTBALL, BACKEND }
+enum class ConfiguredSource { NONE, API_FOOTBALL, BACKEND, DEMO }
 
 /** Why a catalogue fetch produced nothing. Each case gets its own copy on screen. */
 enum class CatalogueFailure { NO_SOURCE, UNREACHABLE, EMPTY }
@@ -33,6 +33,7 @@ data class OnboardingUiState(
     val backendUrlInput: String = "",
     val backendUrlError: String? = null,
     val backendSaved: Boolean = false,
+    val demoEnabled: Boolean = false,
 
     val leaguesLoading: Boolean = false,
     val leagues: List<League> = emptyList(),
@@ -61,6 +62,7 @@ data class OnboardingUiState(
      */
     val source: ConfiguredSource
         get() = when {
+            demoEnabled -> ConfiguredSource.DEMO
             backendSaved -> ConfiguredSource.BACKEND
             apiKeySaved -> ConfiguredSource.API_FOOTBALL
             else -> ConfiguredSource.NONE

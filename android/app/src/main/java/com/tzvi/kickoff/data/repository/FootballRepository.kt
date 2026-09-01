@@ -5,6 +5,7 @@ import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.MatchEvent
 import com.tzvi.kickoff.core.model.MatchPhase
 import com.tzvi.kickoff.core.model.Team
+import com.tzvi.kickoff.data.demo.DemoFootballDataSource
 import com.tzvi.kickoff.data.local.dao.FavouriteTeamDao
 import com.tzvi.kickoff.data.local.dao.FollowedLeagueDao
 import com.tzvi.kickoff.data.local.dao.MatchDao
@@ -192,13 +193,17 @@ class FootballSourceProvider @Inject constructor(
     private val settings: SettingsRepository,
     private val backendSource: dagger.Lazy<BackendDataSource>,
     private val apiFootballSource: dagger.Lazy<ApiFootballDataSource>,
+    private val demoSource: dagger.Lazy<DemoFootballDataSource>,
 ) {
     suspend fun current(): FootballDataSource {
+        // Demo wins outright. A demo that silently deferred to a configured backend would
+        // be the most confusing state the app could be in.
+        if (settings.demoMode.first()) return demoSource.get()
         if (settings.backendUrl.first().isNotBlank()) return backendSource.get()
         if (settings.apiFootballKey.first().isNotBlank()) return apiFootballSource.get()
         throw NoFootballSourceException()
     }
 
-    suspend fun isConfigured(): Boolean =
+    suspend fun isConfigured(): Boolean = settings.demoMode.first() ||
         settings.backendUrl.first().isNotBlank() || settings.apiFootballKey.first().isNotBlank()
 }

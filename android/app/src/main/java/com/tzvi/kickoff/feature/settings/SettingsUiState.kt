@@ -49,6 +49,15 @@ data class DataSourceForm(
     }
 }
 
+/** What the demo panel is doing right now. */
+data class DemoStatus(
+    val enabled: Boolean = false,
+    val simulating: Boolean = false,
+    val minute: Int = 0,
+    val scoreLabel: String = "0 – 0",
+    val lastEvent: String? = null,
+)
+
 data class SettingsUiState(
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
@@ -57,6 +66,7 @@ data class SettingsUiState(
     val notifications: NotificationAccess = NotificationAccess(),
     val island: IslandStatus = IslandStatus(),
     val dataSource: DataSourceForm = DataSourceForm(),
+    val demo: DemoStatus = DemoStatus(),
     val appVersion: String = "",
     /** Material You only exists from Android 12; below that the switch is inert. */
     val dynamicColorAvailable: Boolean = true,

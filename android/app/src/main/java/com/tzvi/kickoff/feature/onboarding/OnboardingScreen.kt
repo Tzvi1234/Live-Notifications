@@ -147,6 +147,8 @@ fun OnboardingScreen(
                             onSaveApiKey = viewModel::saveApiKey,
                             onBackendUrlChange = viewModel::onBackendUrlChange,
                             onSaveBackendUrl = viewModel::saveBackendUrl,
+                        onUseDemo = viewModel::useDemoData,
+                        onStopDemo = viewModel::stopUsingDemoData,
                             onSkip = { goTo(OnboardingStep.LEAGUES.ordinal) },
                         )
 
@@ -294,8 +296,18 @@ private fun PageIndicator(pagerState: PagerState, modifier: Modifier = Modifier)
  * The page content trails the swipe and fades towards the edges, so the five steps read
  * as one object sliding under the frame rather than as five separate screens.
  */
+/**
+ * Content parallax: a page's contents trail the page itself, so a swipe reads as one
+ * object moving rather than two panes swapping.
+ *
+ * `clip` is what makes it safe. A graphicsLayer does not clip by default, so translating
+ * a page's contents sideways lets the page *next door* — laid out just off-screen —
+ * paint its heading and cards into the visible edge, which is exactly the mess it looks
+ * like. Clipping confines every page's drawing to its own slot.
+ */
 private fun Modifier.pageMotion(pagerState: PagerState, page: Int): Modifier = graphicsLayer {
     val offset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+    clip = true
     translationX = size.width * offset * CONTENT_LAG
     alpha = lerp(EDGE_ALPHA, 1f, 1f - abs(offset).coerceIn(0f, 1f))
 }

@@ -21,6 +21,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -145,7 +146,7 @@ class LiveMatchService : Service() {
     private suspend fun pollLoop(matchId: Long) {
         var finishedAt: Instant? = null
 
-        while (scope.isActive) {
+        while (currentCoroutineContext().isActive) {
             val config = settings.settings.first()
             val refresh = runCatching { repository.refreshMatch(matchId) }.getOrNull()
 

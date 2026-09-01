@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.CalendarMonth
@@ -31,6 +32,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -106,6 +108,8 @@ internal fun ConnectPage(
     onSaveApiKey: () -> Unit,
     onBackendUrlChange: (String) -> Unit,
     onSaveBackendUrl: () -> Unit,
+    onUseDemo: () -> Unit,
+    onStopDemo: () -> Unit,
     onSkip: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -194,6 +198,21 @@ internal fun ConnectPage(
                 enabled = state.backendUrlInput.isNotBlank(),
             ) {
                 Text("Use this backend")
+            }
+        }
+
+        SourceCard(
+            icon = Icons.Outlined.PlayCircleOutline,
+            title = "Just look around",
+            status = if (state.demoEnabled) "IN USE" else null,
+            body = "Real clubs and real crests, with fixtures generated around right now " +
+                "and a match you can watch play out in three minutes. Nothing to sign up " +
+                "for, and you can switch to a real source later.",
+        ) {
+            if (state.demoEnabled) {
+                OutlinedButton(onClick = onStopDemo) { Text("Turn the demo off") }
+            } else {
+                Button(onClick = onUseDemo) { Text("Use demo data") }
             }
         }
 
@@ -388,6 +407,8 @@ private fun ConnectPagePreview() {
             onSaveApiKey = {},
             onBackendUrlChange = {},
             onSaveBackendUrl = {},
+            onUseDemo = {},
+            onStopDemo = {},
             onSkip = {},
         )
     }

@@ -98,6 +98,9 @@ interface MatchDao {
 
     @Query("DELETE FROM matches WHERE kickoffAt < :before")
     suspend fun deleteOlderThan(before: Long)
+
+    @Query("DELETE FROM matches WHERE id = :id")
+    suspend fun delete(id: Long)
 }
 
 @Dao

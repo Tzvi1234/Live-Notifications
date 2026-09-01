@@ -39,12 +39,14 @@ class OnboardingViewModel @Inject constructor(
         viewModelScope.launch {
             val key = settings.apiFootballKey.first()
             val url = settings.backendUrl.first()
+            val demo = settings.demoMode.first()
             mutableState.update {
                 it.copy(
                     apiKeyInput = key,
                     apiKeySaved = key.isNotBlank(),
                     backendUrlInput = url,
                     backendSaved = url.isNotBlank(),
+                    demoEnabled = demo,
                 )
             }
         }
@@ -211,6 +213,30 @@ class OnboardingViewModel @Inject constructor(
     }
 
     // ---- finish ---------------------------------------------------------------
+
+    /**
+     * The third way in: no key, no deployment, real crests.
+     *
+     * It clears the catalogue as well as setting the flag, because the leagues and squads
+     * already on screen came from whichever source was selected before, and leaving them
+     * would show one source's competitions under another source's name.
+     */
+    fun useDemoData() {
+        viewModelScope.launch {
+            settings.setDemoMode(true)
+            invalidateCatalogue()
+            mutableState.update { it.copy(demoEnabled = true) }
+            loadLeagues(force = true)
+        }
+    }
+
+    fun stopUsingDemoData() {
+        viewModelScope.launch {
+            settings.setDemoMode(false)
+            invalidateCatalogue()
+            mutableState.update { it.copy(demoEnabled = false) }
+        }
+    }
 
     fun finish() {
         val current = mutableState.value

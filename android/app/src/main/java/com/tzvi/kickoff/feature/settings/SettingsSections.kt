@@ -46,6 +46,11 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.text.style.TextOverflow
+import com.tzvi.kickoff.ui.component.LivePill
+import com.tzvi.kickoff.ui.theme.KickoffTextStyles
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -686,3 +691,133 @@ private val RowGap = 12.dp
 private val TightGap = 6.dp
 private val LogoSize = 44.dp
 private val StatusIconSize = 16.dp
+
+// ---- demo ----------------------------------------------------------------------------
+
+/**
+ * The demo panel.
+ *
+ * Everything here drives the real pipeline rather than a mock of it: the cards go through
+ * the same builder and channels as a live match, and the simulator writes into the same
+ * cache the rest of the app reads. What you see is what a real Saturday looks like.
+ */
+@Composable
+internal fun DemoSection(
+    demo: DemoStatus,
+    onSetDemoMode: (Boolean) -> Unit,
+    onPreMatch: () -> Unit,
+    onLive: () -> Unit,
+    onFullTime: () -> Unit,
+    onToggleSimulation: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SettingsGroup(title = "Demo", modifier = modifier) {
+        Column(
+            modifier = Modifier.padding(horizontal = GroupPadding),
+            verticalArrangement = Arrangement.spacedBy(RowGap),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Use demo data", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        text = "Real clubs and crests, fixtures generated around right now. " +
+                            "Overrides a key or a backend while it is on.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Switch(checked = demo.enabled, onCheckedChange = onSetDemoMode)
+            }
+
+            AnimatedVisibility(visible = demo.enabled) {
+                Column(verticalArrangement = Arrangement.spacedBy(RowGap)) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                    Text(
+                        text = "Post a card",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(TightGap)) {
+                        FilledTonalButton(onClick = onPreMatch, modifier = Modifier.weight(1f)) {
+                            Text("Pre-match")
+                        }
+                        FilledTonalButton(onClick = onLive, modifier = Modifier.weight(1f)) {
+                            Text("Live")
+                        }
+                        FilledTonalButton(onClick = onFullTime, modifier = Modifier.weight(1f)) {
+                            Text("Full time")
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                    Text(
+                        text = "Play a whole match in about three minutes. The card, the " +
+                            "status-bar chip and the island all update as it runs, and goals " +
+                            "and the red card interrupt exactly as they would live.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    AnimatedVisibility(visible = demo.simulating) {
+                        SimulationReadout(demo)
+                    }
+
+                    Button(
+                        onClick = onToggleSimulation,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (demo.simulating) "Stop the match" else "Simulate a match")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SimulationReadout(demo: DemoStatus, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(KickoffShapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            LivePill()
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = demo.scoreLabel,
+                style = KickoffTextStyles.scoreMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                // Tabular figures: the minute sits still instead of jitter-stepping as it
+                // counts, which on a two-second tick is very noticeable.
+                text = "${demo.minute}'",
+                style = KickoffTextStyles.clock.copy(
+                    fontFeatureSettings = "tnum",
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        LinearProgressIndicator(
+            progress = { (demo.minute / 90f).coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        demo.lastEvent?.let { headline ->
+            Text(
+                text = headline,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}

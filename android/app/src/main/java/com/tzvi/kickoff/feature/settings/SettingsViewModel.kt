@@ -11,10 +11,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tzvi.kickoff.BuildConfig
 import com.tzvi.kickoff.core.model.AppSettings
+import com.tzvi.kickoff.core.model.LiveActivity
 import com.tzvi.kickoff.core.model.LiveCardStyle
 import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.repository.SettingsRepository
+import com.tzvi.kickoff.data.demo.DemoCatalogue
 import com.tzvi.kickoff.notifications.LiveCardPreview
+import com.tzvi.kickoff.notifications.MatchSimulator
 import com.tzvi.kickoff.notifications.LiveUpdateCapability
 import com.tzvi.kickoff.notifications.MatchNotificationBuilder
 import com.tzvi.kickoff.ui.island.IslandOverlayService
@@ -55,6 +58,7 @@ class SettingsViewModel @Inject constructor(
     private val footballRepository: FootballRepository,
     private val capability: LiveUpdateCapability,
     private val liveCardPreview: LiveCardPreview,
+    private val simulator: MatchSimulator,
 ) : ViewModel() {
 
     /**
@@ -91,18 +95,34 @@ class SettingsViewModel @Inject constructor(
             if (credentials == null) DataSourceForm.NO_SOURCE else footballRepository.sourceName()
         }
 
+    /** Demo mode and the simulator's progress, folded into one value for the panel. */
+    private val demo: Flow<DemoStatus> = combine(
+        settingsRepository.demoMode,
+        simulator.state,
+    ) { enabled, run ->
+        DemoStatus(
+            enabled = enabled,
+            simulating = run.running,
+            minute = run.minute,
+            scoreLabel = "${run.score.home} – ${run.score.away}",
+            lastEvent = run.lastEvent,
+        )
+    }
+
     val uiState: StateFlow<SettingsUiState> = combine(
         stored,
         activeSourceName,
         session,
         editor,
-    ) { current, sourceName, device, form ->
+        demo,
+    ) { current, sourceName, device, form, demoStatus ->
         val loaded = current as? Stored.Loaded
         SettingsUiState(
             isLoading = false,
             errorMessage = (current as? Stored.Failed)?.message,
             settings = loaded?.settings ?: AppSettings(),
             liveUpdate = device.liveUpdate,
+            demo = demoStatus,
             notifications = device.notifications,
             island = IslandStatus(
                 overlayPermissionGranted = device.overlayPermissionGranted,
@@ -262,6 +282,58 @@ class SettingsViewModel @Inject constructor(
                 "Nothing was posted. Check that notifications are allowed for Kickoff, " +
                     "and give the last card a couple of seconds before asking again."
         }
+
+    // ---- demo ----------------------------------------------------------------
+
+    fun setDemoMode(enabled: Boolean) {
+        viewModelScope.launch {
+            if (!enabled) simulator.stop()
+            settingsRepository.setDemoMode(enabled)
+            if (enabled) seedDemoFavourites()
+            reloads.update { it + 1 }
+            editor.update {
+                it.copy(
+                    message = if (enabled) {
+                        "Demo data is on. Fixtures, teams and the live card are generated."
+                    } else {
+                        "Demo data is off."
+                    },
+                )
+            }
+        }
+    }
+
+    /**
+     * Gives the demo something to be about. Without a follow list every screen is a valid
+     * but empty state, which is the one thing a demo must not open on.
+     */
+    private suspend fun seedDemoFavourites() {
+        if (footballRepository.favouriteIdsNow().isNotEmpty()) return
+        footballRepository.setFavourites(
+            listOf(
+                DemoCatalogue.arsenal to DemoCatalogue.premierLeague,
+                DemoCatalogue.barcelona to DemoCatalogue.laLiga,
+                DemoCatalogue.liverpool to DemoCatalogue.premierLeague,
+                DemoCatalogue.bayern to DemoCatalogue.bundesliga,
+            ),
+        )
+    }
+
+    fun toggleSimulation() {
+        if (uiState.value.demo.simulating) simulator.stop() else simulator.start()
+    }
+
+    fun showPreMatchCard() = preview(LiveActivity.MatchActivity.Stage.PRE_MATCH)
+    fun showLiveCard() = preview(LiveActivity.MatchActivity.Stage.LIVE)
+    fun showFullTimeCard() = preview(LiveActivity.MatchActivity.Stage.FULL_TIME)
+
+    private fun preview(stage: LiveActivity.MatchActivity.Stage) {
+        viewModelScope.launch {
+            val style = uiState.value.settings.liveCardStyle
+            val rendering = runCatching { liveCardPreview.show(style, stage) }.getOrNull()
+            editor.update { it.copy(message = previewMessage(rendering)) }
+        }
+    }
 
     fun dismissMessage() {
         editor.update { it.copy(message = null) }
