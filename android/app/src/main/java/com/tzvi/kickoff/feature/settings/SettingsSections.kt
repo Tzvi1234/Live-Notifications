@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Info
@@ -352,11 +353,13 @@ internal fun IslandSection(
 @Composable
 internal fun DataSourceSection(
     form: DataSourceForm,
+    pushEnabled: Boolean,
     onApiKeyChange: (String) -> Unit,
     onToggleApiKeyVisibility: () -> Unit,
     onSaveApiKey: () -> Unit,
     onBackendUrlChange: (String) -> Unit,
     onSaveBackendUrl: () -> Unit,
+    onSetPushEnabled: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uriHandler = LocalUriHandler.current
@@ -451,6 +454,20 @@ internal fun DataSourceSection(
                 Text(if (form.backendUrlStored) "Update backend" else "Save backend")
             }
         }
+
+        Spacer(Modifier.height(TightGap))
+
+        SettingsToggleRow(
+            title = "Push updates",
+            subtitle = if (form.backendUrlStored) {
+                "Draw a goal the moment the backend pushes it, instead of at the next poll."
+            } else {
+                "Only a backend can push. Without one, scores arrive on the polling schedule."
+            },
+            icon = Icons.Outlined.Bolt,
+            checked = pushEnabled,
+            onCheckedChange = onSetPushEnabled,
+        )
     }
 }
 

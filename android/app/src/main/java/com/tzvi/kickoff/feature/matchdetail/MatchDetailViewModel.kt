@@ -14,6 +14,7 @@ import com.tzvi.kickoff.notifications.MatchTracker
 import com.tzvi.kickoff.data.repository.NoFootballSourceException
 import com.tzvi.kickoff.ui.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import java.io.IOException
 import javax.inject.Inject
 
@@ -47,8 +49,14 @@ class MatchDetailViewModel @Inject constructor(
     /**
      * Line-ups and statistics are the one part of a match that Room never holds: only
      * [FootballRepository.refreshMatch] returns them, so they live here rather than in a
-     * DAO flow, and survive a failed poll by being carried forward.
+     * DAO flow.
+     *
+     * They are held outside [pollDetail] because a pull-to-refresh restarts that flow:
+     * starting it from a blank state would empty the pitch and the stat bars for the
+     * length of the call the user pulled to make.
      */
+    private val retained = MutableStateFlow(DetailState(isLoading = true))
+
     private val details: Flow<DetailState> =
         requests.flatMapLatest { request -> pollDetail(request) }
 
@@ -115,33 +123,43 @@ class MatchDetailViewModel @Inject constructor(
      * behalf of a match nobody is looking at.
      */
     private fun pollDetail(request: RefreshRequest): Flow<DetailState> = flow {
-        var state = DetailState(isLoading = true, isRefreshing = request.fromUser)
-        emit(state)
+        emit(retained.updateAndGet { it.copy(isLoading = true, isRefreshing = request.fromUser) })
         var live = false
         while (true) {
-            val outcome = runCatching { footballRepository.refreshMatch(matchId) }
-            state = outcome.fold(
-                onSuccess = { refresh ->
-                    live = refresh.detail.match.isLive
-                    DetailState(
-                        lineups = refresh.detail.lineups,
-                        statistics = refresh.detail.statistics,
-                    )
-                },
-                onFailure = { error ->
-                    // A blip mid-match keeps the loop alive - `live` still holds the last
-                    // phase actually seen - but a missing source never will, so that one
-                    // stops immediately rather than failing every 30 seconds forever.
-                    if (error is NoFootballSourceException) live = false
-                    state.copy(
+            val state = try {
+                val detail = footballRepository.refreshMatch(matchId).detail
+                live = detail.match.isLive
+                retained.updateAndGet {
+                    it.copy(
+                        // A poll that came back without line-ups has not withdrawn the
+                        // ones already published, it simply did not carry them again.
+                        lineups = detail.lineups ?: it.lineups,
+                        statistics = detail.statistics ?: it.statistics,
                         isLoading = false,
                         isRefreshing = false,
-                        errorMessage = if (error is NoFootballSourceException) null
-                        else error.userMessage(),
-                        sourceMissing = error is NoFootballSourceException,
+                        errorMessage = null,
+                        sourceMissing = false,
                     )
-                },
-            )
+                }
+            } catch (cancellation: CancellationException) {
+                // Left to a blanket catch this would surface the screen's own teardown as
+                // a failed refresh, and swallow the cancellation the caller is waiting on.
+                throw cancellation
+            } catch (error: Throwable) {
+                // A blip mid-match keeps the loop alive - `live` still holds the last
+                // phase actually seen - but a missing source never will, so that one
+                // stops immediately rather than failing every 30 seconds forever.
+                val missingSource = error is NoFootballSourceException
+                if (missingSource) live = false
+                retained.updateAndGet {
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = if (missingSource) null else error.userMessage(),
+                        sourceMissing = missingSource,
+                    )
+                }
+            }
             emit(state)
             if (!live) break
             delay(LIVE_POLL_MILLIS)

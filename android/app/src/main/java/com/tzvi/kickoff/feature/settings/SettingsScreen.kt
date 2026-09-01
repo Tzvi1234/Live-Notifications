@@ -97,6 +97,7 @@ fun SettingsScreen(onBack: () -> Unit) {
         onSaveApiKey = viewModel::saveApiKey,
         onBackendUrlChange = viewModel::onBackendUrlChange,
         onSaveBackendUrl = viewModel::saveBackendUrl,
+        onSetPushEnabled = viewModel::setPushEnabled,
         onSelectTheme = viewModel::setDarkTheme,
         onSetDynamicColor = viewModel::setDynamicColor,
         onRetry = viewModel::retry,
@@ -127,6 +128,7 @@ internal fun SettingsContent(
     onSaveApiKey: () -> Unit,
     onBackendUrlChange: (String) -> Unit,
     onSaveBackendUrl: () -> Unit,
+    onSetPushEnabled: (Boolean) -> Unit,
     onSelectTheme: (AppSettings.DarkThemePreference) -> Unit,
     onSetDynamicColor: (Boolean) -> Unit,
     onRetry: () -> Unit,
@@ -216,11 +218,13 @@ internal fun SettingsContent(
                 )
                 DataSourceSection(
                     form = state.dataSource,
+                    pushEnabled = state.settings.pushEnabled,
                     onApiKeyChange = onApiKeyChange,
                     onToggleApiKeyVisibility = onToggleApiKeyVisibility,
                     onSaveApiKey = onSaveApiKey,
                     onBackendUrlChange = onBackendUrlChange,
                     onSaveBackendUrl = onSaveBackendUrl,
+                    onSetPushEnabled = onSetPushEnabled,
                 )
                 AppearanceSection(
                     settings = state.settings,
@@ -265,6 +269,7 @@ private fun SettingsPreview(state: SettingsUiState) {
             onSaveApiKey = {},
             onBackendUrlChange = {},
             onSaveBackendUrl = {},
+            onSetPushEnabled = {},
             onSelectTheme = {},
             onSetDynamicColor = {},
             onRetry = {},

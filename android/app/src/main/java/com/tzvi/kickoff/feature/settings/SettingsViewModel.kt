@@ -27,9 +27,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -54,10 +57,22 @@ class SettingsViewModel @Inject constructor(
     private val liveCardPreview: LiveCardPreview,
 ) : ViewModel() {
 
+    /**
+     * Resolving the promotion-settings activity is a PackageManager round trip, and the
+     * answer cannot change while this process lives, so it is paid for once rather than on
+     * every resume and every tap.
+     *
+     * Declared first: [session] reads it while the constructor is still running.
+     */
+    private val promotionSettings: Intent? by lazy { capability.promotionSettingsIntent() }
+
     private val reloads = MutableStateFlow(0)
     private val session = MutableStateFlow(readSession())
     private val editor = MutableStateFlow(Editor())
 
+    // Shared rather than cold: this is collected both directly and through
+    // [activeSourceName], and a second collection would open a second read of every
+    // DataStore key behind it.
     private val stored: Flow<Stored> = reloads.flatMapLatest {
         combine(
             settingsRepository.settings,
@@ -65,13 +80,16 @@ class SettingsViewModel @Inject constructor(
             settingsRepository.backendUrl,
         ) { settings, key, url -> Stored.Loaded(settings, key, url) as Stored }
             .catch { error -> emit(Stored.Failed(error.userMessage())) }
-    }
+    }.shareIn(viewModelScope, SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS), replay = 1)
 
     // sourceName() resolves the provider from the stored key and URL, so it is recomputed
-    // whenever either changes rather than being read once when the screen opens.
-    private val activeSourceName: Flow<String> = stored.mapLatest { current ->
-        if (current is Stored.Loaded) footballRepository.sourceName() else DataSourceForm.NO_SOURCE
-    }
+    // when either of those changes and not when some unrelated switch is flipped.
+    private val activeSourceName: Flow<String> = stored
+        .map { current -> (current as? Stored.Loaded)?.let { it.apiKey to it.backendUrl } }
+        .distinctUntilChanged()
+        .mapLatest { credentials ->
+            if (credentials == null) DataSourceForm.NO_SOURCE else footballRepository.sourceName()
+        }
 
     val uiState: StateFlow<SettingsUiState> = combine(
         stored,
@@ -238,8 +256,11 @@ class SettingsViewModel @Inject constructor(
                 "Posted as the rich scoreboard. It will not appear in the status bar or on the always-on display."
             MatchNotificationBuilder.Rendering.PLAIN ->
                 "Posted using the plain system template."
+            // A refused post and a post throttled behind the previous one are
+            // indistinguishable from here, so the copy has to cover both.
             null ->
-                "Could not post a card. Check that notifications are allowed for Kickoff."
+                "Nothing was posted. Check that notifications are allowed for Kickoff, " +
+                    "and give the last card a couple of seconds before asking again."
         }
 
     fun dismissMessage() {
@@ -253,10 +274,14 @@ class SettingsViewModel @Inject constructor(
 
     fun setDynamicColor(value: Boolean) = write { it.setDynamicColor(value) }
 
+    // ---- push ----------------------------------------------------------------
+
+    fun setPushEnabled(value: Boolean) = write { it.setPushEnabled(value) }
+
     // ---- intents the screen launches ----------------------------------------
 
     /** Null when this build has no promoted-notification settings activity to open. */
-    fun promotionSettingsIntent(): Intent? = capability.promotionSettingsIntent()
+    fun promotionSettingsIntent(): Intent? = promotionSettings
 
     fun overlayPermissionIntent(): Intent = IslandOverlayService.permissionIntent(context)
 
@@ -282,7 +307,7 @@ class SettingsViewModel @Inject constructor(
                 supportsProgressStyle = capability.supportsProgressStyle,
                 supportsPromotion = capability.supportsPromotion,
                 promotionAllowed = capability.canPostPromoted(),
-                canOpenPromotionSettings = capability.promotionSettingsIntent() != null,
+                canOpenPromotionSettings = promotionSettings != null,
             ),
             notifications = NotificationAccess(
                 granted = hasNotificationPermission(),

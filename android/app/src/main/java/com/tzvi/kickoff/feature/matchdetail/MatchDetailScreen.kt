@@ -1,5 +1,11 @@
 package com.tzvi.kickoff.feature.matchdetail
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
@@ -40,9 +46,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tzvi.kickoff.core.model.Match
@@ -58,15 +66,35 @@ import com.tzvi.kickoff.ui.theme.KickoffTheme
 fun MatchDetailScreen(onBack: () -> Unit) {
     val viewModel: MatchDetailViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> if (granted) viewModel.toggleFollowing() }
 
     MatchDetailContent(
         state = state,
         onBack = onBack,
         onSelectTab = viewModel::selectTab,
         onRefresh = viewModel::refresh,
-        onToggleFollowing = viewModel::toggleFollowing,
+        // The live card is a notification, so following without POST_NOTIFICATIONS would
+        // post into nothing. The bell is the explicit action that earns the one dialog
+        // Android grants us - asking on the way in would spend it on a user who never
+        // wanted the card, and a second denial silences the dialog for good.
+        onToggleFollowing = {
+            if (state.following || context.canPostNotifications()) {
+                viewModel.toggleFollowing()
+            } else {
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        },
     )
 }
+
+private fun Context.canPostNotifications(): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+        PackageManager.PERMISSION_GRANTED
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
