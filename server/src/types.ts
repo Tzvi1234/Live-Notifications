@@ -217,8 +217,29 @@ export interface MatchDetailJson {
   /** Provider stat label -> display value, already stringified (e.g. "Ball Possession" -> "55%"). */
   homeStats: Record<string, string>;
   awayStats: Record<string, string>;
+  /**
+   * Who is out and who is a doubt, per side.
+   *
+   * Present long before a line-up is, which is the point: a confirmed XI lands twenty
+   * minutes before kick-off, and everybody making a prediction has already decided by
+   * then. Absent when the competition has no injury coverage - which is most of them
+   * below the top flight, so a screen that assumes it will be there is a screen with a
+   * hole in it.
+   */
+  homeAbsences?: AbsenceJson[] | undefined;
+  awayAbsences?: AbsenceJson[] | undefined;
   /** Monotonic per match; the client drops any detail payload older than the one it holds. */
   sequence: number;
+}
+
+export interface AbsenceJson {
+  playerId?: number | undefined;
+  name: string;
+  photoUrl?: string | undefined;
+  /** True for a definite absence, false for a doubt. */
+  out: boolean;
+  /** The provider's own word: "Knock", "Suspended", "Illness". */
+  reason?: string | undefined;
 }
 
 export interface MatchListJson {
@@ -248,6 +269,31 @@ export interface HealthJson {
   store?: 'postgres' | 'memory' | undefined;
   /** Last rate-limit headers the provider returned; undefined fields mean "not yet told". */
   quota?: ProviderQuotaJson | undefined;
+  /**
+   * Whether the football data path actually works.
+   *
+   * `ok` above is liveness - Render polls it and will restart the instance if it stops
+   * answering - so it cannot double as "the app will get data from me". This is the
+   * separate question, and a deployment whose key has been revoked is a deployment that
+   * answers `ok: true` and `dataOk: false` rather than one that looks well while every
+   * screen in the app fails.
+   */
+  dataOk?: boolean | undefined;
+  providerFault?: ProviderFaultJson | undefined;
+}
+
+/**
+ * Why the data path is down, in terms an operator can act on without opening a log host.
+ *
+ * The provider's own sentence is NOT here: it names the account's state, which is the
+ * operator's business and not an anonymous caller's. `/v1/admin/status` carries that.
+ */
+export interface ProviderFaultJson {
+  kind: 'transport' | 'auth' | 'plan' | 'rate-limited' | 'upstream' | 'malformed';
+  /** What to do about it, in one sentence. */
+  reason: string;
+  status?: number | undefined;
+  at: string;
 }
 
 export interface ProviderQuotaJson {
@@ -365,9 +411,27 @@ export interface LeaderboardEntryJson {
 
 export interface LeaderboardJson {
   groupId: number;
+  /** Kept for older clients; `rules` is the full picture. */
   exactPoints: number;
   outcomePoints: number;
+  /**
+   * Whoever created the group.
+   *
+   * Sent so the table can mark them even before a ball is kicked - a group with no settled
+   * matches is still a group with a captain, and a leaderboard that draws nothing until
+   * the first result is a screen that looks broken on the day people join.
+   */
+  captainUserId?: string | undefined;
+  /** The rulebook the server actually scored with. */
+  rules?: RulebookJson | undefined;
   entries: LeaderboardEntryJson[];
+}
+
+/** The scoring rules as data, so the app renders them rather than restating them. */
+export interface RulebookJson {
+  scoring: Array<{ label: string; points: number }>;
+  multipliers: Array<{ stage: string; label: string; multiplier: number }>;
+  notes: string[];
 }
 
 export interface ChatMessageJson {

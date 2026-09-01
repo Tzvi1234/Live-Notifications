@@ -907,7 +907,7 @@ export class LivePoller {
 
         const match = toMatch(raw);
         if (match.phase === 'FINISHED') {
-          const settled = await this.#store.settleFixture(fixtureId, finalScore(match));
+          const settled = await this.#store.settleFixture(fixtureId, finalScore(match), { round: match.round });
           context.summary.settledPredictions += settled;
           if (settled > 0) {
             this.#logger.info('predictions settled', {

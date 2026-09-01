@@ -69,6 +69,33 @@ data class MatchDetail(
     val lineups: MatchLineups?,
     val statistics: MatchStatistics?,
     val sequence: Long = 0,
+    /**
+     * Who is missing, per side, before a ball is kicked.
+     *
+     * Worth having precisely because it arrives long before a line-up does: the confirmed
+     * XI lands twenty minutes before kick-off, and anybody making a prediction has decided
+     * well before that. Empty when the competition has no injury coverage, which is most
+     * of them below the top flight.
+     */
+    val absences: MatchAbsences? = null,
+)
+
+/** The unavailable players on both sides. */
+data class MatchAbsences(
+    val home: List<Absence>,
+    val away: List<Absence>,
+) {
+    val isEmpty: Boolean get() = home.isEmpty() && away.isEmpty()
+}
+
+data class Absence(
+    val playerId: Int?,
+    val name: String,
+    val photoUrl: String?,
+    /** True for a definite absence, false for a doubt. */
+    val out: Boolean,
+    /** The provider's own word: "Knock", "Suspended". Null when it did not say. */
+    val reason: String?,
 )
 
 /** Raised when no data source is configured at all - neither backend nor API key. */

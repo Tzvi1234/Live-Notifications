@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tzvi.kickoff.core.model.Match
 import com.tzvi.kickoff.core.model.Team
+import com.tzvi.kickoff.data.auth.AuthRepository
+import com.tzvi.kickoff.data.auth.AuthState
 import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.repository.NoFootballSourceException
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -39,11 +41,18 @@ data class TodayUiState(
     val errorMessage: String? = null,
     /** No backend and no API key: nothing will ever load until Settings is visited. */
     val sourceMissing: Boolean = false,
-)
+    /** Who is signed in, for the greeting. Blank when nobody is. */
+    val displayName: String = "",
+    val avatarUrl: String? = null,
+) {
+    /** Whether to greet by name at all. Signed out, the screen is just "Today". */
+    val hasProfile: Boolean get() = displayName.isNotBlank() || avatarUrl != null
+}
 
 @HiltViewModel
 class TodayViewModel @Inject constructor(
     private val footballRepository: FootballRepository,
+    auth: AuthRepository,
 ) : ViewModel() {
 
     private val syncState = MutableStateFlow(SyncState())
@@ -55,7 +64,9 @@ class TodayViewModel @Inject constructor(
         footballRepository.upcomingForFavourites,
         footballRepository.favouriteTeams,
         syncState,
-    ) { live, upcoming, teams, sync ->
+        auth.state,
+    ) { live, upcoming, teams, sync, account ->
+        val user = (account as? AuthState.SignedIn)?.user
         val now = Instant.now()
         TodayUiState(
             isLoading = false,
@@ -65,6 +76,12 @@ class TodayViewModel @Inject constructor(
             favouriteTeams = teams,
             errorMessage = sync.errorMessage,
             sourceMissing = sync.sourceMissing,
+            // First name only for the greeting: "Hello Tzvi" is a greeting, "Hello Tzvi
+            // Weiss" is a summons.
+            displayName = user?.firstName?.trim().orEmpty().ifBlank {
+                user?.username?.trim().orEmpty()
+            },
+            avatarUrl = user?.imageUrl?.takeIf { it.isNotBlank() },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayUiState())
 

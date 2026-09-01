@@ -1,5 +1,6 @@
 package com.tzvi.kickoff.data.backend
 
+import com.tzvi.kickoff.data.repository.Absence
 import com.tzvi.kickoff.core.model.League
 import com.tzvi.kickoff.core.model.PlayerMatchStats
 import com.tzvi.kickoff.core.model.PlayerProfile
@@ -197,4 +198,12 @@ object BackendMapper {
 
     fun statistics(json: MatchDetailJson) =
         MatchStatistics(json.match.id, json.homeStats, json.awayStats)
+
+    fun absence(json: AbsenceJson) = Absence(
+        playerId = json.playerId,
+        name = json.name,
+        photoUrl = json.photoUrl?.takeIf { it.isNotBlank() },
+        out = json.out,
+        reason = json.reason?.takeIf { it.isNotBlank() },
+    )
 }

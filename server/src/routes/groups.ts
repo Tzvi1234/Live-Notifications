@@ -17,7 +17,12 @@ import express, { type NextFunction, type Request, type Response, type Router } 
 
 import { currentUser, type ClerkAuth } from '../auth/clerk.js';
 import type { ApiDeps } from './deps.js';
-import { denseRanks, CORRECT_OUTCOME_POINTS, EXACT_SCORE_POINTS } from '../game/scoring.js';
+import {
+  denseRanks,
+  rulebook,
+  CORRECT_OUTCOME_POINTS,
+  EXACT_SCORE_POINTS,
+} from '../game/scoring.js';
 import { newInviteCode, normalizeInviteCode, INVITE_CODE_LENGTH } from '../game/invite.js';
 import { currentSeason, toMatch } from '../provider/mapper.js';
 import type { ApiFixture } from '../provider/apiFootball.js';
@@ -402,12 +407,16 @@ export function createGroupsRouter(deps: ApiDeps, auth: ClerkAuth): Router {
         rank: ranks[index] ?? index + 1,
       }));
 
-      // The point values ride along so the app can show "3 pts" next to an exact score
-      // without a second copy of the rule compiled into the APK.
+      // The whole rulebook rides along rather than two numbers, so the app can show the
+      // rules sheet - including the stage multipliers - without a second copy of them
+      // compiled into the APK, and a house rule changed on the server needs no release.
       const body: LeaderboardJson = {
         groupId: group.id,
         exactPoints: EXACT_SCORE_POINTS,
         outcomePoints: CORRECT_OUTCOME_POINTS,
+        // The captain is whoever created the group; the app marks them on the table.
+        captainUserId: group.ownerId,
+        rules: rulebook(),
         entries,
       };
       res.json(body);

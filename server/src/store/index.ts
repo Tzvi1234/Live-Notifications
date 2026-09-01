@@ -6,6 +6,7 @@
  * match's detail payload has advanced, and which process is allowed to poll at all.
  */
 
+import type { CacheQueryable } from '../provider/persistentCache.js';
 import {
   DEFAULT_SUBSCRIPTION_PREFERENCES,
   type DeviceRecord,
@@ -58,6 +59,17 @@ export interface PruneStats {
 
 export interface Store {
   readonly kind: StoreKind;
+
+  /**
+   * A raw query handle, present only on a real database.
+   *
+   * Exposed for the provider's response cache and nothing else. That cache is not domain
+   * data - it is a scratch table whose rows are all disposable - so giving it its own
+   * typed Store methods would put six cache operations into an interface about devices,
+   * subscriptions and predictions. Absent on the memory store, which is exactly right:
+   * a cache with nowhere to persist to is a cache that always misses.
+   */
+  readonly cacheQueryable?: CacheQueryable | undefined;
 
   upsertDevice(device: DeviceRegistration): Promise<DeviceRecord>;
   deleteDevice(token: string): Promise<boolean>;
@@ -166,7 +178,18 @@ export interface Store {
     limit: number,
   ): Promise<number[]>;
   /** Scores every unsettled prediction for the fixture; returns how many rows it scored. */
-  settleFixture(fixtureId: number, finalScore: ScoreJson): Promise<number>;
+  /**
+   * Settles every open prediction on a fixture.
+   *
+   * [context] carries what the rulebook needs beyond the scoreline - the competition round,
+   * which decides the stage multiplier. Optional so a caller that only knows the score
+   * still settles correctly, at a league match's rate.
+   */
+  settleFixture(
+    fixtureId: number,
+    finalScore: ScoreJson,
+    context?: SettlementContext | undefined,
+  ): Promise<number>;
   /**
    * Moves the kick-off snapshot of a postponed fixture's unsettled predictions. The lock and
    * the visibility rule both read that column, so a rescheduled match re-opens for edits and
@@ -232,6 +255,14 @@ export interface PostGroupMessageInput {
   groupId: number;
   userId: string;
   text: string;
+}
+
+export type { CacheQueryable };
+
+/** What the rulebook needs about a fixture beyond its final score. */
+export interface SettlementContext {
+  /** The provider's `league.round`, verbatim. Decides the stage multiplier. */
+  round?: string | undefined;
 }
 
 export interface StoreConfig {

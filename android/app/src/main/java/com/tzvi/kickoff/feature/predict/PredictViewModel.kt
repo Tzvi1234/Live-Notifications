@@ -366,11 +366,36 @@ class PredictViewModel @Inject constructor(
         return outcome.getOrNull()
     }
 
+    /**
+     * Leaves the group, keeping the predictions already made.
+     *
+     * The server refuses this for the owner, whose only exit is [deleteGroup] - nothing
+     * here can hand the captaincy on, and a group whose owner has left could never be
+     * edited or deleted by anybody again.
+     */
     fun leaveGroup() {
         val groupId = mutableState.value.selected?.id ?: return
         viewModelScope.launch {
             runCatching { repository.leaveGroup(groupId) }
-            mutableState.update { it.copy(selected = null) }
+                .onFailure { error -> fail(error) }
+                .onSuccess { mutableState.update { it.copy(selected = null) } }
+            refresh()
+        }
+    }
+
+    /**
+     * Deletes the group, for the captain only.
+     *
+     * Everything goes with it - members, picks, the table and the chat - which is why the
+     * screen asks first. The server enforces the ownership check too; this is the copy of
+     * it that stops the button being offered to somebody it would only refuse.
+     */
+    fun deleteGroup() {
+        val groupId = mutableState.value.selected?.id ?: return
+        viewModelScope.launch {
+            runCatching { repository.deleteGroup(groupId) }
+                .onFailure { error -> fail(error) }
+                .onSuccess { mutableState.update { it.copy(selected = null) } }
             refresh()
         }
     }
@@ -403,7 +428,9 @@ class PredictViewModel @Inject constructor(
                 isLoading = false,
                 isRefreshing = false,
                 fixtures = fixtures.getOrDefault(emptyList()),
-                members = board.getOrDefault(it.members),
+                members = board.getOrNull()?.members ?: it.members,
+                captainUserId = board.getOrNull()?.captainUserId ?: it.captainUserId,
+                rules = board.getOrNull()?.rules ?: it.rules,
                 chat = chat.getOrDefault(it.chat),
                 // Anything still on the pad for a match that has since kicked off is gone;
                 // keeping it would leave a number on screen that can no longer be sent.

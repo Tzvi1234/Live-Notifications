@@ -66,7 +66,30 @@ data class SettingsUiState(
     val dynamicColorAvailable: Boolean = true,
     /** Transient confirmation shown after a save; cleared by the next edit. */
     val message: String? = null,
+    /** Who is signed in, for the header above the cards. */
+    val profile: ProfileSummary = ProfileSummary(),
 )
+
+/**
+ * The signed-in user, as the top of Settings shows them.
+ *
+ * A separate little type rather than three loose fields, because "signed out" and "signed
+ * in with nothing filled in" are different states and the header draws them differently:
+ * one offers an account, the other offers to finish one.
+ */
+data class ProfileSummary(
+    val signedIn: Boolean = false,
+    val name: String = "",
+    val email: String = "",
+    val avatarUrl: String? = null,
+) {
+    /** What to put under the name when there is no name yet. */
+    val subtitle: String get() = email
+
+    /** The name if there is one, otherwise the part of the address before the @. */
+    val label: String
+        get() = name.ifBlank { email.substringBefore('@') }.ifBlank { "Your account" }
+}
 
 /** The word on the segmented button. */
 val LiveCardStyle.label: String

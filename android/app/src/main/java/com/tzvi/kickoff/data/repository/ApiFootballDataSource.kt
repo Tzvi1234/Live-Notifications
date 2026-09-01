@@ -223,6 +223,11 @@ class ApiFootballDataSource @Inject constructor(
          * returns over twelve hundred competitions, and an onboarding list that long is
          * not a choice, it is a wall. The English and Israeli pyramids are carried down
          * to the domestic cups because those are the ones actually followed here.
+         *
+         * The server carries the same list, in the same order, as
+         * DEFAULT_FEATURED_LEAGUE_IDS in server/src/config.ts. They must stay in step:
+         * when they drifted, the recommended path - the matchUP server - silently offered
+         * half the competitions that using your own key did.
          */
         val FEATURED_LEAGUE_IDS = setOf(
             // England, top to bottom, plus the three domestic cups.
@@ -238,8 +243,11 @@ class ApiFootballDataSource @Inject constructor(
             382,  // Liga Leumit
             384,  // State Cup
             385,  // Toto Cup Ligat Al
-            // The rest of the big five, and the leagues people follow a player into.
+            // Spain, league and cup.
             140,  // La Liga
+            143,  // Copa del Rey
+            141,  // Segunda Division
+            // The rest of the big five, and the leagues people follow a player into.
             135,  // Serie A
             78,   // Bundesliga
             61,   // Ligue 1

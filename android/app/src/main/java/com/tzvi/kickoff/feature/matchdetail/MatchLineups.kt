@@ -1,5 +1,10 @@
 package com.tzvi.kickoff.feature.matchdetail
 
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.Cancel
+import com.tzvi.kickoff.data.repository.MatchAbsences
+import com.tzvi.kickoff.data.repository.Absence
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -403,5 +408,107 @@ private fun MatchLineupsPreview() {
 private fun MatchLineupsEmptyPreview() {
     KickoffTheme {
         MatchLineupsSection(lineups = null, match = previewMatch())
+    }
+}
+
+/**
+ * Who is unavailable, per side.
+ *
+ * Deliberately shown on the line-ups tab even when there is no line-up: that is the tab
+ * somebody opens to answer "who is playing", and for most of a fixture's life the honest
+ * answer is a list of who is not. Drawn only when the competition carries the data - an
+ * empty "no absences" panel would claim a full-strength squad on a league where the
+ * provider simply does not report injuries.
+ */
+@Composable
+internal fun AbsencesSection(
+    absences: MatchAbsences?,
+    match: Match,
+    modifier: Modifier = Modifier,
+) {
+    if (absences == null || absences.isEmpty) return
+
+    Column(modifier = modifier.padding(top = 20.dp)) {
+        Text(
+            text = "Unavailable",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AbsenceColumn(
+                teamName = match.home.shortName,
+                absences = absences.home,
+                modifier = Modifier.weight(1f),
+            )
+            AbsenceColumn(
+                teamName = match.away.shortName,
+                absences = absences.away,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AbsenceColumn(
+    teamName: String,
+    absences: List<Absence>,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = teamName,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(6.dp))
+        if (absences.isEmpty()) {
+            Text(
+                text = "Nobody reported out",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@Column
+        }
+        absences.forEach { absence ->
+            Row(
+                modifier = Modifier.padding(vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (absence.out) {
+                        Icons.Outlined.Cancel
+                    } else {
+                        Icons.Outlined.HelpOutline
+                    },
+                    contentDescription = if (absence.out) "Out" else "Doubtful",
+                    tint = if (absence.out) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Column {
+                    Text(
+                        text = absence.name,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (absence.reason != null) {
+                        Text(
+                            text = absence.reason,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
     }
 }

@@ -12,7 +12,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response, type Router } from 'express';
 
 import type { ApiDeps } from './deps.js';
-import type { ProviderQuota } from '../provider/apiFootball.js';
+import type { ProviderHealth, ProviderQuota } from '../provider/apiFootball.js';
 import { isPushEnabled } from '../push/fcm.js';
 import { notFound, serviceUnavailable, unauthorized } from './validation.js';
 
@@ -63,6 +63,10 @@ export function createAdminRouter(deps: ApiDeps): Router {
         // over — and `budget` is this process's own local counter, deliberately set lower.
         quota: describeQuota(deps.provider.getQuota()),
         budget: { ...budget, resetsAt: budget.resetsAt.toISOString() },
+        // The provider's own words about the last failure. They name the account's state -
+        // "Token is invalid", "Your account is not subscribed" - which is why they live
+        // behind the admin token and only the fault's KIND reaches /v1/health.
+        health: describeHealth(deps.provider.getHealth()),
       },
       poller: deps.poller?.getStatus() ?? { enabled: false, reason: 'POLL_ENABLED is false' },
     });
@@ -82,6 +86,22 @@ export function createAdminRouter(deps: ApiDeps): Router {
 }
 
 /** Epoch millis are unreadable in an operator's terminal; everything else passes through. */
+function describeHealth(health: ProviderHealth): Record<string, unknown> {
+  return {
+    reachable: health.reachable,
+    lastSuccessAt: health.lastSuccessAt?.toISOString(),
+    lastFault:
+      health.lastFault === undefined
+        ? undefined
+        : {
+            kind: health.lastFault.kind,
+            status: health.lastFault.status,
+            at: health.lastFault.at.toISOString(),
+            detail: health.lastFault.detail,
+          },
+  };
+}
+
 function describeQuota(quota: ProviderQuota): Record<string, unknown> {
   const { minuteWindowResetsAt, ...rest } = quota;
   return {

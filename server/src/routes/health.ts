@@ -6,13 +6,15 @@
 import express, { type Request, type Response, type Router } from 'express';
 
 import type { ApiDeps } from './deps.js';
-import type { ProviderQuota } from '../provider/apiFootball.js';
-import type { HealthJson, ProviderQuotaJson } from '../types.js';
+import type { ProviderHealth, ProviderQuota } from '../provider/apiFootball.js';
+import { publicFaultReason } from '../provider/apiFootball.js';
+import type { HealthJson, ProviderFaultJson, ProviderQuotaJson } from '../types.js';
 
 export function createHealthRouter(deps: ApiDeps): Router {
   const router = express.Router();
 
   router.get('/health', (_req: Request, res: Response) => {
+    const health = deps.provider.getHealth();
     const body: HealthJson = {
       ok: true,
       version: deps.config.version,
@@ -28,11 +30,28 @@ export function createHealthRouter(deps: ApiDeps): Router {
       quota: toQuotaJson(deps.provider.getQuota()),
       // Read per request, not captured at boot: the store fails over while running.
       store: deps.store.kind,
+      // Liveness and usefulness are different questions. `ok` answers the first, for
+      // Render's own health check; these two answer the second, so a deployment whose
+      // provider key has been revoked stops looking well while every screen in the app
+      // fails. Read from memory - still no database round-trip and no quota spent.
+      dataOk: health.reachable,
+      providerFault: toFaultJson(health),
     };
     res.json(body);
   });
 
   return router;
+}
+
+function toFaultJson(health: ProviderHealth): ProviderFaultJson | undefined {
+  const fault = health.lastFault;
+  if (fault === undefined) return undefined;
+  return {
+    kind: fault.kind,
+    reason: publicFaultReason(fault.kind),
+    status: fault.status,
+    at: fault.at.toISOString(),
+  };
 }
 
 function toQuotaJson(quota: ProviderQuota): ProviderQuotaJson {

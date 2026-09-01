@@ -100,3 +100,20 @@ object PredictScoring {
     const val OUTCOME = 1
     const val WRONG = 0
 }
+
+/**
+ * How points are earned, as the server publishes them.
+ *
+ * Carried rather than computed: the server is the only place scoring actually happens, and
+ * a second copy of the rules in the app is a second copy to disagree with the first. A
+ * house rule changed on the server therefore shows up here with no release.
+ */
+data class Rulebook(
+    val scoring: List<RuleRow>,
+    val multipliers: List<StageMultiplier>,
+    val notes: List<String>,
+)
+
+data class RuleRow(val label: String, val points: Int)
+
+data class StageMultiplier(val label: String, val multiplier: Int)

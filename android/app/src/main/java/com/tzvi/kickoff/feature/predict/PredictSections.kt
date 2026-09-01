@@ -1,5 +1,10 @@
 package com.tzvi.kickoff.feature.predict
 
+import androidx.compose.material.icons.outlined.Shield
+import com.tzvi.kickoff.core.model.Rulebook
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +43,8 @@ import com.tzvi.kickoff.core.model.GroupFixture
 import com.tzvi.kickoff.core.model.GroupMember
 import com.tzvi.kickoff.core.model.PredictScoring
 import com.tzvi.kickoff.core.model.PredictionEntry
+import com.tzvi.kickoff.ui.component.Avatar
+import com.tzvi.kickoff.ui.component.AvatarDefaults
 import com.tzvi.kickoff.ui.component.CrestImage
 import com.tzvi.kickoff.ui.theme.KickoffShapeTokens
 import com.tzvi.kickoff.ui.theme.KickoffShapes
@@ -266,29 +273,6 @@ internal fun PointsPill(points: Int, modifier: Modifier = Modifier) {
     )
 }
 
-@Composable
-internal fun Avatar(name: String, url: String?, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(AvatarSize)
-            .clip(KickoffShapeTokens.pill)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (url != null) {
-            CrestImage(url = url, fallback = name, size = AvatarSize)
-        } else {
-            Text(
-                // Locale.ROOT, not the device's: this is one letter of a name, and a
-                // Turkish device would otherwise turn an initial "i" into "İ".
-                text = name.trim().take(1).uppercase(Locale.ROOT),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
 
 /** One row of the table: who, how many points, and how they earned them. */
 @Composable
@@ -297,6 +281,8 @@ internal fun LeaderboardRow(
     member: GroupMember,
     predicted: PredictionEntry?,
     modifier: Modifier = Modifier,
+    /** Whoever created the group. Marked even on a table where nothing is settled. */
+    isCaptain: Boolean = false,
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -317,6 +303,15 @@ internal fun LeaderboardRow(
                 modifier = Modifier.width(24.dp),
             )
             Avatar(name = member.displayName, url = member.avatarUrl)
+            if (isCaptain) {
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    imageVector = Icons.Outlined.Shield,
+                    contentDescription = "Captain",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -386,7 +381,6 @@ private val CHAT_TIME: DateTimeFormatter =
     DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
 
 private val CrestSize = 34.dp
-private val AvatarSize = 32.dp
 private val StepperButton = 40.dp
 
 private fun previewFixtureMatch() = Match(
@@ -422,6 +416,98 @@ private fun GuessCardPreview() {
             onAdjust = { _, _ -> },
             onSubmit = {},
             modifier = Modifier.padding(16.dp),
+        )
+    }
+}
+
+/**
+ * The rulebook, as the server publishes it.
+ *
+ * Rendered from data rather than written into the app: the server is the only place
+ * scoring actually happens, and a second copy of the rules here is a second copy to
+ * disagree with the first. A backend too old to send them shows the sheet's one honest
+ * alternative - that it cannot say - rather than a table of invented numbers.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+internal fun RulesSheet(rules: Rulebook?, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = "How points work",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(8.dp))
+
+            if (rules == null) {
+                Text(
+                    text = "This server has not published its scoring rules. Points are " +
+                        "still awarded - the table is the server's own - but the breakdown " +
+                        "is only available from a newer backend.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                return@Column
+            }
+
+            Text(
+                text = "For the scoreline",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            rules.scoring.forEach { row ->
+                RuleLine(label = row.label, value = "${row.points} pts")
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = "Multiplied by the round",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            rules.multipliers.forEach { row ->
+                RuleLine(label = row.label, value = "×${row.multiplier}")
+            }
+
+            if (rules.notes.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                rules.notes.forEach { note ->
+                    Text(
+                        text = "• $note",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RuleLine(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }

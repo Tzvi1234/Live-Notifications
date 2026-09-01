@@ -1,5 +1,14 @@
 package com.tzvi.kickoff.feature.today
 
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material3.MaterialTheme
+import com.tzvi.kickoff.ui.component.Avatar
+import com.tzvi.kickoff.ui.component.AvatarDefaults
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -96,7 +105,33 @@ internal fun TodayContent(
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             LargeTopAppBar(
-                title = { Text("Today") },
+                title = {
+                    if (state.hasProfile) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Avatar(
+                                name = state.displayName,
+                                url = state.avatarUrl,
+                                size = AvatarDefaults.medium,
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = greeting(state.displayName),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = "Today",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    } else {
+                        Text("Today")
+                    }
+                },
                 actions = { SettingsAction(onOpenSettings) },
                 scrollBehavior = scrollBehavior,
             )
@@ -397,3 +432,12 @@ private fun TodayScreenNoSourcePreview() {
         )
     }
 }
+
+/**
+ * "שלום Tzvi", or just "שלום" when there is a picture but no name yet.
+ *
+ * Hebrew because that is who this is for, and because a greeting is the one string in the
+ * app that should sound like the person reading it rather than like the product.
+ */
+private fun greeting(name: String): String =
+    if (name.isBlank()) "שלום" else "שלום $name"

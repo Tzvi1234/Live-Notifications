@@ -7,5 +7,8 @@
         <item name="android:windowLightStatusBar" tools:targetApi="23">false</item>
         <item name="android:enforceStatusBarContrast" tools:targetApi="29">false</item>
         <item name="android:enforceNavigationBarContrast" tools:targetApi="29">false</item>
+        <!-- Same as the light theme: the platform's yellow autofill wash reads as an
+             olive box on a dark field, and this theme is the one that shows it. -->
+        <item name="android:autofilledHighlight">@android:color/transparent</item>
     </style>
 </resources>

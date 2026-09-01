@@ -56,6 +56,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.tzvi.kickoff.ui.component.KickoffLoader
 import com.tzvi.kickoff.core.model.League
 import com.tzvi.kickoff.ui.component.CrestImage
 import com.tzvi.kickoff.ui.component.EmptyState
@@ -240,8 +241,31 @@ internal fun TeamsPage(
         }
         Spacer(Modifier.height(OnboardingSpacing.tight))
 
+        // A quiet line rather than a spinner, once anything has arrived: the clubs that
+        // answered are already selectable underneath it while the rest are still coming.
+        AnimatedVisibility(visible = !state.teamsBlocked && state.teamsRemaining > 0) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = OnboardingSpacing.tight),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                KickoffLoader(size = 14.dp)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = if (state.teamsRemaining == 1) {
+                        "Still loading one more competition…"
+                    } else {
+                        "Still loading ${state.teamsRemaining} more competitions…"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         when {
-            state.teamsPending -> LoadingState(
+            state.teamsBlocked -> LoadingState(
                 modifier = Modifier.weight(1f),
                 label = "Loading squads",
             )

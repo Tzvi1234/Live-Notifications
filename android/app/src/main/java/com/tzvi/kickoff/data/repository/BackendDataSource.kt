@@ -83,6 +83,10 @@ class BackendDataSource @Inject constructor(
                 it.home.isNotEmpty() || it.away.isNotEmpty()
             },
             sequence = detail.sequence,
+            absences = MatchAbsences(
+                home = detail.homeAbsences.map(BackendMapper::absence),
+                away = detail.awayAbsences.map(BackendMapper::absence),
+            ).takeIf { !it.isEmpty },
         )
     }
 

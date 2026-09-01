@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { createMemoryStore } from '../store/memory.js';
 import type { Logger } from '../logger.js';
 import type { Store } from '../store/index.js';
+import { CORRECT_OUTCOME_POINTS, EXACT_SCORE_POINTS } from '../game/scoring.js';
 
 /** The real logger writes JSON to stdout, which would land in the middle of the TAP stream. */
 const silentLogger: Logger = {
@@ -269,11 +270,13 @@ describe('settlement', () => {
     const board = await store.leaderboard(groupId);
     const owner = board.find((row) => row.userId === OWNER);
     const friend = board.find((row) => row.userId === FRIEND);
-    // Exact score -> 3; right result, wrong score -> 1.
-    assert.equal(owner?.points, 3);
+    // The constants rather than literals: these are house rules, and a test that pins the
+    // number instead of the rule fails every time somebody tunes the game.
+    // Owner called 2-1 on a 2-1: exact. Friend called 3-0: right winner, wrong margin.
+    assert.equal(owner?.points, EXACT_SCORE_POINTS);
     assert.equal(owner?.exactCount, 1);
     assert.equal(owner?.correctOutcomeCount, 1);
-    assert.equal(friend?.points, 1);
+    assert.equal(friend?.points, CORRECT_OUTCOME_POINTS);
     assert.equal(friend?.exactCount, 0);
     assert.equal(friend?.correctOutcomeCount, 1);
     assert.equal(friend?.settledCount, 1);
@@ -294,7 +297,7 @@ describe('settlement', () => {
     const again = await store.settleFixture(FIXTURE, { home: 9, away: 9 });
     assert.equal(again, 0);
     const board = await store.leaderboard(groupId);
-    assert.equal(board.find((row) => row.userId === OWNER)?.points, 3);
+    assert.equal(board.find((row) => row.userId === OWNER)?.points, EXACT_SCORE_POINTS);
   });
 
   test('a rescheduled fixture re-opens for edits and leaves the queue', async () => {

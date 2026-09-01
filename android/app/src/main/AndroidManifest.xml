@@ -67,6 +67,27 @@
             </intent-filter>
         </activity>
 
+        <!--
+          Clerk's OAuth bridge, given its own task.
+
+          It is declared launchMode="singleTask" with no taskAffinity, which makes its
+          affinity the application id - the same as MainActivity, which is also singleTask
+          because it handles deep links. The SDK starts the bridge from the APPLICATION
+          context with FLAG_ACTIVITY_NEW_TASK, and two singleTask activities sharing one
+          affinity is precisely the configuration that lets the incoming browser redirect
+          reorder or clear the task MainActivity is sitting in - taking the ViewModel, and
+          the coroutine awaiting the OAuth result, with it. A distinct affinity keeps the
+          browser round trip in its own task and hands the result back intact.
+        -->
+        <activity
+            android:name="com.clerk.api.sso.SSOManagerActivity"
+            android:taskAffinity="${applicationId}.clerk"
+            tools:replace="android:taskAffinity" />
+        <activity
+            android:name="com.clerk.api.sso.SSOReceiverActivity"
+            android:taskAffinity="${applicationId}.clerk"
+            tools:replace="android:taskAffinity" />
+
         <service
             android:name=".notifications.LiveMatchService"
             android:exported="false"

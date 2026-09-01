@@ -11,7 +11,8 @@ import { createApp } from './app.js';
 import { config, type KickoffConfig } from './config.js';
 import { logger, setLogLevel } from './logger.js';
 import { createLivePoller } from './poller/livePoller.js';
-import { ApiFootballClient } from './provider/apiFootball.js';
+import { ApiFootballClient, ProviderError } from './provider/apiFootball.js';
+import { createPersistentCache } from './provider/persistentCache.js';
 import { initPush } from './push/fcm.js';
 import { createStore, type Store } from './store/index.js';
 import type { PollerHandle } from './routes/deps.js';
@@ -29,6 +30,43 @@ const SHUTDOWN_GRACE_MS = 20_000;
  */
 const KEEP_ALIVE_TIMEOUT_MS = 65_000;
 const HEADERS_TIMEOUT_MS = 66_000;
+
+/**
+ * Asks API-Football who this key belongs to and whether the plan is live.
+ *
+ * Deliberately not awaited by `main`: the server must come up and answer its health check
+ * even when the provider is unreachable, and a dead key is a thing to report loudly, not a
+ * reason to refuse to boot.
+ */
+async function checkProviderKey(provider: ApiFootballClient): Promise<void> {
+  try {
+    const status = await provider.accountStatus();
+    const active = status?.subscription?.active ?? undefined;
+    const plan = status?.subscription?.plan ?? undefined;
+    if (active === false) {
+      logger.error(
+        'API-Football rejected this key: the subscription is not active. ' +
+          'Every football endpoint will answer 502 until API_FOOTBALL_KEY is a key with a ' +
+          'live plan (https://dashboard.api-football.com).',
+        { plan, endsAt: status?.subscription?.end ?? undefined },
+      );
+      return;
+    }
+    logger.info('API-Football key accepted', {
+      plan,
+      endsAt: status?.subscription?.end ?? undefined,
+      requestsToday: status?.requests?.current ?? undefined,
+      dailyLimit: status?.requests?.limit_day ?? undefined,
+    });
+  } catch (error) {
+    const kind = error instanceof ProviderError ? error.kind : 'unknown';
+    logger.error(
+      'API-Football did not accept this key at startup; football endpoints will fail. ' +
+        'Check API_FOOTBALL_KEY at https://dashboard.api-football.com.',
+      { kind, detail: error instanceof ProviderError ? error.detail : String(error) },
+    );
+  }
+}
 
 /** What this module needs from the poller on top of the two calls the admin route uses. */
 interface RunningPoller extends PollerHandle {
@@ -50,9 +88,28 @@ async function main(): Promise<void> {
     logger: logger.child({ component: 'provider' }),
   });
 
+  // The half of the provider cache that survives a restart. Render replaces the instance
+  // on every deploy and spins it down when idle, so the in-memory half is cold several
+  // times a day - and cold costs REQUESTS, not just latency: thirty competitions' team
+  // lists are thirty upstream calls that were already made and answered identically.
+  if (store.cacheQueryable) {
+    provider.usePersistentCache(
+      createPersistentCache(store.cacheQueryable, logger.child({ component: 'cache' })),
+    );
+    logger.info('response cache: persistent (postgres)');
+  } else {
+    logger.info('response cache: in-memory only (no database)');
+  }
+
   // Initialised here rather than on the first goal, so a broken service account is a line in
   // the startup log instead of a notification that silently never arrives.
   initPush();
+
+  // Same reasoning, one layer down: a revoked or unsubscribed provider key makes every
+  // football screen in the app fail, and the failure otherwise shows up as an anonymous
+  // 502 hours later. Asking the provider who this key is takes one request it does not
+  // charge for, and turns that into a named line in the boot log.
+  void checkProviderKey(provider);
 
   // Built only when polling is on: with POLL_ENABLED=false there is nothing for /v1/admin/poll
   // to drive either, and the REST surface is meant to keep working without a poller at all.

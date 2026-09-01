@@ -1,5 +1,17 @@
 package com.tzvi.kickoff.feature.settings
 
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import com.tzvi.kickoff.ui.component.Avatar
+import com.tzvi.kickoff.ui.component.AvatarDefaults
+import com.tzvi.kickoff.ui.theme.KickoffShapes
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -207,6 +219,15 @@ internal fun SettingsContent(
                     .padding(horizontal = ScreenPadding),
                 verticalArrangement = Arrangement.spacedBy(SectionGap),
             ) {
+                // The person, before the settings. Every professional app that has an
+                // account puts the account at the top - it is the one row on the screen
+                // that answers "whose app is this", and burying it three cards down under
+                // "Account" made it look like a setting rather than like you.
+                ProfileHeader(
+                    profile = state.profile,
+                    onOpenProfile = onOpenProfile,
+                )
+
                 val toggle: (SettingsCardId) -> Unit = { id ->
                     openCard = if (openCard == id) null else id
                 }
@@ -396,4 +417,65 @@ private fun SettingsErrorPreview() {
     SettingsPreview(
         previewState(errorMessage = "Your preferences could not be read from storage."),
     )
+}
+
+/**
+ * Who you are, large, above the cards.
+ *
+ * Two states and they are genuinely different, so the header is not one layout with a
+ * blank in it. Signed in, it is a picture, a name and the address, and tapping it edits
+ * them. Signed out, it is an offer - because a header that shows an empty circle and no
+ * name reads as a bug rather than as an invitation.
+ */
+@Composable
+private fun ProfileHeader(
+    profile: ProfileSummary,
+    onOpenProfile: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onOpenProfile,
+        modifier = modifier.fillMaxWidth(),
+        shape = KickoffShapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Row(
+            modifier = Modifier.padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Avatar(
+                name = profile.label,
+                url = profile.avatarUrl,
+                size = AvatarDefaults.large,
+            )
+            Spacer(Modifier.width(18.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = if (profile.signedIn) profile.label else "Sign in to matchUP",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (profile.signedIn) {
+                        profile.subtitle.ifBlank { "Tap to add your name and picture" }
+                    } else {
+                        "Carry your teams and predictions between devices"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }

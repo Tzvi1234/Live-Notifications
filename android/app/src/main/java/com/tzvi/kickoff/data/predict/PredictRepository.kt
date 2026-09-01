@@ -1,5 +1,8 @@
 package com.tzvi.kickoff.data.predict
 
+import com.tzvi.kickoff.core.model.StageMultiplier
+import com.tzvi.kickoff.core.model.RuleRow
+import com.tzvi.kickoff.core.model.Rulebook
 import com.tzvi.kickoff.core.model.PredictGroup
 import com.tzvi.kickoff.core.model.GroupFixture
 import com.tzvi.kickoff.core.model.GroupMember
@@ -59,8 +62,14 @@ class PredictRepository @Inject constructor(
         service.submitPrediction(groupId, matchId, SubmitPredictionRequest(home, away))
     }
 
-    suspend fun leaderboard(groupId: Long): List<GroupMember> = io {
-        service.leaderboard(groupId).entries.map { it.toDomain() }
+    /** The table, the captain and the rulebook: one request, because they are one screen. */
+    suspend fun leaderboard(groupId: Long): LeaderboardSnapshot = io {
+        val json = service.leaderboard(groupId)
+        LeaderboardSnapshot(
+            members = json.entries.map { it.toDomain() },
+            captainUserId = json.captainUserId,
+            rules = json.rules?.toDomain(),
+        )
     }
 
     suspend fun chat(groupId: Long): List<ChatMessage> = io {
@@ -86,6 +95,12 @@ private fun GroupJson.toDomain() = PredictGroup(
     memberCount = memberCount,
     leagueIds = leagueIds,
     teamIds = teamIds,
+)
+
+private fun RulebookJson.toDomain() = Rulebook(
+    scoring = scoring.map { RuleRow(label = it.label, points = it.points) },
+    multipliers = multipliers.map { StageMultiplier(label = it.label, multiplier = it.multiplier) },
+    notes = notes,
 )
 
 private fun LeaderboardEntryJson.toDomain() = GroupMember(
@@ -131,3 +146,10 @@ private fun ChatMessageJson.toDomain() = ChatMessage(
  * placeholder is the only workable answer - a blank row reads as a rendering bug.
  */
 private fun String?.orAnon(): String = this?.takeIf { it.isNotBlank() } ?: "Someone"
+
+/** What one leaderboard request answers with. */
+data class LeaderboardSnapshot(
+    val members: List<GroupMember>,
+    val captainUserId: String?,
+    val rules: Rulebook?,
+)

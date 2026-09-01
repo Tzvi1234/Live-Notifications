@@ -35,8 +35,11 @@ lock so that an overlapping deploy cannot double-send notifications. Budget roug
 > covering *every* in-play match, plus one events request per match you actually have
 > subscribers for. At the default 30-second cadence a single busy Saturday afternoon runs
 > to a few thousand requests. **Free is a development key only.** The $19/month Pro plan
-> (7,500 req/day) is the realistic floor for real users. Set `DAILY_REQUEST_BUDGET` to
-> match your plan and the poller will back off instead of getting cut off mid-match.
+> (7,500 req/day) is the realistic floor for real users; the $29/month Ultra plan
+> (75,000 req/day) is what lets `POLL_INTERVAL_SECONDS` go down to 5, which is the single
+> cheapest way to make goals reach a phone faster. You do not need to tell the server which
+> plan you are on — it reads the allowance from the provider's response headers and backs
+> off under it by itself.
 
 > Sign up direct at api-football.com rather than through RapidAPI: same data, no
 > marketplace markup, and the header name differs (`x-apisports-key` vs `x-rapidapi-key`).
@@ -158,6 +161,26 @@ In the Clerk dashboard you also need to switch on the sign-in methods you want u
 **User & authentication → Email, phone, username**. matchUP uses email + password and the
 email verification code; nothing else is required.
 
+#### Turning on "Continue with Google"
+
+The app shows a **Continue with Google** button on its sign-in and sign-up pages, but the
+button can only work if the connection exists on the Clerk side. It is two clicks and no
+Google Cloud project of your own:
+
+1. Clerk dashboard → **User & authentication → SSO connections** (older dashboards call it
+   *Social connections*).
+2. **Add connection → For all users → Google**, leave *Use custom credentials* off, and
+   save.
+
+Clerk's shared development credentials are fine for a test instance. A production instance
+must use your own Google OAuth client — Clerk's own page walks through it and shows you the
+exact redirect URI to paste into Google Cloud.
+
+Nothing has to change in the app or on Render: matchUP asks Clerk which connections exist
+at run time, and if Google is off the button simply returns Clerk's own explanation instead
+of a session. Signing in with Google for the first time creates the account, so there is no
+separate "sign up with Google" to enable.
+
 ### Push (set these to enable FCM)
 
 | Name | Where the value comes from | Example |
@@ -177,8 +200,8 @@ email verification code; nothing else is required.
 | `POLL_INTERVAL_SECONDS` | `30` | Cadence while at least one tracked match is in play. |
 | `POLL_IDLE_INTERVAL_SECONDS` | `300` | Cadence when nothing is live. Keeps the quota for match days. |
 | `PREMATCH_LEAD_MINUTES` | `60` | How early the pre-match card and the line-up fetch start. |
-| `DAILY_REQUEST_BUDGET` | `7500` | **Set this to your API-Football plan's daily quota.** The poller refuses to exceed it and backs off instead of being cut off. Free = `100`. |
-| `FEATURED_LEAGUE_IDS` | `39,40,41,42,45,48,528,383,382,384,385,140,135,78,61,88,94,203,253,71,128,2,3,848,531,5,1,4,15` | Competitions offered during onboarding. See §6 for the ids. |
+| `DAILY_REQUEST_BUDGET` | *(unset — follow the plan)* | An explicit daily ceiling. **Leave it unset.** The provider states its own allowance in every response header and the server adopts 90% of it, so upgrading your API-Football tier takes effect on its own. Set this only to spend *less* than the plan allows. |
+| `FEATURED_LEAGUE_IDS` | *(unset — use the code's list)* | Competitions offered during onboarding. **Leave it unset.** The code ships thirty-one, and because the environment wins over the default, a value here silently freezes the catalogue at whatever it says — which is how the deployed app came to offer fourteen while the code offered thirty-one. Set it only to deliberately deviate. |
 | `CACHE_TTL_SECONDS` | `60` | TTL for catalogue and fixtures-by-date responses. Live calls are never cached. |
 | `ADMIN_TOKEN` | *(unset)* | When set, guards `/v1/admin/*` (quota, poller status, manual poll trigger) behind `Authorization: Bearer <token>`. Leave unset to disable those routes. |
 
@@ -272,7 +295,8 @@ problem in the response body. The server checks for this and turns it into a 502
 provider's message — look at the service logs for `ProviderError`.
 
 **`QuotaExhaustedError` in the logs.**
-The daily budget is spent. Either raise your plan and `DAILY_REQUEST_BUDGET`, or raise
+The daily budget is spent. Either raise your API-Football plan — the server picks the new
+allowance up from the response headers on its own, with no env var to change — or raise
 `POLL_INTERVAL_SECONDS`. The quota resets at 00:00 UTC.
 
 **Notifications arrive twice.**
