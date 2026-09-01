@@ -130,12 +130,11 @@ services:
         value: "300"
       - key: PREMATCH_LEAD_MINUTES
         value: "60"
-      # Must not exceed the daily quota of your API-Football plan; the poller backs off at
-      # this number rather than being cut off mid-match. One /fixtures?live=all call per tick
-      # is 2880 requests/day at the 30s cadence, and per-match detail calls are charged on
-      # top — hence the headroom under a 7500/day plan. Free keys are 100/day: set 100.
-      - key: DAILY_REQUEST_BUDGET
-        value: "7500"
+      # DAILY_REQUEST_BUDGET is deliberately NOT set here either. The provider states its
+      # own daily allowance in every response header and the server adopts 90% of it, so
+      # upgrading the API-Football plan takes effect on its own. Pinned at 7500 it did the
+      # opposite: the account would allow 75,000 a day and this counter still refused the
+      # 7,501st, which made paying for a bigger plan buy nothing at all.
       # FEATURED_LEAGUE_IDS is deliberately NOT set here. Pinning it froze the deployed
       # catalogue at fourteen competitions while the code's default grew to thirty-one, and
       # because the environment wins over the default, every league added in code was dead

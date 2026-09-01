@@ -32,7 +32,8 @@ export interface KickoffConfig {
   readonly pollIntervalSeconds: number;
   readonly pollIdleIntervalSeconds: number;
   readonly preMatchLeadMinutes: number;
-  readonly dailyRequestBudget: number;
+  /** An explicit ceiling, or undefined to follow whatever the plan allows. */
+  readonly dailyRequestBudget?: number | undefined;
   readonly featuredLeagueIds: readonly number[];
 
   readonly adminToken?: string | undefined;
@@ -115,6 +116,20 @@ function raw(env: Env, name: string): string | undefined {
 
 function configError(message: string): Error {
   return new Error(`[config] ${message}`);
+}
+
+/** Like [readInt] but with no default: absent means "not set", not "use this number". */
+function optionalInt(env: Env, name: string, min: number, max: number): number | undefined {
+  const value = raw(env, name);
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    throw configError(`${name} must be a whole number, got "${value}".`);
+  }
+  if (parsed < min || parsed > max) {
+    throw configError(`${name} must be between ${min} and ${max}, got ${parsed}.`);
+  }
+  return parsed;
 }
 
 function readInt(env: Env, name: string, fallback: number, min: number, max: number): number {
@@ -211,7 +226,11 @@ export function loadConfig(env: Env = process.env): KickoffConfig {
   // continuous live polling costs 86400 / POLL_INTERVAL_SECONDS requests (2880 at the 30s
   // default). Detail fetches (events/lineups/statistics) are charged on top, per tracked
   // match, which is why DAILY_REQUEST_BUDGET sits well under the plan limit rather than at it.
-  const dailyRequestBudget = readInt(env, 'DAILY_REQUEST_BUDGET', 7500, 100, 10_000_000);
+  // Undefined when unset, deliberately: the provider reports its own daily allowance in
+  // every response header, and following it is right in both directions. A constant here
+  // meant an upgraded plan changed nothing - the account would allow 75,000 a day while
+  // this counter kept refusing the 7,501st. Set it only to spend LESS than the plan allows.
+  const dailyRequestBudget = optionalInt(env, 'DAILY_REQUEST_BUDGET', 100, 10_000_000);
 
   const clerkSecretKey = raw(env, 'CLERK_SECRET_KEY');
   const databaseUrl = raw(env, 'DATABASE_URL');

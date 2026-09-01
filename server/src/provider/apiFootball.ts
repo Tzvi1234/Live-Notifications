@@ -13,6 +13,12 @@
 const DEFAULT_BASE_URL = 'https://v3.football.api-sports.io';
 const MEDIA_BASE_URL = 'https://media.api-sports.io/football';
 const DEFAULT_BUDGET = 7500;
+
+/**
+ * How much of the plan's own daily allowance this server will spend when nobody has said
+ * otherwise. The rest is headroom for whatever else holds the same key.
+ */
+const BUDGET_SAFETY_FRACTION = 0.9;
 const DEFAULT_CACHE_TTL_SECONDS = 60;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DAY_MS = 86_400_000;
@@ -575,8 +581,11 @@ export interface ApiFootballClientOptions {
   apiKey: string;
   baseUrl?: string;
   logger?: ProviderLogger;
-  /** DAILY_REQUEST_BUDGET: local ceiling, kept below the plan limit on purpose. */
-  budget?: number;
+  /**
+   * DAILY_REQUEST_BUDGET: an explicit local ceiling. Omit it to follow whatever the plan
+   * allows, which the provider reports in every response header.
+   */
+  budget?: number | undefined;
   cacheTtlSeconds?: number;
   timeoutMs?: number;
   /** Injectable for tests; defaults to the Node 22 global fetch. */
@@ -661,7 +670,10 @@ export class ApiFootballClient {
   readonly #apiKey: string;
   readonly #baseUrl: string;
   readonly #logger: ProviderLogger;
-  readonly #budget: number;
+  /** The operator's explicit ceiling, or undefined to follow the plan. */
+  readonly #configuredBudget: number | undefined;
+  /** The plan's own daily allowance, as the provider last reported it. */
+  #observedDailyLimit: number | undefined;
   readonly #cacheTtlMs: number;
   readonly #timeoutMs: number;
   readonly #fetch: typeof fetch;
@@ -689,12 +701,28 @@ export class ApiFootballClient {
     this.#apiKey = options.apiKey;
     this.#baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
     this.#logger = options.logger ?? NOOP_LOGGER;
-    this.#budget = options.budget ?? DEFAULT_BUDGET;
+    this.#configuredBudget = options.budget;
     this.#cacheTtlMs = (options.cacheTtlSeconds ?? DEFAULT_CACHE_TTL_SECONDS) * 1000;
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.#fetch = options.fetchImpl ?? globalThis.fetch;
     this.#now = options.now ?? Date.now;
     this.#budgetDay = Math.floor(this.#now() / DAY_MS);
+  }
+
+  /**
+   * The daily ceiling this server will actually respect.
+   *
+   * Follows the PLAN unless an operator has pinned it. The hardcoded 7,500 was the Pro
+   * tier's allowance, and leaving it as a constant meant upgrading the plan bought nothing:
+   * the account would allow 75,000 requests a day while this counter still refused the
+   * 7,501st. Ten per cent is left unspent because the same key may be in other hands - a
+   * second instance mid-deploy, a local run, the app's own direct-API mode.
+   */
+  get #budget(): number {
+    if (this.#configuredBudget !== undefined) return this.#configuredBudget;
+    const observed = this.#observedDailyLimit;
+    if (observed === undefined || observed <= 0) return DEFAULT_BUDGET;
+    return Math.max(DEFAULT_BUDGET, Math.floor(observed * BUDGET_SAFETY_FRACTION));
   }
 
   /** Last rate-limit headers seen. Undefined fields mean the provider has not told us yet. */
@@ -1144,6 +1172,9 @@ export class ApiFootballClient {
           : this.#minuteWindowStartedAt + MINUTE_MS,
     };
     this.#quota = quota;
+    if (quota.dailyLimit !== undefined && quota.dailyLimit > 0) {
+      this.#observedDailyLimit = quota.dailyLimit;
+    }
 
     const { dailyLimit, dailyRemaining } = quota;
     if (dailyLimit === undefined || dailyRemaining === undefined || dailyLimit <= 0) return;

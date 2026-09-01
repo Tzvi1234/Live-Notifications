@@ -282,3 +282,73 @@ describe('accountStatus', () => {
     assert.equal(status?.subscription?.active, false);
   });
 });
+
+describe('the daily budget follows the plan', () => {
+  /** The provider states its allowance in the rate-limit headers of every response. */
+  function quotaHeaders(limit: number, remaining: number): Record<string, string> {
+    return {
+      'x-ratelimit-requests-limit': String(limit),
+      'x-ratelimit-requests-remaining': String(remaining),
+    };
+  }
+
+  test('an upgraded plan raises the ceiling without an env var', async () => {
+    // The ceiling used to be a hardcoded 7,500 - the Pro tier's allowance. Moving to a
+    // plan with 75,000 a day therefore bought nothing at all: the account would allow the
+    // call and this counter would refuse it. The plan is the authority; the env var is an
+    // override for spending LESS.
+    const { client } = clientFor(
+      [
+        {
+          status: 200,
+          headers: quotaHeaders(75_000, 74_999),
+          body: { errors: [], response: [{ league: { id: 39 } }] },
+        },
+      ],
+      () => 0,
+    );
+
+    assert.equal(client.getBudgetState().budget, 7_500);
+    await client.leagues(true);
+    // Ninety per cent of the plan: the rest is headroom for anything else on the same key.
+    assert.equal(client.getBudgetState().budget, 67_500);
+  });
+
+  test('a smaller plan never drops the floor below the default', async () => {
+    const { client } = clientFor(
+      [
+        {
+          status: 200,
+          headers: quotaHeaders(100, 99),
+          body: { errors: [], response: [{ league: { id: 39 } }] },
+        },
+      ],
+      () => 0,
+    );
+
+    await client.leagues(true);
+    // A free key reports 100/day. Refusing at 90 would be right for the key and wrong for
+    // the server, which has its own reasons to try: the provider's own answer is the wall
+    // that matters, and it is the one that carries an explanation.
+    assert.equal(client.getBudgetState().budget, 7_500);
+  });
+
+  test('an explicit ceiling still wins', async () => {
+    const fetched = fakeFetch([
+      {
+        status: 200,
+        headers: quotaHeaders(75_000, 74_999),
+        body: { errors: [], response: [{ league: { id: 39 } }] },
+      },
+    ]);
+    const client = new ApiFootballClient({
+      apiKey: KEY,
+      budget: 2_000,
+      fetchImpl: fetched.impl,
+      now: () => 0,
+    });
+
+    await client.leagues(true);
+    assert.equal(client.getBudgetState().budget, 2_000);
+  });
+});

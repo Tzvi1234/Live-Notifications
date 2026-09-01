@@ -35,8 +35,11 @@ lock so that an overlapping deploy cannot double-send notifications. Budget roug
 > covering *every* in-play match, plus one events request per match you actually have
 > subscribers for. At the default 30-second cadence a single busy Saturday afternoon runs
 > to a few thousand requests. **Free is a development key only.** The $19/month Pro plan
-> (7,500 req/day) is the realistic floor for real users. Set `DAILY_REQUEST_BUDGET` to
-> match your plan and the poller will back off instead of getting cut off mid-match.
+> (7,500 req/day) is the realistic floor for real users; the $29/month Ultra plan
+> (75,000 req/day) is what lets `POLL_INTERVAL_SECONDS` go down to 5, which is the single
+> cheapest way to make goals reach a phone faster. You do not need to tell the server which
+> plan you are on — it reads the allowance from the provider's response headers and backs
+> off under it by itself.
 
 > Sign up direct at api-football.com rather than through RapidAPI: same data, no
 > marketplace markup, and the header name differs (`x-apisports-key` vs `x-rapidapi-key`).
@@ -197,7 +200,7 @@ separate "sign up with Google" to enable.
 | `POLL_INTERVAL_SECONDS` | `30` | Cadence while at least one tracked match is in play. |
 | `POLL_IDLE_INTERVAL_SECONDS` | `300` | Cadence when nothing is live. Keeps the quota for match days. |
 | `PREMATCH_LEAD_MINUTES` | `60` | How early the pre-match card and the line-up fetch start. |
-| `DAILY_REQUEST_BUDGET` | `7500` | **Set this to your API-Football plan's daily quota.** The poller refuses to exceed it and backs off instead of being cut off. Free = `100`. |
+| `DAILY_REQUEST_BUDGET` | *(unset — follow the plan)* | An explicit daily ceiling. **Leave it unset.** The provider states its own allowance in every response header and the server adopts 90% of it, so upgrading your API-Football tier takes effect on its own. Set this only to spend *less* than the plan allows. |
 | `FEATURED_LEAGUE_IDS` | *(unset — use the code's list)* | Competitions offered during onboarding. **Leave it unset.** The code ships thirty-one, and because the environment wins over the default, a value here silently freezes the catalogue at whatever it says — which is how the deployed app came to offer fourteen while the code offered thirty-one. Set it only to deliberately deviate. |
 | `CACHE_TTL_SECONDS` | `60` | TTL for catalogue and fixtures-by-date responses. Live calls are never cached. |
 | `ADMIN_TOKEN` | *(unset)* | When set, guards `/v1/admin/*` (quota, poller status, manual poll trigger) behind `Authorization: Bearer <token>`. Leave unset to disable those routes. |
@@ -292,7 +295,8 @@ problem in the response body. The server checks for this and turns it into a 502
 provider's message — look at the service logs for `ProviderError`.
 
 **`QuotaExhaustedError` in the logs.**
-The daily budget is spent. Either raise your plan and `DAILY_REQUEST_BUDGET`, or raise
+The daily budget is spent. Either raise your API-Football plan — the server picks the new
+allowance up from the response headers on its own, with no env var to change — or raise
 `POLL_INTERVAL_SECONDS`. The quota resets at 00:00 UTC.
 
 **Notifications arrive twice.**
