@@ -17,8 +17,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onStart
@@ -72,9 +72,16 @@ class CalendarViewModel @Inject constructor(
     private val revisions: Flow<Unit> = reloads
         .flatMapLatest {
             calendarRepository.observeUpcoming(PROVIDER_WATCH_DAYS)
+                // The observer echoes once the instant it registers - debounced, so it
+                // lands a couple of seconds in - and [onStart] below has already covered
+                // that first read. Taking both would re-read the whole grid on every
+                // visit, a second after the user is already looking at it.
+                .drop(1)
                 .map { }
                 .onStart { emit(Unit) }
-                .catch { emit(Unit) }
+                // onStart has already produced the one emission the combine needs, so a
+                // failing observer costs the live refresh, not the screen.
+                .catch { }
         }
         .shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
 
@@ -94,23 +101,26 @@ class CalendarViewModel @Inject constructor(
         }
         .onStart { emit(AccessState()) }
 
-    private val monthState: Flow<MonthState> =
-        combine(revisions, enabledIds, visibleMonth) { _, _, month -> month }
-            .flatMapLatest { month ->
-                flow {
-                    emit(MonthState(month))
-                    emit(MonthState(month, dotsFor(month), isLoading = false))
-                }
-            }
+    /**
+     * The empty placeholder is keyed on the month alone, not on every reason to re-read.
+     *
+     * A month the user has just navigated to genuinely has no dots yet and must say so;
+     * a calendar being switched off, or another app writing an event, must *not* blank
+     * the grid the user is already looking at for as long as the re-read takes.
+     */
+    private val monthState: Flow<MonthState> = visibleMonth
+        .flatMapLatest { month ->
+            combine(revisions, enabledIds) { _, _ -> }
+                .mapLatest { MonthState(month, dotsFor(month)) }
+                .onStart { emit(MonthState(month)) }
+        }
 
-    private val agendaState: Flow<AgendaState> =
-        combine(revisions, enabledIds, selectedDate) { _, _, date -> date }
-            .flatMapLatest { date ->
-                flow {
-                    emit(AgendaState(date))
-                    emit(AgendaState(date, eventsOn(date), isLoading = false))
-                }
-            }
+    private val agendaState: Flow<AgendaState> = selectedDate
+        .flatMapLatest { date ->
+            combine(revisions, enabledIds) { _, _ -> }
+                .mapLatest { AgendaState(date, eventsOn(date), isLoading = false) }
+                .onStart { emit(AgendaState(date)) }
+        }
 
     val uiState: StateFlow<CalendarUiState> = combine(
         accessState,
@@ -301,10 +311,10 @@ class CalendarViewModel @Inject constructor(
         val isLoading: Boolean = true,
     )
 
+    /** No loading flag: a grid whose dots have not arrived yet simply has no dots. */
     private data class MonthState(
         val month: YearMonth,
         val dots: Map<LocalDate, List<Int>> = emptyMap(),
-        val isLoading: Boolean = true,
     )
 
     private data class AgendaState(

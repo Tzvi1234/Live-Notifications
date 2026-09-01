@@ -159,7 +159,7 @@ class TeamsViewModel @Inject constructor(
                 footballRepository.addFavourite(team, leagueId, leagueName)
                 // A team nobody followed until now has no fixtures in the cache, so the
                 // sheet and Today would both stay empty without this.
-                refreshFixtures()
+                refreshFixtures(forNewFavourite = true)
             }
         }
     }

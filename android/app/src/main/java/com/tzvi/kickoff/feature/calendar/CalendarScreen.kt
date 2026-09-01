@@ -196,8 +196,16 @@ private fun CalendarBody(
 
         item(key = "day-header") {
             SelectedDayHeader(
-                state = state,
-                modifier = Modifier.padding(top = SectionGap, bottom = 10.dp),
+                title = state.selectedDayTitle,
+                dateLabel = state.selectedDateLabel,
+                eventCount = state.agenda.size,
+                isLoading = state.isAgendaLoading,
+                modifier = Modifier.padding(
+                    start = RowPaddingHorizontal,
+                    end = RowPaddingHorizontal,
+                    top = SectionGap,
+                    bottom = ItemGap,
+                ),
             )
         }
 
@@ -229,8 +237,8 @@ private fun CalendarBody(
             }
         }
 
-        item(key = "calendars-header") {
-            SectionHeader(title = "Calendars", modifier = Modifier.padding(top = SectionGap))
+        item(key = "live-card-header") {
+            SectionHeader(title = "Live card", modifier = Modifier.padding(top = SectionGap))
         }
 
         item(key = "sync-switch") {
@@ -249,18 +257,27 @@ private fun CalendarBody(
                 leadMinutes = state.leadMinutes,
                 enabled = state.syncEnabled,
                 onSelect = onSetLeadMinutes,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.padding(
+                    horizontal = RowPaddingHorizontal,
+                    vertical = ItemGap,
+                ),
             )
         }
 
-        item(key = "calendars-caption") {
-            Text(
-                text = "Which calendars Kickoff reads - both for this agenda and for the " +
-                    "live card.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = SectionGap),
-            )
+        item(key = "calendars-header") {
+            Column(Modifier.padding(top = SectionGap)) {
+                SectionHeader(title = "Calendars")
+                Text(
+                    text = "Which calendars Kickoff reads - both for this agenda and for " +
+                        "the live card.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(
+                        horizontal = RowPaddingHorizontal,
+                        vertical = ItemGap,
+                    ),
+                )
+            }
         }
 
         items(state.calendars, key = { "calendar-${it.id}" }) { toggle ->

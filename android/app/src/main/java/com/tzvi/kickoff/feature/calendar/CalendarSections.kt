@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronLeft
@@ -43,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -209,26 +211,34 @@ private fun dotColor(argb: Int, selected: Boolean): Color = when {
 
 @Composable
 internal fun SelectedDayHeader(
-    state: CalendarUiState,
+    title: String,
+    dateLabel: String,
+    eventCount: Int,
+    isLoading: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val subtitle = listOfNotNull(
-        state.selectedDateLabel.takeIf { it != state.selectedDayTitle },
-        eventCountLabel(state.agenda.size),
+        dateLabel.takeIf { it != title },
+        // A day whose events have not been read yet has a count of zero, and announcing
+        // "Nothing scheduled" directly above the loader that is about to contradict it
+        // is worse than saying nothing.
+        eventCountLabel(eventCount).takeUnless { isLoading },
     ).joinToString(" · ")
 
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text = state.selectedDayTitle,
+            text = title,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
         )
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (subtitle.isNotEmpty()) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -246,7 +256,7 @@ internal fun AgendaRow(entry: AgendaEntry, modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .clip(KickoffShapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = RowPaddingHorizontal, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -426,11 +436,17 @@ internal fun CalendarToggleRow(
     ).joinToString(" · ")
 
     Row(
+        // The row is the switch, rather than a clickable row that happens to contain one:
+        // two targets for one setting makes a screen reader announce it twice.
         modifier = modifier
             .fillMaxWidth()
             .clip(KickoffShapes.medium)
-            .clickable { onToggle(toggle.id, !toggle.isEnabled) }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .toggleable(
+                value = toggle.isEnabled,
+                role = Role.Switch,
+                onValueChange = { checked -> onToggle(toggle.id, checked) },
+            )
+            .padding(horizontal = RowPaddingHorizontal, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -459,10 +475,7 @@ internal fun CalendarToggleRow(
             }
         }
         Spacer(Modifier.width(12.dp))
-        Switch(
-            checked = toggle.isEnabled,
-            onCheckedChange = { checked -> onToggle(toggle.id, checked) },
-        )
+        Switch(checked = toggle.isEnabled, onCheckedChange = null)
     }
 }
 
@@ -511,7 +524,7 @@ internal fun monthTransition(forward: Boolean): ContentTransform {
     )
 }
 
-internal fun eventCountLabel(count: Int): String = when (count) {
+private fun eventCountLabel(count: Int): String = when (count) {
     0 -> "Nothing scheduled"
     1 -> "1 event"
     else -> "$count events"
@@ -527,6 +540,9 @@ private fun leadPhrase(minutes: Int): String = when {
 }
 
 private const val OutOfMonthAlpha = 0.45f
+
+/** Shared with the screen so every row in this feature sits on the same left edge. */
+internal val RowPaddingHorizontal = 12.dp
 
 private val CellHeight = 42.dp
 private val CellGap = 2.dp

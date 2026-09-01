@@ -5,7 +5,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 /** Lead times the live card can be offered at, in minutes. */
-val LeadTimeOptions = listOf(5, 10, 15, 30, 60)
+internal val LeadTimeOptions = listOf(5, 10, 15, 30, 60)
 
 /**
  * One cell of the month grid.
@@ -98,7 +98,10 @@ data class CalendarUiState(
                 CalendarEmptyReason.NO_CALENDARS
             availability == CalendarAvailability.NO_VISIBLE_CALENDARS ->
                 CalendarEmptyReason.NO_VISIBLE_CALENDARS
-            calendars.none { it.isEnabled } -> CalendarEmptyReason.NONE_SELECTED
+            // Guarded on the list being non-empty: a calendar read that failed leaves no
+            // toggles to switch back on, so "they are all off" would be a lie.
+            calendars.isNotEmpty() && calendars.none { it.isEnabled } ->
+                CalendarEmptyReason.NONE_SELECTED
             else -> CalendarEmptyReason.NOTHING_SCHEDULED
         }
 
