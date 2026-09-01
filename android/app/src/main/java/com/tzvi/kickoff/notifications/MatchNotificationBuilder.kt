@@ -196,27 +196,73 @@ class MatchNotificationBuilder @Inject constructor(
         }
     }
 
+    /**
+     * The card's one line of prose.
+     *
+     * A goal is worth shouting about for a few minutes and then it is just clutter: the
+     * scoreline already carries the fact that it happened, and a card that still says
+     * "Havertz - assist Rice" in the 88th minute is stale furniture. So an event holds
+     * the line for [EVENT_LINE_MINUTES] match minutes and the card then goes back to
+     * being clean.
+     */
     private fun contentText(activity: LiveActivity.MatchActivity): String {
         val m = activity.match
         return when (activity.stage) {
-            LiveActivity.MatchActivity.Stage.PRE_MATCH -> {
-                val lineups = activity.lineups
-                when {
-                    lineups?.isConfirmed == true -> {
-                        val h = lineups.home?.formation.orEmpty()
-                        val a = lineups.away?.formation.orEmpty()
-                        if (h.isNotBlank() && a.isNotBlank()) "Line-ups in · $h vs $a"
-                        else "Line-ups confirmed"
-                    }
-                    else -> countdownText(m.kickoffAt)
-                }
-            }
+            LiveActivity.MatchActivity.Stage.PRE_MATCH -> preMatchText(activity)
             LiveActivity.MatchActivity.Stage.LIVE ->
-                activity.latestEvent?.headline() ?: "${m.clockLabel} · in play"
+                freshEvent(activity)?.headline() ?: "${m.clockLabel} \u00b7 in play"
             LiveActivity.MatchActivity.Stage.FULL_TIME -> {
                 val ht = m.halfTimeScore?.let { " (HT $it)" }.orEmpty()
                 "Full time$ht"
             }
+        }
+    }
+
+    /** The latest event, but only while it is still news. */
+    private fun freshEvent(activity: LiveActivity.MatchActivity): MatchEvent? {
+        val event = activity.latestEvent ?: return null
+        val now = activity.match.elapsedMinutes ?: return event
+        val minute = event.minute ?: return event
+        return event.takeIf { now - minute <= EVENT_LINE_MINUTES }
+    }
+
+    /**
+     * Before kick-off the card is the team sheet.
+     *
+     * This is the half of the feature that only exists in the hour before a match, and it
+     * had nowhere to appear: the countdown alone repeats what the header already says.
+     */
+    private fun preMatchText(activity: LiveActivity.MatchActivity): String {
+        val lineups = activity.lineups
+        val home = lineups?.home
+        val away = lineups?.away
+        val countdown = countdownText(activity.match.kickoffAt)
+        if (home == null || away == null) return countdown
+
+        val formations = listOfNotNull(home.formation, away.formation)
+        return if (formations.size == 2) {
+            "$countdown \u00b7 ${formations[0]} vs ${formations[1]}"
+        } else {
+            "$countdown \u00b7 Line-ups in"
+        }
+    }
+
+    /** The full team sheet, for the styles with room to print it. */
+    private fun lineupBlock(activity: LiveActivity.MatchActivity): String? {
+        val lineups = activity.lineups ?: return null
+        val home = lineups.home ?: return null
+        val away = lineups.away ?: return null
+        if (home.startingXi.isEmpty() || away.startingXi.isEmpty()) return null
+        return buildString {
+            append(home.teamName)
+            home.formation?.let { append("  $it") }
+            append("\n")
+            append(home.startingXi.joinToString(", ") { it.surname })
+            append("\n\n")
+            append(away.teamName)
+            away.formation?.let { append("  $it") }
+            append("\n")
+            append(away.startingXi.joinToString(", ") { it.surname })
         }
     }
 
@@ -374,7 +420,9 @@ class MatchNotificationBuilder @Inject constructor(
             // than a stadium name.
             setTextViewText(
                 R.id.event_line,
-                activity.latestEvent?.headline() ?: match.venue.orEmpty(),
+                freshEvent(activity)?.headline()
+                    ?: preMatchFormations(activity)
+                    ?: match.venue.orEmpty(),
             )
         }
 
@@ -425,6 +473,14 @@ class MatchNotificationBuilder @Inject constructor(
         }
     }
 
+    /** "4-3-3 vs 4-2-3-1" while the teams are still in the tunnel. */
+    private fun preMatchFormations(activity: LiveActivity.MatchActivity): String? {
+        if (activity.stage != LiveActivity.MatchActivity.Stage.PRE_MATCH) return null
+        val home = activity.lineups?.home?.formation ?: return null
+        val away = activity.lineups?.away?.formation ?: return null
+        return "$home vs $away"
+    }
+
     /** "Premier League - 78'", the header line above the title. */
     private fun subText(activity: LiveActivity.MatchActivity): String {
         val league = activity.match.leagueName.takeIf { it.isNotBlank() }
@@ -446,17 +502,12 @@ class MatchNotificationBuilder @Inject constructor(
      */
     private fun commentaryText(activity: LiveActivity.MatchActivity): CharSequence {
         if (activity.stage == LiveActivity.MatchActivity.Stage.PRE_MATCH) {
-            val lineups = activity.lineups
-            val home = lineups?.home
-            val away = lineups?.away
-            if (home != null && away != null) {
-                return buildString {
-                    append(countdownText(activity.match.kickoffAt))
-                    home.formation?.let { append("\n\n${home.teamName}  $it") }
-                    away.formation?.let { append("\n${away.teamName}  $it") }
-                }
+            val sheet = lineupBlock(activity)
+            return if (sheet != null) {
+                "${countdownText(activity.match.kickoffAt)}\n\n$sheet"
+            } else {
+                countdownText(activity.match.kickoffAt)
             }
-            return countdownText(activity.match.kickoffAt)
         }
 
         val lines = activity.recentEvents
@@ -574,6 +625,9 @@ class MatchNotificationBuilder @Inject constructor(
 
     private companion object {
         const val COMMENTARY_LINES = 5
+
+        /** How many match minutes an event holds the card's one prose line. */
+        const val EVENT_LINE_MINUTES = 5
         const val LARGE_ICON_DP = 48
         const val SEGMENT_FIRST_HALF = 1
         const val SEGMENT_SECOND_HALF = 2

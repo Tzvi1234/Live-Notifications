@@ -47,6 +47,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.tzvi.kickoff.ui.component.AnimatedKickoffLogo
+import androidx.compose.material.icons.outlined.ErrorOutline
+import com.tzvi.kickoff.ui.component.KickoffLoader
 import com.tzvi.kickoff.ui.component.MetaChip
 import com.tzvi.kickoff.ui.component.TeamCrest
 import com.tzvi.kickoff.ui.motion.Motion
@@ -316,9 +318,13 @@ internal fun SetupPage(
                     ) {
                         Button(
                             onClick = onSaveApiKey,
-                            enabled = state.apiKeyInput.isNotBlank(),
+                            enabled = state.apiKeyInput.isNotBlank() && !state.checkingSource,
                         ) {
-                            Text("Save key")
+                            if (state.checkingSource) {
+                                KickoffLoader(size = 18.dp)
+                            } else {
+                                Text("Check and save")
+                            }
                         }
                         TextButton(onClick = { uriHandler.openUri(API_FOOTBALL_DASHBOARD) }) {
                             Text("Where do I get one?")
@@ -326,19 +332,12 @@ internal fun SetupPage(
                     }
                 }
                 entrance.Block(2) {
-                    if (state.apiKeySaved) {
-                        ReadyNote(
-                            title = "Key saved",
-                            body = "The next step will list real competitions.",
-                        )
-                    } else {
-                        Text(
-                            text = "Take it from dashboard.api-football.com, not from " +
-                                "RapidAPI - a RapidAPI key will not work here.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    SourceVerdict(
+                        state = state,
+                        okTitle = "Key accepted",
+                        hint = "Take it from dashboard.api-football.com, not from " +
+                            "RapidAPI - a RapidAPI key will not work here.",
+                    )
                 }
             }
 
@@ -365,18 +364,21 @@ internal fun SetupPage(
                 entrance.Block(1) {
                     Button(
                         onClick = onSaveBackendUrl,
-                        enabled = state.backendUrlInput.isNotBlank(),
+                        enabled = state.backendUrlInput.isNotBlank() && !state.checkingSource,
                     ) {
-                        Text("Use this backend")
+                        if (state.checkingSource) {
+                            KickoffLoader(size = 18.dp)
+                        } else {
+                            Text("Check and use")
+                        }
                     }
                 }
                 entrance.Block(2) {
-                    if (state.backendSaved) {
-                        ReadyNote(
-                            title = "Backend saved",
-                            body = "Goals will be pushed rather than polled for.",
-                        )
-                    }
+                    SourceVerdict(
+                        state = state,
+                        okTitle = "Backend reached",
+                        hint = "The address Render shows at the top of your service page.",
+                    )
                 }
             }
 
@@ -595,6 +597,58 @@ private fun SummaryLine(index: String, text: String, modifier: Modifier = Modifi
             text = text,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * What the probe found, in the place the value was typed.
+ *
+ * A failure here is the whole point of probing: it names the address or the key that did
+ * not work, rather than letting the flow continue and blame competitions two steps later.
+ */
+@Composable
+private fun SourceVerdict(
+    state: OnboardingUiState,
+    okTitle: String,
+    hint: String,
+    modifier: Modifier = Modifier,
+) {
+    val message = state.sourceCheck
+    when {
+        message != null && state.sourceCheckFailed -> Card(
+            modifier = modifier.fillMaxWidth(),
+            shape = KickoffShapes.medium,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+            ),
+        ) {
+            Row(
+                modifier = Modifier.padding(OnboardingSpacing.card),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ErrorOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+        }
+
+        message != null -> ReadyNote(title = okTitle, body = message)
+
+        else -> Text(
+            text = hint,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = modifier,
         )
     }
 }

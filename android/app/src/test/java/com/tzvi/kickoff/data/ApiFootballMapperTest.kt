@@ -24,6 +24,44 @@ private const val AWAY = 77
 
 class ApiFootballEventMappingTest {
 
+    @Test
+    fun `a revised minute keeps the same event id`() {
+        val at67 = ApiFootballMapper.events(1, HOME, listOf(goal(HOME, 67, "Saka")))
+        val at68 = ApiFootballMapper.events(1, HOME, listOf(goal(HOME, 68, "Saka")))
+        // Providers correct minutes constantly. If that changed the id, the correction
+        // arrived as a brand new goal: a second alert and a second point on the score.
+        assertEquals(at67.single().id, at68.single().id)
+    }
+
+    @Test
+    fun `two goals by the same player stay two events`() {
+        val events = ApiFootballMapper.events(
+            matchId = 1,
+            homeTeamId = HOME,
+            dtos = listOf(goal(HOME, 12, "Saka"), goal(HOME, 67, "Saka")),
+        )
+        assertEquals(2, events.map { it.id }.toSet().size)
+        assertEquals(2, events.last().scoreAfter?.home)
+    }
+
+    @Test
+    fun `an own goal with no team attached scores for nobody`() {
+        val orphan = EventResponse(
+            time = EventTimeDto(elapsed = 30),
+            team = null,
+            player = PlayerRefDto(id = 9, name = "Unknown"),
+            type = "Goal",
+            detail = "Own Goal",
+        )
+        val events = ApiFootballMapper.events(1, HOME, listOf(orphan))
+        // `side != HOME` is true for a NEUTRAL side, so this used to hand the home team
+        // a goal nobody scored.
+        assertEquals(MatchSide.NEUTRAL, events.single().side)
+        assertEquals(0, events.single().scoreAfter?.home)
+        assertEquals(0, events.single().scoreAfter?.away)
+    }
+
+
     private fun goal(team: Int, minute: Int, player: String, detail: String = "Normal Goal") =
         EventResponse(
             time = EventTimeDto(elapsed = minute),

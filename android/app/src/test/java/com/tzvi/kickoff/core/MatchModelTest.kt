@@ -26,6 +26,11 @@ class MatchPhaseTest {
         assertEquals(MatchPhase.FINISHED, MatchPhase.fromProviderCode("FT"))
         assertEquals(MatchPhase.FINISHED, MatchPhase.fromProviderCode("AET"))
         assertEquals(MatchPhase.OFF, MatchPhase.fromProviderCode("PST"))
+        // Some competitions report a bare LIVE instead of a half. It used to fall
+        // through to UNKNOWN, which is not live - so the match never reached the
+        // live list and the card sat still for the whole ninety minutes.
+        assertEquals(MatchPhase.IN_PLAY, MatchPhase.fromProviderCode("LIVE"))
+        assertTrue(MatchPhase.fromProviderCode("LIVE").isLive)
     }
 
     @Test
@@ -106,21 +111,28 @@ class MatchEventKeyTest {
     }
 
     @Test
-    fun `a corrected minute produces a different key`() {
-        // The provider re-reports events as minutes are corrected; a changed minute is a
-        // different incident as far as de-duplication is concerned, which is deliberate -
-        // it is better to alert twice than to miss a genuine second goal.
-        val original = MatchEvent.key(99, MatchEventType.GOAL, 67, 42, "Saka")
-        val corrected = MatchEvent.key(99, MatchEventType.GOAL, 68, 42, "Saka")
-        assertTrue(original != corrected)
+    fun `a corrected minute does not produce a new key`() {
+        // The minute is the field a provider most often revises. Keying on it meant a
+        // goal moved from 45 to 45+2 read as a second goal: a duplicate alert and a
+        // score counted twice.
+        val original = MatchEvent.key(99, MatchEventType.GOAL, 0, 42, "Saka")
+        val corrected = MatchEvent.key(99, MatchEventType.GOAL, 0, 42, "Saka")
+        assertEquals(original, corrected)
+    }
+
+    @Test
+    fun `a second goal by the same player is a different key`() {
+        val first = MatchEvent.key(99, MatchEventType.GOAL, 0, 42, "Saka")
+        val second = MatchEvent.key(99, MatchEventType.GOAL, 1, 42, "Saka")
+        assertTrue(first != second)
     }
 
     @Test
     fun `missing fields still yield a stable key`() {
-        val a = MatchEvent.key(1, MatchEventType.VAR, null, null, null)
-        val b = MatchEvent.key(1, MatchEventType.VAR, null, null, null)
+        val a = MatchEvent.key(1, MatchEventType.VAR, 0, null, null)
+        val b = MatchEvent.key(1, MatchEventType.VAR, 0, null, null)
         assertEquals(a, b)
-        assertEquals("1:VAR:-1:-1:", a)
+        assertEquals("1:VAR:0:-1:", a)
     }
 }
 

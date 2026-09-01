@@ -102,6 +102,10 @@ object ApiFootballMapper {
     fun events(matchId: Long, homeTeamId: Int, dtos: List<EventResponse>): List<MatchEvent> {
         var home = 0
         var away = 0
+        // How many incidents of this exact shape have already been seen in this match:
+        // the second goal by the same player gets occurrence 1, and stays occurrence 1
+        // however often its minute is revised.
+        val seen = mutableMapOf<String, Int>()
         return dtos.map { dto ->
             val type = eventType(dto.type, dto.detail)
             val teamId = dto.team?.id
@@ -111,16 +115,25 @@ object ApiFootballMapper {
                 else -> MatchSide.AWAY
             }
             if (type.isGoal) {
-                // An own goal is credited to the team that did *not* score it.
-                val creditHome = if (type == MatchEventType.OWN_GOAL) {
-                    side != MatchSide.HOME
-                } else {
-                    side == MatchSide.HOME
+                // An own goal is credited to the team that did *not* score it - but only
+                // when we know which team that was. An unattributed event is NEUTRAL, and
+                // `side != HOME` would silently hand it to the home team.
+                val creditHome = when {
+                    side == MatchSide.NEUTRAL -> null
+                    type == MatchEventType.OWN_GOAL -> side != MatchSide.HOME
+                    else -> side == MatchSide.HOME
                 }
-                if (creditHome) home++ else away++
+                when (creditHome) {
+                    true -> home++
+                    false -> away++
+                    null -> Unit
+                }
             }
+            val shape = "${type.name}:${teamId ?: -1}:${dto.player?.name.orEmpty()}"
+            val occurrence = seen.getOrDefault(shape, 0)
+            seen[shape] = occurrence + 1
             MatchEvent(
-                id = MatchEvent.key(matchId, type, dto.time?.elapsed, teamId, dto.player?.name),
+                id = MatchEvent.key(matchId, type, occurrence, teamId, dto.player?.name),
                 matchId = matchId,
                 type = type,
                 side = side,
@@ -149,7 +162,8 @@ object ApiFootballMapper {
                 else -> MatchEventType.GOAL
             }
             "card" -> when {
-                d.contains("second yellow") -> MatchEventType.SECOND_YELLOW
+                d.contains("second yellow") || d.contains("2nd yellow") ->
+                    MatchEventType.SECOND_YELLOW
                 d.contains("red") -> MatchEventType.RED_CARD
                 else -> MatchEventType.YELLOW_CARD
             }

@@ -68,6 +68,11 @@ data class OnboardingUiState(
     val backendUrlInput: String = "",
     val backendUrlError: String? = null,
     val backendSaved: Boolean = false,
+    /** True while a key or URL is being tried against the real thing. */
+    val checkingSource: Boolean = false,
+    /** What the probe said, good or bad, so the answer lands where the value was typed. */
+    val sourceCheck: String? = null,
+    val sourceCheckFailed: Boolean = false,
     val demoEnabled: Boolean = false,
     /** What was tapped on the SOURCE step - which is not yet what is configured. */
     val chosenSource: ConfiguredSource? = null,

@@ -12,6 +12,7 @@ import com.tzvi.kickoff.data.remote.dto.ApiEnvelope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
@@ -85,8 +86,19 @@ class ApiFootballDataSource @Inject constructor(
         ).requireOk().response.map(ApiFootballMapper::team)
 
     override suspend fun fixturesOn(date: LocalDate): List<Match> =
-        service.fixtures(date = date.format(DATE)).requireOk()
+        service.fixtures(date = date.format(DATE), timezone = deviceZone()).requireOk()
             .response.map(ApiFootballMapper::match)
+
+    /**
+     * The zone the dates below are in.
+     *
+     * `date=` and `from=`/`to=` are interpreted in the provider's timezone, which is UTC
+     * unless you say otherwise, while the dates handed in here come from
+     * `LocalDate.now()` on the device. West of UTC that pairing quietly asked for
+     * tomorrow's fixtures for most of the evening, so an 8pm kick-off was simply absent
+     * from the window - no pre-match alarm, no live card, nothing to explain it.
+     */
+    private fun deviceZone(): String = ZoneId.systemDefault().id
 
     override suspend fun fixturesForTeams(
         teamIds: List<Int>,
@@ -103,6 +115,7 @@ class ApiFootballDataSource @Inject constructor(
                         from = from.format(DATE),
                         to = to.format(DATE),
                         season = ApiFootballMapper.currentSeason(),
+                        timezone = deviceZone(),
                     ).requireOk().response.map(ApiFootballMapper::match)
                 }.getOrDefault(emptyList())
             }

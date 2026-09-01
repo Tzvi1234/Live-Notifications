@@ -77,7 +77,7 @@ private fun previewEvent(
     assist: String? = null,
     detail: String? = null,
 ): MatchEvent = MatchEvent(
-    id = MatchEvent.key(1, type, minute, if (side == MatchSide.HOME) 1 else 2, player),
+    id = MatchEvent.key(1, type, 0, if (side == MatchSide.HOME) 1 else 2, player),
     matchId = 1,
     type = type,
     side = side,

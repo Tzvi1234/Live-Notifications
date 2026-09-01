@@ -110,7 +110,7 @@ class LiveCardPreview @Inject constructor(
         assist: String?,
         score: Score,
     ) = MatchEvent(
-        id = MatchEvent.key(DEMO_MATCH_ID, type, minute, if (side == MatchSide.HOME) 42 else 49, player),
+        id = MatchEvent.key(DEMO_MATCH_ID, type, 0, if (side == MatchSide.HOME) 42 else 49, player),
         matchId = DEMO_MATCH_ID,
         type = type,
         side = side,

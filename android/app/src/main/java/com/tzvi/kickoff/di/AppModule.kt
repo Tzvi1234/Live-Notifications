@@ -38,6 +38,9 @@ import javax.inject.Singleton
 @Qualifier @Retention(AnnotationRetention.BINARY) annotation class BackendApi
 @Qualifier @Retention(AnnotationRetention.BINARY) annotation class ImageHttp
 
+/** Plain client, no key or base-URL interceptor: for testing a value that is not saved yet. */
+@Qualifier @Retention(AnnotationRetention.BINARY) annotation class ProbeHttp
+
 /** The dispatcher for provider queries and disk work. Injected rather than hard-coded
  *  so a test can swap it for a deterministic one. */
 @Qualifier @Retention(AnnotationRetention.BINARY) annotation class IoDispatcher
@@ -73,6 +76,16 @@ object AppModule {
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
+            .build()
+
+    @Provides
+    @Singleton
+    @ProbeHttp
+    fun probeHttpClient(logging: HttpLoggingInterceptor): OkHttpClient =
+        OkHttpClient.Builder()
+            .addInterceptor(logging)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
             .build()
 
     @Provides

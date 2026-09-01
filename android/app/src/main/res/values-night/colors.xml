@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="notif_surface">#FF0D150D</color>
+    <color name="splash_background">@color/brand_ink</color>
+    <color name="notif_surface">#FF18231A</color>
     <color name="notif_accent">#FF3FE56C</color>
     <color name="notif_live">#FFFFB4AB</color>
     <color name="notif_surface_variant">#FF25302A</color>

@@ -43,12 +43,23 @@ enum class MatchPhase {
     EXTRA_TIME,
     PENALTIES,
     BREAK_TIME,
+
+    /**
+     * In progress, half unknown.
+     *
+     * Some competitions on API-Football report `LIVE` instead of `1H`/`2H`. It used to
+     * fall through to [UNKNOWN], which is not live - so the match never reached the live
+     * list, the poller dropped back to its pre-match cadence and the card never updated
+     * for the entire ninety minutes.
+     */
+    IN_PLAY,
     FINISHED,
     UNKNOWN;
 
     val isLive: Boolean
         get() = this == FIRST_HALF || this == SECOND_HALF || this == EXTRA_TIME ||
-            this == PENALTIES || this == HALF_TIME || this == BREAK_TIME
+            this == PENALTIES || this == HALF_TIME || this == BREAK_TIME ||
+            this == IN_PLAY
 
     val isFinished: Boolean get() = this == FINISHED
 
@@ -60,6 +71,7 @@ enum class MatchPhase {
             "HT" -> HALF_TIME
             "2H" -> SECOND_HALF
             "ET", "P" -> if (code == "P") PENALTIES else EXTRA_TIME
+            "LIVE" -> IN_PLAY
             "BT" -> BREAK_TIME
             "SUSP", "INT" -> BREAK_TIME
             "FT", "AET", "PEN" -> FINISHED

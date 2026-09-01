@@ -98,7 +98,10 @@ class MatchSimulator @Inject constructor(
 
     private suspend fun play() {
         val base = DemoCatalogue.match(DemoCatalogue.LIVE_MATCH_ID) ?: return
-        val kickoff = Instant.now()
+        // Kick-off sits in the near future so the pre-match card has a real countdown to
+        // show. Once the match starts the clock comes from elapsedMinutes, so this only
+        // ever affects the part of the run it is meant to.
+        val kickoff = Instant.now().plusSeconds(PRE_MATCH_LEAD_SECONDS)
         val style = settings.settings.first().liveCardStyle
         val key = LiveActivity.MatchActivity.matchKey(SIM_MATCH_ID)
 
@@ -129,9 +132,14 @@ class MatchSimulator @Inject constructor(
             )
         }
 
-        // Pre-match: the countdown card, so a run shows the whole arc and not just the goals.
-        render(0, MatchPhase.SCHEDULED, null)
-        delay(PRE_MATCH_MS)
+        // Pre-match: the team sheet, held long enough to actually read. This is half the
+        // feature and it only exists in the hour before a match, so a run that skipped
+        // past it in a couple of seconds never showed it at all.
+        repeat(PRE_MATCH_BEATS) {
+            if (!currentCoroutineContext().isActive) return
+            render(0, MatchPhase.SCHEDULED, null)
+            delay(PRE_MATCH_MS / PRE_MATCH_BEATS)
+        }
 
         var minute = 0
         while (currentCoroutineContext().isActive && minute <= REGULATION) {
@@ -205,7 +213,9 @@ class MatchSimulator @Inject constructor(
         /** ~3 minutes of wall clock for 90 match minutes, plus the two pauses. */
         private const val MINUTE_MS = 1_800L
         private const val HALF_TIME_MS = 6_000L
-        private const val PRE_MATCH_MS = 7_000L
+        private const val PRE_MATCH_MS = 15_000L
+        private const val PRE_MATCH_BEATS = 3
+        private const val PRE_MATCH_LEAD_SECONDS = 45L * 60L
         const val MATCH_DURATION_MS = REGULATION * MINUTE_MS + HALF_TIME_MS + PRE_MATCH_MS
     }
 }

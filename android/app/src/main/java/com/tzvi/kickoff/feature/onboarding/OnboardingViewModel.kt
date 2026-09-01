@@ -6,6 +6,7 @@ import com.tzvi.kickoff.core.model.League
 import com.tzvi.kickoff.data.repository.FootballRepository
 import com.tzvi.kickoff.data.repository.NoFootballSourceException
 import com.tzvi.kickoff.data.repository.SettingsRepository
+import com.tzvi.kickoff.data.repository.SourceProbe
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -76,13 +77,43 @@ class OnboardingViewModel @Inject constructor(
 
     fun onApiKeyChange(value: String) = mutableState.update { it.copy(apiKeyInput = value) }
 
+    /**
+     * Tries the key against the provider before storing it.
+     *
+     * A key is accepted or refused in one free call to /status. Storing first and finding
+     * out two steps later - at "pick your competitions", which is about competitions and
+     * not about keys - is what made a wrong key look like a broken app.
+     */
     fun saveApiKey() {
         val key = mutableState.value.apiKeyInput.trim()
         if (key.isBlank()) return
         viewModelScope.launch {
-            settings.setApiFootballKey(key)
-            invalidateCatalogue()
-            mutableState.update { it.copy(apiKeyInput = key, apiKeySaved = true) }
+            mutableState.update {
+                it.copy(checkingSource = true, sourceCheck = null, sourceCheckFailed = false)
+            }
+            when (val probe = footballRepository.probeApiKey(key)) {
+                is SourceProbe.Ok -> {
+                    settings.setApiFootballKey(key)
+                    invalidateCatalogue()
+                    mutableState.update {
+                        it.copy(
+                            apiKeyInput = key,
+                            apiKeySaved = true,
+                            checkingSource = false,
+                            sourceCheck = probe.message,
+                            sourceCheckFailed = false,
+                        )
+                    }
+                }
+
+                is SourceProbe.Failed -> mutableState.update {
+                    it.copy(
+                        checkingSource = false,
+                        sourceCheck = probe.message,
+                        sourceCheckFailed = true,
+                    )
+                }
+            }
         }
     }
 
@@ -96,14 +127,32 @@ class OnboardingViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
-            settings.setBackendUrl(normalised)
-            invalidateCatalogue()
             mutableState.update {
-                it.copy(
-                    backendUrlInput = normalised,
-                    backendUrlError = null,
-                    backendSaved = true,
-                )
+                it.copy(checkingSource = true, sourceCheck = null, sourceCheckFailed = false)
+            }
+            when (val probe = footballRepository.probeBackend(normalised)) {
+                is SourceProbe.Ok -> {
+                    settings.setBackendUrl(normalised)
+                    invalidateCatalogue()
+                    mutableState.update {
+                        it.copy(
+                            backendUrlInput = normalised,
+                            backendUrlError = null,
+                            backendSaved = true,
+                            checkingSource = false,
+                            sourceCheck = probe.message,
+                            sourceCheckFailed = false,
+                        )
+                    }
+                }
+
+                is SourceProbe.Failed -> mutableState.update {
+                    it.copy(
+                        checkingSource = false,
+                        sourceCheck = probe.message,
+                        sourceCheckFailed = true,
+                    )
+                }
             }
         }
     }

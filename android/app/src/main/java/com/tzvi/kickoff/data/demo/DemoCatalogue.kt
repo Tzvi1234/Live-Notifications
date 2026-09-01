@@ -227,7 +227,7 @@ object DemoCatalogue {
         val match = match(matchId)
         val teamId = if (side == MatchSide.HOME) match?.home?.id else match?.away?.id
         return MatchEvent(
-            id = MatchEvent.key(matchId, type, minute, teamId, player),
+            id = MatchEvent.key(matchId, type, 0, teamId, player),
             matchId = matchId,
             type = type,
             side = side,

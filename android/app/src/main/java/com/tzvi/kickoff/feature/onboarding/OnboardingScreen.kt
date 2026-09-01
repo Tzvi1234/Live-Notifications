@@ -318,7 +318,6 @@ private fun OnboardingFooter(
                             KickoffLoader(
                                 size = 18.dp,
                                 ringColor = MaterialTheme.colorScheme.onPrimary,
-                                panelColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.3f),
                             )
                         } else {
                             Text(if (isLast) "Finish" else "Next")

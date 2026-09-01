@@ -44,6 +44,7 @@ class FootballRepository @Inject constructor(
     private val eventDao: MatchEventDao,
     private val favouriteTeamDao: FavouriteTeamDao,
     private val followedLeagueDao: FollowedLeagueDao,
+    private val probes: SourceProbes,
 ) {
     val favouriteTeams: Flow<List<Team>> =
         favouriteTeamDao.observeAll().map { list -> list.map { it.toDomain() } }
@@ -112,6 +113,14 @@ class FootballRepository @Inject constructor(
         source().teams(leagueId, season, null)
 
     suspend fun searchTeams(query: String): List<Team> = source().teams(null, null, query)
+
+    // ---- checking a source before trusting it --------------------------------
+
+    /** Asks a candidate backend whether it is a Kickoff backend, before anything is saved. */
+    suspend fun probeBackend(url: String): SourceProbe = probes.backend(url)
+
+    /** Spends one request to find out whether a key is real before it is stored. */
+    suspend fun probeApiKey(key: String): SourceProbe = probes.apiKey(key)
 
     // ---- players -------------------------------------------------------------
 
